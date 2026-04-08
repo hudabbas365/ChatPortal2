@@ -1,0 +1,90 @@
+using System.Text;
+using ChatPortal2.Data;
+using ChatPortal2.Models;
+using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Entity Framework + SQLite
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// ASP.NET Identity
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+{
+    options.Password.RequireDigit = false;
+    options.Password.RequireLowercase = false;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequiredLength = 6;
+})
+.AddEntityFrameworkStores<AppDbContext>()
+.AddDefaultTokenProviders();
+
+// JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("JWT key 'Jwt:Key' is not configured in appsettings.json.");
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+// HttpClientFactory (needed by CohereService)
+builder.Services.AddHttpClient("cohere");
+
+// Service DI registrations
+builder.Services.AddScoped<JwtService>();
+builder.Services.AddScoped<CohereService>();
+builder.Services.AddScoped<ISeoService, SeoService>();
+builder.Services.AddSingleton<IChartService, ChartService>();
+builder.Services.AddSingleton<IDataService, DataService>();
+builder.Services.AddScoped<SubscriptionService>();
+
+// Session support
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession();
+
+// MVC with views + Newtonsoft.Json
+builder.Services.AddControllersWithViews()
+    .AddNewtonsoftJson();
+
+var app = builder.Build();
+
+// Database initialization and SEO seeding
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+
+    var seoService = scope.ServiceProvider.GetRequiredService<ISeoService>();
+    await seoService.SeedDefaultEntriesAsync();
+}
+
+// Middleware pipeline
+app.UseStaticFiles();
+app.UseRouting();
+app.UseSession();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapDefaultControllerRoute();
+
+app.Run();

@@ -1,0 +1,16 @@
+## .NET build artifacts
+bin/
+obj/
+
+## SQLite database
+*.db
+*.db-shm
+*.db-wal
+
+## User-specific files
+*.user
+*.suo
+.vs/
+
+## Publish output
+publish/

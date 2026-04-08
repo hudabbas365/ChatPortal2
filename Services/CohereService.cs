@@ -51,7 +51,8 @@ public class CohereService
         request.Headers.Add("Authorization", $"Bearer {apiKey}");
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        HttpResponseMessage response;
+        HttpResponseMessage? response = null;
+        string? connectionError = null;
         try
         {
             response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -60,11 +61,16 @@ public class CohereService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to call Cohere API");
-            yield return "Sorry, I encountered an error connecting to the AI service. Please try again.";
+            connectionError = "Sorry, I encountered an error connecting to the AI service. Please try again.";
+        }
+
+        if (connectionError != null)
+        {
+            yield return connectionError;
             yield break;
         }
 
-        using var stream = await response.Content.ReadAsStreamAsync();
+        using var stream = await response!.Content.ReadAsStreamAsync();
         using var reader = new System.IO.StreamReader(stream);
 
         while (!reader.EndOfStream)
@@ -76,20 +82,22 @@ public class CohereService
             var data = line[6..];
             if (data == "[DONE]") break;
 
+            string? parsedText = null;
             try
             {
                 var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(data);
                 if (parsed?.type == "content-delta")
                 {
-                    string? text = parsed?.delta?.message?.content?.text;
-                    if (!string.IsNullOrEmpty(text))
-                        yield return text;
+                    parsedText = parsed?.delta?.message?.content?.text;
                 }
             }
             catch
             {
                 // Skip malformed SSE events
             }
+
+            if (!string.IsNullOrEmpty(parsedText))
+                yield return parsedText;
         }
     }
 }
