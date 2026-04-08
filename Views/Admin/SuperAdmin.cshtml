@@ -1,0 +1,144 @@
+@{
+    ViewData["Title"] = "Super Admin Overview";
+    Layout = "_Layout";
+}
+
+<div class="admin-page">
+    <div class="container-fluid py-4">
+        <div class="admin-header mb-4">
+            <h1 class="admin-title">
+                <i class="bi bi-stars me-2"></i>Super Admin Overview
+            </h1>
+            <p class="admin-subtitle">System-wide metrics, content, and communication management</p>
+        </div>
+
+        <!-- System-Wide Metrics -->
+        <h5 class="fw-semibold mb-3 text-muted">System-Wide Metrics</h5>
+        <div class="row g-4 mb-5">
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-blue mx-auto">
+                        <i class="bi bi-building"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalOrgs</div>
+                        <div class="stat-label">Organizations</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-green mx-auto">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalUsers</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-purple mx-auto">
+                        <i class="bi bi-folder-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalWorkspaces</div>
+                        <div class="stat-label">Workspaces</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-orange mx-auto">
+                        <i class="bi bi-chat-dots-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalMessages</div>
+                        <div class="stat-label">Messages</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-blue mx-auto">
+                        <i class="bi bi-robot"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalAgents</div>
+                        <div class="stat-label">Agents</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="stat-card glass-card text-center">
+                    <div class="stat-icon stat-icon-green mx-auto">
+                        <i class="bi bi-database-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalDatasources</div>
+                        <div class="stat-label">Datasources</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blog & Updates -->
+        <h5 class="fw-semibold mb-3 text-muted">Blog &amp; Updates</h5>
+        <div class="row g-4 mb-5">
+            <div class="col-md-6">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-pencil-square"></i>
+                    </div>
+                    <h4>Publish Blog Post</h4>
+                    <p>Create and publish new blog articles, tutorials, or product updates to engage your users.</p>
+                    <a href="#" class="btn cp-btn-gradient">
+                        <i class="bi bi-pencil-square me-2"></i>Write Post
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-megaphone"></i>
+                    </div>
+                    <h4>System Announcements</h4>
+                    <p>Post platform-wide announcements, maintenance notices, or feature release notes.</p>
+                    <a href="#" class="btn cp-btn-gradient">
+                        <i class="bi bi-megaphone me-2"></i>Post Announcement
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Communication -->
+        <h5 class="fw-semibold mb-3 text-muted">Communication</h5>
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-envelope-fill"></i>
+                    </div>
+                    <h4>Send Broadcast Email</h4>
+                    <p>Send a broadcast email to all users, a specific plan tier, or a selected organization.</p>
+                    <a href="#" class="btn cp-btn-gradient">
+                        <i class="bi bi-envelope-fill me-2"></i>Compose Broadcast
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-arrow-left-circle"></i>
+                    </div>
+                    <h4>Back to Admin Dashboard</h4>
+                    <p>Return to the main Admin Dashboard for day-to-day operational management.</p>
+                    <a href="/admin" class="btn btn-outline-cp">
+                        <i class="bi bi-arrow-left-circle me-2"></i>Admin Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -92,8 +92,25 @@ public class AuthController : Controller
 
     [HttpPost("/api/auth/logout")]
     [Authorize]
-    public IActionResult Logout()
+    public async Task<IActionResult> Logout()
     {
+        var token = Request.Cookies["jwt"];
+        if (!string.IsNullOrEmpty(token))
+        {
+            var principal = _jwtService.ValidateToken(token);
+            var userId = principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                         ?? principal?.FindFirst("sub")?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = "logout",
+                    Description = "User logged out.",
+                    UserId = userId
+                });
+                await _db.SaveChangesAsync();
+            }
+        }
         Response.Cookies.Delete("jwt");
         return Ok(new { success = true });
     }

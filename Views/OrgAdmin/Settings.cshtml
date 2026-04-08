@@ -29,13 +29,14 @@
                     <form>
                         <div class="mb-3">
                             <label class="form-label-cp">Organization Name</label>
-                            <input type="text" class="form-control cp-input" placeholder="Acme Corp" />
+                            <input type="text" class="form-control cp-input" id="orgNameInput" placeholder="Acme Corp" readonly />
+                            <small class="form-text text-muted">Organization name is set during sign-up and cannot be changed.</small>
                         </div>
                         <div class="mb-3">
                             <label class="form-label-cp">Logo URL</label>
                             <input type="url" class="form-control cp-input" placeholder="https://..." />
                         </div>
-                        <button class="btn cp-btn-gradient">Save Changes</button>
+                        <button class="btn cp-btn-gradient" disabled>Name cannot be changed</button>
                     </form>
                 </div>
             </div>
@@ -335,12 +336,15 @@
             .then(r => r.json())
             .then(users => {
                 if (!users.length) { document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No users yet</td></tr>'; return; }
-                document.getElementById('usersTableBody').innerHTML = users.map(u => `
-                    <tr>
+                document.getElementById('usersTableBody').innerHTML = users.map(u => {
+                    const statusBadge = u.status === 'Pending' ? '<span class="badge bg-warning text-dark">Pending</span>'
+                        : u.status === 'Suspended' ? '<span class="badge bg-danger">Suspended</span>'
+                        : '<span class="badge bg-success">Active</span>';
+                    return `<tr>
                         <td>${u.fullName || '-'}</td>
                         <td>${u.email}</td>
                         <td><span class="badge bg-secondary">${u.role}</span></td>
-                        <td><span class="badge bg-success">Active</span></td>
+                        <td>${statusBadge}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary" onclick="changeRole('${u.id}','${u.role}')"><i class="bi bi-pencil"></i></button>
@@ -348,7 +352,8 @@
                                 <button class="btn btn-outline-danger" onclick="removeUser('${u.id}')"><i class="bi bi-trash"></i></button>
                             </div>
                         </td>
-                    </tr>`).join('');
+                    </tr>`;
+                }).join('');
             }).catch(() => {});
     }
 
@@ -406,6 +411,16 @@
         const tabEl = document.querySelector(`[href="#tab-${tabParam}"]`);
         if (tabEl) new bootstrap.Tab(tabEl).show();
     }
+
+    // Populate org name from stored user data
+    const orgNameInput = document.getElementById('orgNameInput');
+    if (orgNameInput && user) {
+        orgNameInput.value = user.orgName || '';
+    }
+
+    // Initial loads
+    loadUsers();
+    loadBilling();
 })();
 </script>
 }
