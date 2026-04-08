@@ -9,5 +9,6 @@ public class ApplicationUser : IdentityUser
     public int? OrganizationId { get; set; }
     public Organization? Organization { get; set; }
     public SubscriptionPlan? Subscription { get; set; }
+    public string Status { get; set; } = "Active"; // Active, Pending, Suspended
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

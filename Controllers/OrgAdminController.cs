@@ -27,7 +27,7 @@ public class OrgAdminController : Controller
     {
         var users = await _db.Users
             .Where(u => u.OrganizationId == organizationId)
-            .Select(u => new { u.Id, u.FullName, u.Email, u.Role, u.CreatedAt })
+            .Select(u => new { u.Id, u.FullName, u.Email, u.Role, u.Status, u.CreatedAt })
             .ToListAsync();
         return Ok(users);
     }
@@ -55,7 +55,8 @@ public class OrgAdminController : Controller
             Email = req.Email,
             FullName = req.Email,
             Role = req.Role ?? "User",
-            OrganizationId = req.OrganizationId
+            OrganizationId = req.OrganizationId,
+            Status = "Pending"
         };
         // Generate a cryptographically random temporary password
         var randomBytes = new byte[16];
@@ -73,9 +74,18 @@ public class OrgAdminController : Controller
             UserId = req.InvitedBy ?? "",
             OrganizationId = req.OrganizationId
         });
+        // TODO: Send actual email invitation
+        // For now, log the invite action
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "invitation_email_sent",
+            Description = $"Invitation email sent to {req.Email} for organization {req.OrganizationId}.",
+            UserId = req.InvitedBy ?? "",
+            OrganizationId = req.OrganizationId
+        });
         await _db.SaveChangesAsync();
 
-        return Ok(new { success = true, userId = user.Id, tempPassword });
+        return Ok(new { success = true, userId = user.Id, status = user.Status });
     }
 
     [HttpPut("/api/org/users/{id}/role")]
