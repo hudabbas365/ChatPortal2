@@ -1,9 +1,11 @@
 using ChatPortal2.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatPortal2.Controllers;
 
+[Authorize]
 [Route("api/activity")]
 [ApiController]
 public class ActivityController : ControllerBase

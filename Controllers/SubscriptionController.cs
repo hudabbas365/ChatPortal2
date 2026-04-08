@@ -1,9 +1,11 @@
 using ChatPortal2.Models;
 using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatPortal2.Controllers;
 
+[Authorize]
 [Route("api/subscription")]
 [ApiController]
 public class SubscriptionController : ControllerBase
