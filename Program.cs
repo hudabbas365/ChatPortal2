@@ -46,6 +46,23 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            context.Token = context.Request.Cookies["jwt"];
+            return Task.CompletedTask;
+        },
+        OnChallenge = context =>
+        {
+            if (!context.Response.HasStarted && context.Request.Headers["Accept"].ToString().Contains("text/html"))
+            {
+                context.HandleResponse();
+                context.Response.Redirect("/auth/login");
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // HttpClientFactory (needed by CohereService)

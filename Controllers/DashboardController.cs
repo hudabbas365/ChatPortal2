@@ -1,11 +1,13 @@
 using ChatPortal2.Models;
 using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
 namespace ChatPortal2.Controllers;
 
+[Authorize]
 public class DashboardController : Controller
 {
     private readonly IChartService _chartService;

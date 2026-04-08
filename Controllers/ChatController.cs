@@ -1,12 +1,14 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
 using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 
 namespace ChatPortal2.Controllers;
 
+[Authorize]
 public class ChatController : Controller
 {
     private readonly AppDbContext _db;

@@ -1,6 +1,7 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
 using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
@@ -90,6 +91,7 @@ public class AuthController : Controller
     }
 
     [HttpPost("/api/auth/logout")]
+    [Authorize]
     public IActionResult Logout()
     {
         Response.Cookies.Delete("jwt");
@@ -97,6 +99,7 @@ public class AuthController : Controller
     }
 
     [HttpGet("/api/auth/me")]
+    [Authorize]
     public async Task<IActionResult> Me()
     {
         var token = Request.Cookies["jwt"];
