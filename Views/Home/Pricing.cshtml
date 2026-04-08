@@ -49,7 +49,7 @@
                         <li><i class="bi bi-check-circle-fill me-2"></i>10,000 messages</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>Export + API</li>
                     </ul>
-                    <a href="/auth/register" class="btn cp-btn-gradient w-100">Get Professional</a>
+                    <a href="/auth/register" class="btn cp-btn-gradient w-100" data-bs-toggle="modal" data-bs-target="#pricingPaymentModal">Get Professional</a>
                 </div>
             </div>
             <div class="col-md-3">
@@ -62,17 +62,69 @@
                         <li><i class="bi bi-check-circle-fill me-2"></i>Dedicated support</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>On-premise</li>
                     </ul>
-                    <a href="mailto:sales@chatportal2.com" class="btn btn-outline-cp w-100">Contact Sales</a>
+    <a href="mailto:sales@chatportal2.com" class="btn btn-outline-cp w-100">Contact Sales</a>
                 </div>
             </div>
         </div>
     </div>
 </section>
 
+<!-- Payment Modal -->
+<div class="modal fade" id="pricingPaymentModal" tabindex="-1" aria-labelledby="pricingPaymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pricingPaymentModalLabel"><i class="bi bi-credit-card me-2"></i>Subscribe — Professional Plan ($49/mo)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="pricingPaymentAlert" class="alert d-none"></div>
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#pricingTabCC"><i class="bi bi-credit-card me-1"></i>Credit Card</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#pricingTabPayPal"><i class="bi bi-paypal me-1"></i>PayPal</a>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="pricingTabCC">
+                        <div class="mb-3">
+                            <label class="form-label">Card Number</label>
+                            <input type="text" class="form-control" id="pricingCardNumber" placeholder="4242 4242 4242 4242" maxlength="19" />
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Expiration</label>
+                                <input type="text" class="form-control" id="pricingCardExpiry" placeholder="MM / YY" maxlength="7" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">CVC</label>
+                                <input type="text" class="form-control" id="pricingCardCvc" placeholder="123" maxlength="4" />
+                            </div>
+                        </div>
+                        <button class="btn cp-btn-gradient w-100" id="pricingStripeBtn">
+                            <i class="bi bi-lock me-2"></i>Subscribe Now
+                        </button>
+                    </div>
+                    <div class="tab-pane fade" id="pricingTabPayPal">
+                        <div class="text-center py-4">
+                            <p class="text-muted mb-4">Click below to pay securely with PayPal.</p>
+                            <button class="btn btn-lg w-100" id="pricingPayPalBtn" style="background:#0070ba;border-color:#0070ba;color:#fff">
+                                <i class="bi bi-paypal me-2"></i>Pay with PayPal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
 <script>
 document.getElementById('startTrialBtn')?.addEventListener('click', function() {
-    const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+    var user = JSON.parse(localStorage.getItem('cp_user') || 'null');
     if (!user) { window.location.href = '/auth/register'; return; }
     $.post('/api/subscription/activate-trial', JSON.stringify({ userId: user.id }), function(r) {
         alert('Trial activated! You have ' + r.daysRemaining + ' days remaining.');
@@ -80,5 +132,25 @@ document.getElementById('startTrialBtn')?.addEventListener('click', function() {
         alert(e.responseJSON?.error || 'Could not activate trial.');
     });
 });
+
+(function() {
+    function subscribeUpgrade(btn) {
+        var user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+        if (!user) { window.location.href = '/auth/register'; return; }
+        btn.disabled = true;
+        var alertEl = document.getElementById('pricingPaymentAlert');
+        fetch('/api/subscription/upgrade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id, plan: 2 })
+        }).then(function(r) { return r.json(); }).then(function() {
+            if (alertEl) { alertEl.className = 'alert alert-success'; alertEl.textContent = 'Subscription upgraded to Professional! Enjoy your plan.'; alertEl.classList.remove('d-none'); }
+        }).catch(function() {
+            if (alertEl) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Could not process payment. Please try again.'; alertEl.classList.remove('d-none'); }
+        }).finally(function() { btn.disabled = false; });
+    }
+    document.getElementById('pricingStripeBtn')?.addEventListener('click', function() { subscribeUpgrade(this); });
+    document.getElementById('pricingPayPalBtn')?.addEventListener('click', function() { subscribeUpgrade(this); });
+})();
 </script>
 }

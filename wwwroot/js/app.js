@@ -11,31 +11,51 @@
     }
 
     // Update nav auth button based on login state
-    function updateNavAuth() {
-        const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+    async function updateNavAuth() {
         const authBtn = document.getElementById('navAuthBtn');
+        const logoutBtn = document.getElementById('navLogoutBtn');
+        const dashboardBtn = document.getElementById('navDashboardBtn');
         const chatAuthBtn = document.getElementById('chatAuthBtn');
 
+        let user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+
+        // Verify auth state with server
+        try {
+            const r = await fetch('/api/auth/me');
+            if (r.ok) {
+                const data = await r.json();
+                user = data;
+                localStorage.setItem('cp_user', JSON.stringify(user));
+            } else {
+                // Server says not authenticated — clear stale local data
+                user = null;
+                localStorage.removeItem('cp_user');
+                localStorage.removeItem('cp_token');
+            }
+        } catch {}
+
         if (user) {
-            if (authBtn) {
-                authBtn.innerHTML = `<i class="bi bi-person-circle me-1"></i>${user.fullName || user.email}`;
-                authBtn.href = '#';
-                authBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    if (confirm('Sign out?')) {
-                        fetch('/api/auth/logout', { method: 'POST' }).then(() => {
-                            localStorage.removeItem('cp_user');
-                            localStorage.removeItem('cp_token');
-                            localStorage.removeItem('cp_plan');
-                            window.location.href = '/';
-                        });
-                    }
+            if (authBtn) authBtn.style.display = 'none';
+            if (logoutBtn) {
+                logoutBtn.style.display = '';
+                logoutBtn.addEventListener('click', function() {
+                    fetch('/api/auth/logout', { method: 'POST' }).finally(function() {
+                        localStorage.removeItem('cp_user');
+                        localStorage.removeItem('cp_token');
+                        localStorage.removeItem('cp_plan');
+                        window.location.href = '/';
+                    });
                 });
             }
+            if (dashboardBtn) dashboardBtn.style.display = '';
             if (chatAuthBtn) {
                 chatAuthBtn.innerHTML = `<i class="bi bi-person-circle me-1"></i>${user.fullName || user.email}`;
                 chatAuthBtn.href = '#';
             }
+        } else {
+            if (authBtn) authBtn.style.display = '';
+            if (logoutBtn) logoutBtn.style.display = 'none';
+            if (dashboardBtn) dashboardBtn.style.display = 'none';
         }
 
         // Update left panel org name

@@ -28,6 +28,15 @@ public class AdminController : Controller
         return View();
     }
 
-    [HttpGet("/admin/seo")]
-    public IActionResult Seo() => View();
+    [HttpGet("/admin/super")]
+    public async Task<IActionResult> SuperAdmin()
+    {
+        ViewBag.TotalOrgs = await _db.Organizations.CountAsync();
+        ViewBag.TotalUsers = await _db.Users.CountAsync();
+        ViewBag.TotalWorkspaces = await _db.Workspaces.CountAsync();
+        ViewBag.TotalMessages = await _db.ChatMessages.CountAsync();
+        ViewBag.TotalAgents = await _db.Agents.CountAsync();
+        ViewBag.TotalDatasources = await _db.Datasources.CountAsync();
+        return View();
+    }
 }
