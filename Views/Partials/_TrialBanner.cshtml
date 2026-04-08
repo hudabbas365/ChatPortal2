@@ -1,0 +1,24 @@
+<div id="trialBannerContainer"></div>
+<script>
+(function() {
+    const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+    if (!user) return;
+    const plan = JSON.parse(localStorage.getItem('cp_plan') || 'null');
+    if (!plan) return;
+    const container = document.getElementById('trialBannerContainer');
+    if (!container) return;
+    if (plan.isTrialActive) {
+        container.innerHTML = `<div class="cp-trial-banner active">
+            <i class="bi bi-clock me-2"></i>
+            <strong>${plan.daysRemaining} days</strong> remaining in your free trial.
+            <a href="/pricing" class="trial-upgrade-link">Upgrade Now</a>
+        </div>`;
+    } else if (plan.isTrialExpired) {
+        container.innerHTML = `<div class="cp-trial-banner expired">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Your free trial has expired.
+            <a href="/pricing" class="trial-upgrade-link">Upgrade to continue</a>
+        </div>`;
+    }
+})();
+</script>

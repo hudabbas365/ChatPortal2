@@ -1,0 +1,126 @@
+@{
+    ViewData["Title"] = "Organization Settings";
+    Layout = "_Layout";
+}
+
+<div class="org-settings-page">
+    <div class="container-fluid py-4">
+        <div class="admin-header mb-4">
+            <h1 class="admin-title">
+                <i class="bi bi-gear me-2"></i>Organization Settings
+            </h1>
+        </div>
+
+        <ul class="nav nav-tabs cp-tabs mb-4" id="settingsTabs">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-org">Organization</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-users">Users</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-datasources">Datasources</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-agents">Agents</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing">Billing</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-compliance">Compliance</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-custom">Customization</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-activity">Activity</a></li>
+        </ul>
+
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="tab-org">
+                <div class="glass-card p-4">
+                    <h4>Organization Profile</h4>
+                    <form>
+                        <div class="mb-3">
+                            <label class="form-label-cp">Organization Name</label>
+                            <input type="text" class="form-control cp-input" placeholder="Acme Corp" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label-cp">Logo URL</label>
+                            <input type="url" class="form-control cp-input" placeholder="https://..." />
+                        </div>
+                        <button class="btn cp-btn-gradient">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-users">
+                <div class="glass-card p-4">
+                    <h4>User Management</h4>
+                    <p class="text-muted">Manage your organization's users, roles, and permissions.</p>
+                    <div class="table-responsive">
+                        <table class="table cp-table">
+                            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody id="usersTableBody"><tr><td colspan="5" class="text-center text-muted py-3">No users yet</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-datasources">
+                <div class="glass-card p-4">
+                    <h4>Datasources</h4>
+                    <p class="text-muted">Connect your data sources. Supports 70+ source types.</p>
+                    <button class="btn cp-btn-gradient mb-3">
+                        <i class="bi bi-plus me-1"></i>Add Datasource
+                    </button>
+                    <div id="datasourcesContainer"><p class="text-muted">No datasources connected.</p></div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-agents">
+                <div class="glass-card p-4">
+                    <h4>AI Agents</h4>
+                    <p class="text-muted">Create and configure AI agents with custom system prompts.</p>
+                    <button class="btn cp-btn-gradient mb-3">
+                        <i class="bi bi-plus me-1"></i>Create Agent
+                    </button>
+                    <div id="agentsContainer"><p class="text-muted">No agents created.</p></div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-billing">
+                <div class="glass-card p-4">
+                    <h4>Billing &amp; Subscription</h4>
+                    <div id="billingInfo"><p class="text-muted">Loading subscription info...</p></div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-compliance">
+                <div class="glass-card p-4">
+                    <h4>Compliance &amp; Privacy</h4>
+                    <div class="compliance-item mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-check text-success me-2 fs-4"></i>
+                            <div>
+                                <strong>GDPR Compliance</strong>
+                                <p class="mb-0 text-muted small">All data is stored and processed in accordance with GDPR.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="compliance-item">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-lock-fill text-primary me-2 fs-4"></i>
+                            <div>
+                                <strong>Data Encryption</strong>
+                                <p class="mb-0 text-muted small">Data at rest and in transit is encrypted with AES-256 and TLS 1.3.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-custom">
+                <div class="glass-card p-4">
+                    <h4>Customization</h4>
+                    <div class="mb-3">
+                        <label class="form-label-cp">Brand Color</label>
+                        <input type="color" class="form-control form-control-color" value="#5B9BD5" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label-cp">Embed Widget Color</label>
+                        <input type="color" class="form-control form-control-color" value="#5B9BD5" />
+                    </div>
+                    <button class="btn cp-btn-gradient">Apply Branding</button>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-activity">
+                <div class="glass-card p-4">
+                    <h4>Activity Log</h4>
+                    <p class="text-muted">Recent actions performed in your organization.</p>
+                    <div id="activityLog"><p class="text-muted">No activity recorded yet.</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

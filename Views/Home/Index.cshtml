@@ -1,0 +1,152 @@
+@{
+    ViewData["Title"] = "Home";
+    Layout = "_Layout";
+}
+
+<!-- Hero Section -->
+<section class="cp-hero">
+    <div class="container">
+        <div class="row align-items-center min-vh-80">
+            <div class="col-lg-6">
+                <div class="hero-badge mb-3">
+                    <i class="bi bi-stars me-2"></i>AI-Powered Analytics
+                </div>
+                <h1 class="hero-title">
+                    Talk to Your Data,<br/>
+                    <span class="hero-highlight">Get Instant Insights</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Connect your datasources, chat with AI agents, and visualize insights with 72+ chart types.
+                    No SQL required.
+                </p>
+                <div class="hero-actions">
+                    <a href="/auth/register" class="btn cp-btn-gradient btn-lg me-3">
+                        <i class="bi bi-rocket-takeoff me-2"></i>Start Free Trial
+                    </a>
+                    <a href="/chat" class="btn btn-outline-cp btn-lg">
+                        <i class="bi bi-chat-dots me-2"></i>Try Demo
+                    </a>
+                </div>
+                <div class="hero-trust mt-4">
+                    <span class="trust-item"><i class="bi bi-shield-check me-1"></i>GDPR Compliant</span>
+                    <span class="trust-item"><i class="bi bi-clock me-1"></i>30-day Free Trial</span>
+                    <span class="trust-item"><i class="bi bi-credit-card me-1"></i>No Credit Card</span>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="hero-visual">
+                    <div class="hero-card glass-card">
+                        <div class="hero-chat-preview">
+                            <div class="chat-msg user-msg">
+                                <div class="msg-bubble">What were our top performing regions last quarter?</div>
+                            </div>
+                            <div class="chat-msg ai-msg">
+                                <div class="msg-bubble">
+                                    <i class="bi bi-robot me-2 text-primary"></i>
+                                    North region led with $145K revenue (+13.3%), followed by East at $101K (+9.7%).
+                                    Here's the breakdown chart:
+                                    <div class="mini-chart-preview mt-2">
+                                        <div class="mini-bar" style="width:85%;background:var(--cp-primary)">North 85%</div>
+                                        <div class="mini-bar" style="width:65%;background:var(--cp-accent)">East 65%</div>
+                                        <div class="mini-bar" style="width:55%;background:var(--cp-info)">South 55%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="cp-section cp-features">
+    <div class="container">
+        <div class="section-header text-center mb-5">
+            <h2 class="section-title">Everything You Need</h2>
+            <p class="section-subtitle">A complete analytics platform powered by AI</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="feature-card glass-card">
+                    <div class="feature-icon">
+                        <i class="bi bi-database-fill-gear"></i>
+                    </div>
+                    <h3 class="feature-title">70+ Datasources</h3>
+                    <p class="feature-desc">Connect SQL Server, PostgreSQL, MySQL, APIs, CSV files, and 65 more data sources with zero configuration.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card glass-card">
+                    <div class="feature-icon">
+                        <i class="bi bi-robot"></i>
+                    </div>
+                    <h3 class="feature-title">AI Agents</h3>
+                    <p class="feature-desc">Create custom AI agents with specific knowledge, system prompts, and datasource connections. Chat naturally.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card glass-card">
+                    <div class="feature-icon">
+                        <i class="bi bi-bar-chart-line-fill"></i>
+                    </div>
+                    <h3 class="feature-title">72+ Chart Types</h3>
+                    <p class="feature-desc">From basic bar charts to Sankey diagrams, candlesticks, treemaps, and more. Drag-and-drop report designer.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing Preview -->
+<section class="cp-section cp-pricing-preview" id="pricing">
+    <div class="container">
+        <div class="section-header text-center mb-5">
+            <h2 class="section-title">Simple, Transparent Pricing</h2>
+            <p class="section-subtitle">Start free, scale as you grow</p>
+        </div>
+        <div class="row g-4 justify-content-center">
+            <div class="col-md-4">
+                <div class="pricing-card glass-card">
+                    <div class="pricing-tier">Free Trial</div>
+                    <div class="pricing-price">$0 <span class="pricing-period">/ 30 days</span></div>
+                    <ul class="pricing-features">
+                        <li><i class="bi bi-check-circle-fill me-2"></i>10 Workspaces</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>5 AI Agents</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>All 72 chart types</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>1,000 messages</li>
+                    </ul>
+                    <a href="/auth/register" class="btn cp-btn-gradient w-100">Start 30-Day Free Trial</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="pricing-card glass-card pricing-featured">
+                    <div class="pricing-badge">Most Popular</div>
+                    <div class="pricing-tier">Professional</div>
+                    <div class="pricing-price">$49 <span class="pricing-period">/ month</span></div>
+                    <ul class="pricing-features">
+                        <li><i class="bi bi-check-circle-fill me-2"></i>50 Workspaces</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>20 AI Agents</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>All chart types + exports</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>10,000 messages</li>
+                    </ul>
+                    <a href="/pricing" class="btn cp-btn-gradient w-100">Get Started</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="pricing-card glass-card">
+                    <div class="pricing-tier">Enterprise</div>
+                    <div class="pricing-price">Custom</div>
+                    <ul class="pricing-features">
+                        <li><i class="bi bi-check-circle-fill me-2"></i>Unlimited everything</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>SSO / SAML</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>Dedicated support</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>On-premise option</li>
+                    </ul>
+                    <a href="/about" class="btn btn-outline-cp w-100">Contact Sales</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

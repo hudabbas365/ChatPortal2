@@ -1,0 +1,42 @@
+@{
+    ViewData["Title"] = "Chat";
+    Layout = "_ChatLayout";
+}
+
+<div class="chat-workspace" id="chatWorkspace">
+    <!-- Messages Area -->
+    <div class="chat-messages" id="chatMessages">
+        <div class="chat-welcome">
+            <div class="welcome-icon">
+                <i class="bi bi-robot"></i>
+            </div>
+            <h3>Hello! I'm your AI data assistant</h3>
+            <p>Ask me anything about your data. I can query your datasources, analyze trends, and create visualizations.</p>
+            <div class="welcome-suggestions">
+                <button class="suggestion-chip" onclick="sendSuggestion(this)">What are the top revenue regions?</button>
+                <button class="suggestion-chip" onclick="sendSuggestion(this)">Show me sales trends this quarter</button>
+                <button class="suggestion-chip" onclick="sendSuggestion(this)">Compare performance by product</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="chat-input-area">
+        <div class="chat-input-container">
+            <textarea class="chat-textarea" id="chatInput" placeholder="Ask anything about your data..." rows="1"></textarea>
+            <div class="chat-input-actions">
+                <button class="btn btn-icon" id="chatSendBtn" title="Send">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+        </div>
+        <div class="chat-input-footer">
+            <span class="input-hint"><i class="bi bi-info-circle me-1"></i>Press Enter to send, Shift+Enter for new line</span>
+            <span class="model-badge"><i class="bi bi-cpu me-1"></i>Powered by Cohere AI</span>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="~/js/chat.js"></script>
+}

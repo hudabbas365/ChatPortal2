@@ -1,0 +1,14 @@
+[
+  {"date":"2024-01-01","city":"New York","tempHigh":2,"tempLow":-5,"precipitation":12,"humidity":68,"windSpeed":18},
+  {"date":"2024-02-01","city":"New York","tempHigh":4,"tempLow":-3,"precipitation":8,"humidity":65,"windSpeed":16},
+  {"date":"2024-03-01","city":"New York","tempHigh":11,"tempLow":3,"precipitation":10,"humidity":62,"windSpeed":14},
+  {"date":"2024-04-01","city":"New York","tempHigh":17,"tempLow":8,"precipitation":14,"humidity":60,"windSpeed":13},
+  {"date":"2024-05-01","city":"New York","tempHigh":23,"tempLow":14,"precipitation":11,"humidity":62,"windSpeed":12},
+  {"date":"2024-06-01","city":"New York","tempHigh":29,"tempLow":20,"precipitation":9,"humidity":65,"windSpeed":11},
+  {"date":"2024-07-01","city":"New York","tempHigh":32,"tempLow":23,"precipitation":13,"humidity":68,"windSpeed":10},
+  {"date":"2024-08-01","city":"New York","tempHigh":31,"tempLow":22,"precipitation":11,"humidity":66,"windSpeed":10},
+  {"date":"2024-09-01","city":"New York","tempHigh":26,"tempLow":17,"precipitation":8,"humidity":63,"windSpeed":12},
+  {"date":"2024-10-01","city":"New York","tempHigh":18,"tempLow":10,"precipitation":10,"humidity":65,"windSpeed":14},
+  {"date":"2024-11-01","city":"New York","tempHigh":11,"tempLow":4,"precipitation":11,"humidity":67,"windSpeed":15},
+  {"date":"2024-12-01","city":"New York","tempHigh":4,"tempLow":-2,"precipitation":10,"humidity":70,"windSpeed":17}
+]

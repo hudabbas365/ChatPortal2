@@ -1,0 +1,69 @@
+@{
+    ViewData["Title"] = "Sign In";
+    Layout = "_Layout";
+}
+
+<div class="auth-page">
+    <div class="container">
+        <div class="row justify-content-center min-vh-100 align-items-center">
+            <div class="col-md-5">
+                <div class="auth-card glass-card">
+                    <div class="auth-header text-center mb-4">
+                        <div class="auth-logo">
+                            <i class="bi bi-bar-chart-fill"></i>
+                        </div>
+                        <h2 class="auth-title">Welcome back</h2>
+                        <p class="auth-subtitle">Sign in to your ChatPortal2 account</p>
+                    </div>
+                    <div id="authAlert" class="alert d-none"></div>
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label class="form-label-cp">Email Address</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-envelope input-icon"></i>
+                                <input type="email" class="form-control cp-input" id="loginEmail" placeholder="you@example.com" required />
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label-cp">Password</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-lock input-icon"></i>
+                                <input type="password" class="form-control cp-input" id="loginPassword" placeholder="••••••••" required />
+                            </div>
+                        </div>
+                        <button type="submit" class="btn cp-btn-gradient w-100 btn-lg" id="loginBtn">
+                            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+                        </button>
+                    </form>
+                    <div class="auth-footer mt-4 text-center">
+                        <p>Don't have an account? <a href="/auth/register" class="auth-link">Create one free</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+$('#loginForm').on('submit', function(e) {
+    e.preventDefault();
+    const btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
+    $.ajax({
+        url: '/api/auth/login',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ email: $('#loginEmail').val(), password: $('#loginPassword').val() }),
+        success: function(r) {
+            localStorage.setItem('cp_user', JSON.stringify(r.user));
+            localStorage.setItem('cp_token', r.token);
+            window.location.href = '/chat';
+        },
+        error: function(e) {
+            $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');
+            btn.prop('disabled', false).html('<i class="bi bi-box-arrow-in-right me-2"></i>Sign In');
+        }
+    });
+});
+</script>
+}
