@@ -32,12 +32,14 @@
                 localStorage.removeItem('cp_user');
                 localStorage.removeItem('cp_token');
             }
-        } catch {}
+        } catch (e) {
+            console.error('Auth verification failed:', e);
+        }
 
         if (user) {
             if (authBtn) authBtn.style.display = 'none';
-            if (logoutBtn) {
-                logoutBtn.style.display = '';
+            if (logoutBtn && !logoutBtn._logoutWired) {
+                logoutBtn._logoutWired = true;
                 logoutBtn.addEventListener('click', function() {
                     fetch('/api/auth/logout', { method: 'POST' }).finally(function() {
                         localStorage.removeItem('cp_user');
@@ -47,6 +49,7 @@
                     });
                 });
             }
+            if (logoutBtn) logoutBtn.style.display = '';
             if (dashboardBtn) dashboardBtn.style.display = '';
             if (chatAuthBtn) {
                 chatAuthBtn.innerHTML = `<i class="bi bi-person-circle me-1"></i>${user.fullName || user.email}`;
