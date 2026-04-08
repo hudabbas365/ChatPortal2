@@ -1,4 +1,5 @@
 using ChatPortal2.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatPortal2.Controllers;
@@ -34,9 +35,11 @@ public class SeoController : Controller
 
     // ADMIN API ENDPOINTS
 
+    [Authorize]
     [HttpGet("/api/seo")]
     public async Task<IActionResult> GetAll() => Ok(await _seoService.GetAllEntriesAsync());
 
+    [Authorize]
     [HttpGet("/api/seo/{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -46,6 +49,7 @@ public class SeoController : Controller
         return Ok(entry);
     }
 
+    [Authorize]
     [HttpPost("/api/seo")]
     public async Task<IActionResult> Create([FromBody] ChatPortal2.Models.SeoEntry entry)
     {
@@ -54,6 +58,7 @@ public class SeoController : Controller
         return Ok(result);
     }
 
+    [Authorize]
     [HttpPut("/api/seo/{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ChatPortal2.Models.SeoEntry entry)
     {
@@ -62,6 +67,7 @@ public class SeoController : Controller
         return Ok(result);
     }
 
+    [Authorize]
     [HttpDelete("/api/seo/{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -69,6 +75,7 @@ public class SeoController : Controller
         return Ok(new { success = true });
     }
 
+    [Authorize]
     [HttpPost("/api/seo/seed")]
     public async Task<IActionResult> Seed()
     {
@@ -76,6 +83,7 @@ public class SeoController : Controller
         return Ok(new { success = true });
     }
 
+    [Authorize]
     [HttpGet("/api/seo/preview-sitemap")]
     public async Task<IActionResult> PreviewSitemap()
     {
