@@ -21,6 +21,18 @@
     --cp-gradient:       linear-gradient(135deg, #5B9BD5 0%, #3A7BBF 100%);
     --cp-gradient-bg:    linear-gradient(160deg, #EBF4FF 0%, #F4F7FB 60%, #DCEEFB 100%);
     --cp-transition:     all 0.2s ease;
+    --cp-danger:         #dc3545;
+    --cp-danger-light:   #fff0f0;
+    --cp-success:        #2ECC71;
+    --cp-success-light:  #EAFAF1;
+    --cp-purple:         #9B59B6;
+    --cp-purple-light:   #F3E8FF;
+    --cp-orange:         #E67E22;
+    --cp-orange-light:   #FFF3E0;
+    --cp-code-bg:        #1E2D3D;
+    --cp-code-text:      #A8C4DF;
+    --cp-code-border:    #2A3F55;
+    --cp-font-mono:      'Fira Code', 'Consolas', monospace;
     --navbar-h:          60px;
     /* Dashboard panel widths */
     --library-w:         260px;
@@ -155,7 +167,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
 /* Gradient CTA button — used everywhere */
 .cp-btn-gradient {
     background: var(--cp-gradient);
-    color: #fff !important;
+    color: #fff;
     border: none;
     border-radius: var(--cp-radius);
     padding: 8px 20px;
@@ -172,7 +184,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     background: linear-gradient(135deg, #3A7BBF 0%, #2A6AAE 100%);
     box-shadow: 0 6px 20px rgba(91, 155, 213, 0.45);
     transform: translateY(-1px);
-    color: #fff !important;
+    color: #fff;
 }
 .cp-btn-gradient:active { transform: translateY(0); }
 
@@ -998,7 +1010,7 @@ body.dashboard-body {
     transition: var(--cp-transition);
 }
 .btn-xs:hover { background: var(--cp-primary-light); color: var(--cp-primary); }
-.btn-xs.text-danger:hover { color: #dc3545 !important; background: #fff0f0; }
+.btn-xs.text-danger:hover { color: var(--cp-danger) !important; background: var(--cp-danger-light); }
 
 /* App body */
 .app-body { display: flex; flex: 1; overflow: hidden; }
@@ -1233,7 +1245,7 @@ body.dashboard-body {
     padding: 0 2px;
     border-radius: 2px;
 }
-.page-tab-close:hover { color: #dc3545; background: #fff0f0; }
+.page-tab-close:hover { color: var(--cp-danger); background: var(--cp-danger-light); }
 .page-add-btn { font-size: 0.85rem; padding: 2px 8px; flex-shrink: 0; }
 
 /* Collapsible panels */
@@ -1456,10 +1468,10 @@ body.embed-body {
     font-size: 1.3rem;
     flex-shrink: 0;
 }
-.stat-icon-blue  { background: #EBF4FF; color: var(--cp-primary); }
-.stat-icon-green { background: #EAFAF1; color: #2ECC71; }
-.stat-icon-purple{ background: #F3E8FF; color: #9B59B6; }
-.stat-icon-orange{ background: #FFF3E0; color: #E67E22; }
+.stat-icon-blue  { background: var(--cp-primary-light); color: var(--cp-primary); }
+.stat-icon-green { background: var(--cp-success-light); color: var(--cp-success); }
+.stat-icon-purple{ background: var(--cp-purple-light); color: var(--cp-purple); }
+.stat-icon-orange{ background: var(--cp-orange-light); color: var(--cp-orange); }
 .stat-content { flex: 1; }
 .stat-value {
     font-size: 1.6rem;
@@ -1694,15 +1706,15 @@ body.embed-body {
 .docs-content h3 { margin-top: 24px; margin-bottom: 12px; font-size: 1.05rem; }
 .docs-content p { margin-bottom: 16px; color: var(--cp-text); }
 .code-block {
-    background: #1E2D3D;
-    color: #A8C4DF;
+    background: var(--cp-code-bg);
+    color: var(--cp-code-text);
     border-radius: 10px;
     padding: 16px 20px;
-    font-family: 'Fira Code', 'Consolas', monospace;
+    font-family: var(--cp-font-mono);
     font-size: 0.85rem;
     overflow-x: auto;
     margin-bottom: 16px;
-    border: 1px solid #2A3F55;
+    border: 1px solid var(--cp-code-border);
 }
 
 /* Blog */
