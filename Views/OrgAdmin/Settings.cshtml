@@ -41,8 +41,15 @@
             </div>
             <div class="tab-pane fade" id="tab-users">
                 <div class="glass-card p-4">
-                    <h4>User Management</h4>
-                    <p class="text-muted">Manage your organization's users, roles, and permissions.</p>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h4>User Management</h4>
+                            <p class="text-muted mb-0">Manage your organization's users, roles, and permissions.</p>
+                        </div>
+                        <button class="btn cp-btn-gradient" id="inviteUserBtn">
+                            <i class="bi bi-person-plus me-1"></i>Invite User
+                        </button>
+                    </div>
                     <div class="table-responsive">
                         <table class="table cp-table">
                             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
@@ -74,7 +81,9 @@
             <div class="tab-pane fade" id="tab-billing">
                 <div class="glass-card p-4">
                     <h4>Billing &amp; Subscription</h4>
-                    <div id="billingInfo"><p class="text-muted">Loading subscription info...</p></div>
+                    <div id="billingInfo">
+                        <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading subscription info...</div>
+                    </div>
                 </div>
             </div>
             <div class="tab-pane fade" id="tab-compliance">
@@ -118,9 +127,285 @@
                 <div class="glass-card p-4">
                     <h4>Activity Log</h4>
                     <p class="text-muted">Recent actions performed in your organization.</p>
-                    <div id="activityLog"><p class="text-muted">No activity recorded yet.</p></div>
+                    <div id="activityLog"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading activity...</div></div>
+                    <div id="activityPagination" class="mt-3 d-flex justify-content-between align-items-center" style="display:none!important">
+                        <span class="small text-muted" id="activityPagingInfo"></span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary me-1" id="activityPrevBtn" disabled>
+                                <i class="bi bi-chevron-left"></i> Prev
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="activityNextBtn" disabled>
+                                Next <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Invite User Modal -->
+<div class="modal fade" id="inviteUserModal" tabindex="-1" aria-labelledby="inviteUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="inviteUserModalLabel"><i class="bi bi-person-plus me-2"></i>Invite User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="inviteUserAlert" class="alert d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label-cp">Email Address</label>
+                    <input type="email" class="form-control cp-input" id="inviteEmail" placeholder="user@example.com" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label-cp">Role</label>
+                    <select class="form-select cp-input" id="inviteRole">
+                        <option value="User">Viewer</option>
+                        <option value="Contributor">Contributor</option>
+                        <option value="OrgAdmin">Admin</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="sendInviteBtn">
+                    <i class="bi bi-send me-1"></i>Send Invite
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Placeholder Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-credit-card me-2"></i>Payment Processing</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <i class="bi bi-stripe fs-1 text-primary mb-3 d-block"></i>
+                <h5>Payment Integration Coming Soon</h5>
+                <p class="text-muted">Stripe and PayPal payment processing will be integrated here. Your plan upgrade request has been noted.</p>
+                <p class="text-muted small">Contact us at <strong>billing@chatportal2.com</strong> for manual upgrades.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn cp-btn-gradient" data-bs-dismiss="modal">Got it</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function() {
+    const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+    const orgId = user?.organizationId;
+    const userId = user?.id;
+
+    // ---- Billing Tab ----
+    function renderBilling(plan) {
+        const isFreeTrial = plan?.plan === 'FreeTrial' || plan?.isTrialActive;
+        const isPro = plan?.plan === 'Professional';
+        const isEnterprise = plan?.plan === 'Enterprise';
+        const trialDays = plan?.daysRemaining || 0;
+
+        function planCard(title, price, features, isCurrent, planKey, badgeClass) {
+            return `<div class="col-md-4">
+                <div class="card h-100 ${isCurrent ? 'border-primary shadow' : 'border-0 glass-card'}">
+                    <div class="card-body text-center p-4">
+                        ${isCurrent ? '<span class="badge bg-primary mb-2">Current Plan</span><br>' : ''}
+                        <h5 class="card-title">${title}</h5>
+                        <div class="display-6 fw-bold my-3">${price}</div>
+                        <ul class="list-unstyled text-start mb-4">${features.map(f => '<li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>' + f + '</li>').join('')}</ul>
+                        ${isCurrent
+                            ? '<button class="btn btn-outline-primary w-100" disabled>Active</button>'
+                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeплан('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Upgrade'}</button>`}
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        const trialBadge = isFreeTrial ? `<div class="alert alert-info mb-3"><i class="bi bi-clock me-2"></i><strong>${trialDays} days remaining</strong> on your Free Trial.</div>` : '';
+
+        document.getElementById('billingInfo').innerHTML = `
+            ${trialBadge}
+            <div class="row g-3 mb-4">
+                ${planCard('Free Trial', '30 days', ['Up to 3 Workspaces', '1 AI Agent', '100 queries/mo', 'Basic charts'], isFreeTrial, 'FreeTrial', 'bg-info')}
+                ${planCard('Professional', '$49<span class="fs-6 fw-normal">/mo</span>', ['Unlimited Workspaces', '10 AI Agents', '10,000 queries/mo', 'All chart types', 'Priority support'], isPro, 'Professional', 'bg-primary')}
+                ${planCard('Enterprise', '$199<span class="fs-6 fw-normal">/mo</span>', ['Unlimited everything', 'Custom AI Agents', 'Unlimited queries', 'Custom branding', 'Dedicated support', 'SLA guarantee'], isEnterprise, 'Enterprise', 'bg-dark')}
+            </div>
+            <div class="glass-card p-4">
+                <h5>Billing History</h5>
+                <p class="text-muted small">No invoices yet. Invoices will appear here once you have an active paid plan.</p>
+            </div>`;
+    }
+
+    window.upgradeplan = function(planKey) {
+        if (!userId) return;
+        if (planKey === 'FreeTrial') {
+            fetch('/api/subscription/activate-trial', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ userId })
+            }).then(r => r.json()).then(d => {
+                if (d.error) alert(d.error);
+                else { loadBilling(); }
+            });
+        } else {
+            new bootstrap.Modal(document.getElementById('paymentModal')).show();
+        }
+    };
+
+    function loadBilling() {
+        if (!userId) {
+            document.getElementById('billingInfo').innerHTML = '<p class="text-muted">Please sign in to view billing info.</p>';
+            return;
+        }
+        fetch('/api/subscription/' + userId)
+            .then(r => r.json())
+            .then(plan => renderBilling(plan))
+            .catch(() => { document.getElementById('billingInfo').innerHTML = '<p class="text-danger">Failed to load billing info.</p>'; });
+    }
+
+    // ---- Activity Tab ----
+    let activityPage = 1;
+    let activityTotal = 0;
+    const pageSize = 20;
+
+    function renderActivity(data) {
+        const { items, total } = data;
+        activityTotal = total;
+        if (!items || items.length === 0) {
+            document.getElementById('activityLog').innerHTML = '<p class="text-muted">No activity recorded yet.</p>';
+            document.getElementById('activityPagination').style.display = 'none';
+            return;
+        }
+        const rows = items.map(a => {
+            const dt = new Date(a.createdAt).toLocaleString();
+            const icon = {
+                login: 'bi-box-arrow-in-right text-success',
+                logout: 'bi-box-arrow-right text-muted',
+                agent_execution: 'bi-robot text-primary',
+                datasource_query: 'bi-database text-info',
+                workspace_created: 'bi-folder-plus text-warning',
+                datasource_created: 'bi-plug text-success',
+                agent_created: 'bi-robot text-primary',
+                user_invited: 'bi-person-plus text-info'
+            }[a.action] || 'bi-circle text-muted';
+            return `<tr>
+                <td><i class="bi ${icon} me-2"></i>${a.action}</td>
+                <td>${a.description}</td>
+                <td class="text-muted small">${dt}</td>
+            </tr>`;
+        }).join('');
+        document.getElementById('activityLog').innerHTML = `
+            <div class="table-responsive">
+                <table class="table cp-table">
+                    <thead><tr><th>Action</th><th>Description</th><th>Time</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+        const pagination = document.getElementById('activityPagination');
+        pagination.style.removeProperty('display');
+        document.getElementById('activityPagingInfo').textContent = `Page ${activityPage} of ${Math.ceil(total / pageSize)} (${total} total)`;
+        document.getElementById('activityPrevBtn').disabled = activityPage <= 1;
+        document.getElementById('activityNextBtn').disabled = activityPage >= Math.ceil(total / pageSize);
+    }
+
+    function loadActivity() {
+        let url = `/api/activity?page=${activityPage}&pageSize=${pageSize}`;
+        if (orgId) url += `&organizationId=${orgId}`;
+        else if (userId) url += `&userId=${userId}`;
+        fetch(url).then(r => r.json()).then(renderActivity).catch(() => {
+            document.getElementById('activityLog').innerHTML = '<p class="text-danger">Failed to load activity.</p>';
+        });
+    }
+
+    document.getElementById('activityPrevBtn')?.addEventListener('click', () => { activityPage--; loadActivity(); });
+    document.getElementById('activityNextBtn')?.addEventListener('click', () => { activityPage++; loadActivity(); });
+
+    // ---- Users Tab ----
+    function loadUsers() {
+        if (!orgId) return;
+        fetch(`/api/org/users?organizationId=${orgId}`)
+            .then(r => r.json())
+            .then(users => {
+                if (!users.length) { document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No users yet</td></tr>'; return; }
+                document.getElementById('usersTableBody').innerHTML = users.map(u => `
+                    <tr>
+                        <td>${u.fullName || '-'}</td>
+                        <td>${u.email}</td>
+                        <td><span class="badge bg-secondary">${u.role}</span></td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary" onclick="changeRole('${u.id}','${u.role}')"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-outline-warning" onclick="suspendUser('${u.id}')"><i class="bi bi-pause-circle"></i></button>
+                                <button class="btn btn-outline-danger" onclick="removeUser('${u.id}')"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>`).join('');
+            }).catch(() => {});
+    }
+
+    window.changeRole = function(uid, current) {
+        const role = prompt('Enter new role (User, Contributor, OrgAdmin):', current);
+        if (!role) return;
+        fetch(`/api/org/users/${uid}/role`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ role }) })
+            .then(() => loadUsers());
+    };
+    window.suspendUser = function(uid) {
+        if (!confirm('Suspend this user?')) return;
+        fetch(`/api/org/users/${uid}/suspend`, { method: 'PUT' }).then(() => loadUsers());
+    };
+    window.removeUser = function(uid) {
+        if (!confirm('Remove this user from the organization?')) return;
+        fetch(`/api/org/users/${uid}`, { method: 'DELETE' }).then(() => loadUsers());
+    };
+
+    // Invite User
+    document.getElementById('inviteUserBtn')?.addEventListener('click', function() {
+        new bootstrap.Modal(document.getElementById('inviteUserModal')).show();
+    });
+    document.getElementById('sendInviteBtn')?.addEventListener('click', function() {
+        const email = document.getElementById('inviteEmail').value.trim();
+        const role = document.getElementById('inviteRole').value;
+        if (!email) { document.getElementById('inviteUserAlert').className = 'alert alert-danger'; document.getElementById('inviteUserAlert').textContent = 'Email required.'; return; }
+        fetch('/api/org/users/invite', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ email, role, organizationId: orgId, invitedBy: userId })
+        }).then(r => r.json()).then(d => {
+            if (d.error) {
+                document.getElementById('inviteUserAlert').className = 'alert alert-danger';
+                document.getElementById('inviteUserAlert').textContent = d.error;
+            } else {
+                bootstrap.Modal.getInstance(document.getElementById('inviteUserModal')).hide();
+                loadUsers();
+            }
+        });
+    });
+
+    // Tab activation
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function(e) {
+            const target = e.target.getAttribute('href');
+            if (target === '#tab-billing') loadBilling();
+            else if (target === '#tab-activity') loadActivity();
+            else if (target === '#tab-users') loadUsers();
+        });
+    });
+
+    // Auto-open tab from URL hash or query param
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam) {
+        const tabEl = document.querySelector(`[href="#tab-${tabParam}"]`);
+        if (tabEl) new bootstrap.Tab(tabEl).show();
+    }
+})();
+</script>
+}

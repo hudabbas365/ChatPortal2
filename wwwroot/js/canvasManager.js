@@ -459,3 +459,39 @@ class CanvasManager {
 }
 
 window.canvasManager = new CanvasManager();
+
+// ---- Cross-filtering global state ----
+window.CrossFilter = {
+    activeFilter: null,  // { field, value, label }
+
+    apply(field, value, label) {
+        this.activeFilter = { field, value, label };
+        this._renderBadge();
+        document.dispatchEvent(new CustomEvent('crossfilter:change', { detail: this.activeFilter }));
+    },
+
+    clear() {
+        this.activeFilter = null;
+        this._renderBadge();
+        document.dispatchEvent(new CustomEvent('crossfilter:change', { detail: null }));
+    },
+
+    _renderBadge() {
+        let badge = document.getElementById('crossfilter-badge');
+        if (!this.activeFilter) {
+            if (badge) badge.remove();
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.id = 'crossfilter-badge';
+            badge.className = 'crossfilter-badge';
+            const toolbar = document.querySelector('.canvas-toolbar');
+            if (toolbar) toolbar.appendChild(badge);
+        }
+        badge.innerHTML = `<i class="bi bi-funnel-fill me-1"></i>Filter: <strong>${this.activeFilter.field}</strong> = <strong>${this.activeFilter.label ?? this.activeFilter.value}</strong>
+            <button class="btn btn-xs btn-ghost ms-2" id="crossfilter-clear-btn" title="Clear filter"><i class="bi bi-x-lg"></i></button>`;
+        document.getElementById('crossfilter-clear-btn')?.addEventListener('click', () => this.clear());
+    }
+};
+

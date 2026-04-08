@@ -25,6 +25,13 @@
                             </div>
                         </div>
                         <div class="mb-3">
+                            <label class="form-label-cp">Organization Name</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-building input-icon"></i>
+                                <input type="text" class="form-control cp-input" id="regOrgName" placeholder="Acme Corp" required />
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label-cp">Email Address</label>
                             <div class="input-group-cp">
                                 <i class="bi bi-envelope input-icon"></i>
@@ -60,7 +67,7 @@ $('#registerForm').on('submit', function(e) {
         url: '/api/auth/register',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ email: $('#regEmail').val(), password: $('#regPassword').val(), fullName: $('#regName').val() }),
+        data: JSON.stringify({ email: $('#regEmail').val(), password: $('#regPassword').val(), fullName: $('#regName').val(), organizationName: $('#regOrgName').val() }),
         success: function(r) {
             localStorage.setItem('cp_user', JSON.stringify(r.user));
             localStorage.setItem('cp_token', r.token);

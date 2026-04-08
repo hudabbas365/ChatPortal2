@@ -33,6 +33,16 @@ public class WorkspaceController : Controller
         };
         _db.Workspaces.Add(workspace);
         await _db.SaveChangesAsync();
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "workspace_created",
+            Description = $"Workspace '{workspace.Name}' created.",
+            UserId = req.UserId ?? "",
+            OrganizationId = req.OrganizationId
+        });
+        await _db.SaveChangesAsync();
+
         return Ok(workspace);
     }
 
@@ -51,4 +61,5 @@ public class WorkspaceRequest
 {
     public string? Name { get; set; }
     public int OrganizationId { get; set; }
+    public string? UserId { get; set; }
 }
