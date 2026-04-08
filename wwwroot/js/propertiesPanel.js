@@ -251,6 +251,84 @@ class PropertiesPanel {
             });
         });
     }
+
+    // Initialize collapsible property sections (Data and Style collapsed by default)
+    initCollapsibleSections() {
+        document.querySelectorAll('.prop-section').forEach(section => {
+            const title = section.querySelector('.prop-section-title');
+            if (!title) return;
+            const sectionName = title.textContent.trim().toLowerCase();
+            // Collapse Data and Style sections by default
+            if (sectionName !== 'basic') {
+                section.classList.add('collapsed');
+            }
+            // Add chevron icon if not present
+            if (!title.querySelector('.prop-chevron')) {
+                const chevron = document.createElement('i');
+                chevron.className = 'bi bi-chevron-down prop-chevron ms-auto';
+                title.style.display = 'flex';
+                title.style.alignItems = 'center';
+                title.style.cursor = 'pointer';
+                title.appendChild(chevron);
+            }
+            title.addEventListener('click', () => {
+                section.classList.toggle('collapsed');
+                const chevron = title.querySelector('.prop-chevron');
+                if (chevron) {
+                    chevron.className = section.classList.contains('collapsed')
+                        ? 'bi bi-chevron-right prop-chevron ms-auto'
+                        : 'bi bi-chevron-down prop-chevron ms-auto';
+                }
+            });
+        });
+    }
+
+    // Initialize resizable data-fields panel
+    initDataFieldResize() {
+        const panel = document.querySelector('.data-fields-panel');
+        const scroll = document.getElementById('data-fields-list');
+        if (!panel || !scroll) return;
+
+        let isResizing = false;
+        let startY = 0;
+        let startH = 0;
+
+        scroll.style.cursor = '';
+
+        // Create resize handle
+        const handle = document.createElement('div');
+        handle.className = 'data-fields-resize-handle';
+        handle.title = 'Drag to resize';
+        panel.insertBefore(handle, scroll);
+
+        handle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startH = scroll.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const delta = e.clientY - startY;
+            const newH = Math.max(80, Math.min(600, startH + delta));
+            scroll.style.height = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+            }
+        });
+    }
 }
 
 window.propertiesPanel = new PropertiesPanel();
+
+// Init collapsible sections and data field resize after DOM ready
+document.addEventListener('DOMContentLoaded', function() {
+    propertiesPanel.initCollapsibleSections();
+    propertiesPanel.initDataFieldResize();
+});

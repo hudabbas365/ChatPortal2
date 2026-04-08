@@ -1860,3 +1860,118 @@ body.embed-body {
 .shadow-cp { box-shadow: var(--cp-shadow) !important; }
 .rounded-cp { border-radius: var(--cp-radius) !important; }
 .font-inter { font-family: 'Inter', sans-serif !important; }
+
+/* ============================================================
+   NEW FEATURES CSS (2024 redesign)
+   ============================================================ */
+
+/* --- Datasource type grid --- */
+.ds-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 4px;
+}
+.ds-type-btn {
+    padding: 8px 10px;
+    background: var(--cp-primary-light);
+    border: 1px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    font-size: 0.78rem;
+    color: var(--cp-text);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, border-color 0.15s;
+}
+.ds-type-btn:hover {
+    background: var(--cp-primary);
+    color: #fff;
+    border-color: var(--cp-primary);
+}
+
+/* --- Collapsible property sections --- */
+.prop-section.collapsed .prop-section-title ~ * {
+    display: none !important;
+}
+.prop-section-title {
+    user-select: none;
+}
+.prop-chevron {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+}
+
+/* --- Data fields resize handle --- */
+.data-fields-resize-handle {
+    width: 100%;
+    height: 6px;
+    cursor: ns-resize;
+    background: transparent;
+    position: relative;
+}
+.data-fields-resize-handle::after {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 3px;
+    background: var(--cp-border);
+    border-radius: 2px;
+    margin: 1.5px auto;
+    transition: background 0.15s;
+}
+.data-fields-resize-handle:hover::after {
+    background: var(--cp-primary);
+}
+
+/* --- Cross-filter badge --- */
+.crossfilter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: rgba(91, 155, 213, 0.12);
+    border: 1px solid var(--cp-primary);
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: var(--cp-primary);
+    margin-left: 12px;
+}
+
+/* --- Chat data response card --- */
+.data-response-card {
+    border: 1px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    overflow: hidden;
+    background: var(--cp-card-bg);
+}
+.dr-section {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--cp-border);
+}
+.dr-section:last-child { border-bottom: none; }
+.dr-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--cp-primary);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.dr-value { font-size: 0.9rem; color: var(--cp-text); }
+.dr-code {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-family: var(--cp-font-mono, monospace);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+}
+.dr-actions { padding: 8px 14px; }
+.dr-result-area { padding: 0 14px 14px; }
+.dr-table-scroll { max-height: 260px; overflow-y: auto; }
+
