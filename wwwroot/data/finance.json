@@ -1,0 +1,12 @@
+[
+  {"ticker":"AAPL","sector":"Technology","open":182.5,"high":185.3,"low":181.1,"close":184.2,"volume":58234000,"marketCap":2850000,"peRatio":28.5},
+  {"ticker":"MSFT","sector":"Technology","open":375.2,"high":378.9,"low":374.1,"close":377.5,"volume":22145000,"marketCap":2800000,"peRatio":34.2},
+  {"ticker":"GOOGL","sector":"Technology","open":140.3,"high":142.8,"low":139.5,"close":141.9,"volume":24356000,"marketCap":1790000,"peRatio":26.1},
+  {"ticker":"AMZN","sector":"Consumer","open":178.6,"high":181.2,"low":177.9,"close":180.1,"volume":31245000,"marketCap":1870000,"peRatio":62.3},
+  {"ticker":"NVDA","sector":"Technology","open":495.2,"high":502.5,"low":493.1,"close":499.8,"volume":45678000,"marketCap":1230000,"peRatio":64.5},
+  {"ticker":"META","sector":"Technology","open":350.1,"high":354.7,"low":348.9,"close":352.4,"volume":19876000,"marketCap":905000,"peRatio":23.1},
+  {"ticker":"TSLA","sector":"Automotive","open":242.5,"high":247.8,"low":241.2,"close":245.3,"volume":87654000,"marketCap":779000,"peRatio":71.4},
+  {"ticker":"BRK","sector":"Finance","open":356.2,"high":358.9,"low":355.1,"close":357.8,"volume":4321000,"marketCap":782000,"peRatio":8.9},
+  {"ticker":"JPM","sector":"Finance","open":196.3,"high":198.7,"low":195.8,"close":197.5,"volume":12345000,"marketCap":572000,"peRatio":12.3},
+  {"ticker":"JNJ","sector":"Healthcare","open":158.1,"high":159.8,"low":157.5,"close":158.9,"volume":8765000,"marketCap":417000,"peRatio":15.7}
+]

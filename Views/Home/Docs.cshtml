@@ -1,0 +1,55 @@
+@{
+    ViewData["Title"] = "Documentation";
+}
+
+<section class="cp-section cp-page-hero">
+    <div class="container">
+        <h1 class="page-title">Documentation</h1>
+        <p class="page-subtitle">Learn how to connect datasources, create agents, and build dashboards.</p>
+    </div>
+</section>
+
+<section class="cp-section">
+    <div class="container">
+        <div class="row g-4">
+            <div class="col-md-3">
+                <div class="docs-nav glass-card">
+                    <h6 class="docs-nav-title">Getting Started</h6>
+                    <a href="#quickstart" class="docs-nav-link active">Quick Start</a>
+                    <a href="#datasources" class="docs-nav-link">Connecting Datasources</a>
+                    <a href="#agents" class="docs-nav-link">Creating Agents</a>
+                    <a href="#chat" class="docs-nav-link">Chatting with Data</a>
+                    <a href="#dashboard" class="docs-nav-link">Building Dashboards</a>
+                    <a href="#embed" class="docs-nav-link">Embedding Chat Widget</a>
+                </div>
+            </div>
+            <div class="col-md-9">
+                <div class="docs-content glass-card" id="quickstart">
+                    <h2>Quick Start</h2>
+                    <ol>
+                        <li>Register for a free account at <code>/auth/register</code></li>
+                        <li>Activate your 30-day free trial</li>
+                        <li>Connect a datasource (SQL Server, CSV, API)</li>
+                        <li>Create an AI agent with a system prompt</li>
+                        <li>Start chatting with your data</li>
+                        <li>Pin results to your dashboard</li>
+                    </ol>
+                    <div class="code-block">
+                        <code>dotnet restore &amp;&amp; dotnet run</code>
+                    </div>
+                </div>
+                <div class="docs-content glass-card mt-4" id="embed">
+                    <h2>Embedding the Chat Widget</h2>
+                    <p>Add the chat widget to any website with a single script tag:</p>
+                    <div class="code-block">
+                        <code>&lt;script src="https://yourportal.com/js/embed.js"&gt;&lt;/script&gt;</code>
+                    </div>
+                    <p>Or embed directly in an iframe:</p>
+                    <div class="code-block">
+                        <code>&lt;iframe src="https://yourportal.com/chat/embed" width="400" height="600"&gt;&lt;/iframe&gt;</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

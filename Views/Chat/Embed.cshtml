@@ -1,0 +1,28 @@
+@{
+    ViewData["Title"] = "Embedded Chat";
+    Layout = "_EmbedLayout";
+}
+
+<div class="embed-container">
+    <div class="embed-header">
+        <i class="bi bi-robot me-2"></i>
+        <span>ChatPortal2 Assistant</span>
+    </div>
+    <div class="embed-messages" id="embedMessages">
+        <div class="embed-welcome">
+            <p>Hello! How can I help you today?</p>
+        </div>
+    </div>
+    <div class="embed-input-area">
+        <div class="embed-input-container">
+            <input type="text" class="embed-input" id="embedInput" placeholder="Ask a question..." />
+            <button class="embed-send-btn" id="embedSendBtn">
+                <i class="bi bi-send-fill"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="~/js/embed.js"></script>
+}

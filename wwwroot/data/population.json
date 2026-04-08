@@ -1,0 +1,14 @@
+[
+  {"country":"China","continent":"Asia","population":1411750000,"gdp":17734000,"lifeExpectancy":77.1,"area":9596960},
+  {"country":"India","continent":"Asia","population":1392329000,"gdp":3176300,"lifeExpectancy":69.7,"area":3287263},
+  {"country":"USA","continent":"Americas","population":331893745,"gdp":23315081,"lifeExpectancy":78.9,"area":9833517},
+  {"country":"Indonesia","continent":"Asia","population":273753191,"gdp":1186093,"lifeExpectancy":71.7,"area":1904569},
+  {"country":"Pakistan","continent":"Asia","population":220892331,"gdp":348258,"lifeExpectancy":67.3,"area":881913},
+  {"country":"Brazil","continent":"Americas","population":214326223,"gdp":1608981,"lifeExpectancy":75.9,"area":8515767},
+  {"country":"Nigeria","continent":"Africa","population":211401000,"gdp":440831,"lifeExpectancy":54.7,"area":923768},
+  {"country":"Bangladesh","continent":"Asia","population":167885989,"gdp":355000,"lifeExpectancy":72.6,"area":147570},
+  {"country":"Russia","continent":"Europe","population":145102755,"gdp":1829050,"lifeExpectancy":72.6,"area":17098242},
+  {"country":"Mexico","continent":"Americas","population":126705138,"gdp":1272839,"lifeExpectancy":75.1,"area":1964375},
+  {"country":"Ethiopia","continent":"Africa","population":120812698,"gdp":111271,"lifeExpectancy":66.6,"area":1104300},
+  {"country":"Japan","continent":"Asia","population":125681593,"gdp":4937422,"lifeExpectancy":84.3,"area":377975}
+]

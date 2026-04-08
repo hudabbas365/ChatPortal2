@@ -1,0 +1,382 @@
+@model ChatPortal2.Models.CanvasState
+@{
+    ViewData["Title"] = "Dashboard — Report Designer";
+    Layout = null;
+    var canvasName = ViewBag.CanvasName as string ?? "My Report";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body class="dashboard-body">
+
+<div class="app-shell">
+    <!-- Top Navbar -->
+    <nav class="app-navbar">
+        <div class="navbar-brand">
+            <a href="/" class="brand-link">
+                <i class="bi bi-bar-chart-fill text-primary me-2"></i>
+                <span class="brand-text">ChatPortal2</span>
+            </a>
+        </div>
+        <div class="navbar-title">
+            <span id="canvas-name-display" class="canvas-name">@canvasName</span>
+            <button class="btn btn-xs btn-ghost ms-2" onclick="promptRename()" title="Rename">
+                <i class="bi bi-pencil-square"></i>
+            </button>
+        </div>
+        <div class="navbar-actions ms-auto">
+            <a href="/chat" class="btn btn-sm btn-outline-cp me-2">
+                <i class="bi bi-chat-dots me-1"></i>Chat
+            </a>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPng()" title="Export PNG">
+                <i class="bi bi-image me-1"></i>PNG
+            </button>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPdf()" title="Export PDF">
+                <i class="bi bi-file-pdf me-1"></i>PDF
+            </button>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportJson()" title="Export JSON">
+                <i class="bi bi-download me-1"></i>JSON
+            </button>
+            <label class="btn btn-sm btn-outline-secondary me-2" title="Import JSON">
+                <i class="bi bi-upload me-1"></i>Import
+                <input type="file" accept=".json" onchange="exportManager.importJson(this.files[0])" style="display:none">
+            </label>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportXml()" title="Export XML">
+                <i class="bi bi-file-code me-1"></i>XML
+            </button>
+            <label class="btn btn-sm btn-outline-secondary me-2" title="Import XML">
+                <i class="bi bi-upload me-1"></i>Import XML
+                <input type="file" accept=".xml" onchange="exportManager.importXml(this.files[0])" style="display:none">
+            </label>
+            <button class="btn btn-sm btn-danger" onclick="canvasManager.resetCanvas()" title="Reset">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+            </button>
+        </div>
+    </nav>
+
+    <div class="app-body">
+        <!-- Left Panel: Chart Library -->
+        <aside class="library-panel">
+            <div class="panel-header">
+                <h6 class="mb-0"><i class="bi bi-collection me-2"></i>Chart Library</h6>
+                <span class="badge bg-primary">72</span>
+                <button id="toggle-library-panel" class="panel-toggle-btn ms-1" title="Collapse panel"><i class="bi bi-chevron-left"></i></button>
+            </div>
+            <div class="search-wrap p-2">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="chart-search" class="form-control" placeholder="Search charts...">
+                </div>
+            </div>
+            <div id="chart-library-container" class="library-scroll"></div>
+        </aside>
+
+        <!-- Middle Panel: Canvas -->
+        <main class="canvas-panel">
+            <div class="canvas-toolbar">
+                <span class="text-muted small">Drag from library or double-click to add charts</span>
+                <div class="ms-auto d-flex gap-2 align-items-center">
+                    <span class="small text-muted" id="chart-count-label"></span>
+                </div>
+            </div>
+            <div class="canvas-scroll">
+                <div id="chart-canvas-drop" class="chart-grid p-0"></div>
+                <div id="canvas-empty-state" class="empty-state" style="display:none">
+                    <i class="bi bi-file-bar-chart display-1 text-muted mb-4"></i>
+                    <p class="text-muted">Add charts from the library to get started</p>
+                </div>
+            </div>
+            <div class="page-tabs-bar">
+                <div class="page-tabs" id="page-tabs"></div>
+                <button class="btn btn-xs page-add-btn" id="add-page-btn" title="Add page">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+        </main>
+
+        <!-- Right Panel: Properties -->
+        <aside class="properties-panel">
+            <div class="panel-header">
+                <button id="toggle-properties-panel" class="panel-toggle-btn me-1" title="Collapse panel"><i class="bi bi-chevron-right"></i></button>
+                <h6 class="mb-0"><i class="bi bi-sliders me-2"></i>Properties</h6>
+            </div>
+            <div id="properties-empty" class="empty-state-small">
+                <i class="bi bi-cursor-fill text-muted mb-2"></i>
+                <small class="text-muted">Select a chart to edit its properties</small>
+            </div>
+            <div id="properties-form" style="display:none" class="properties-scroll">
+                <div class="p-3">
+                    <!-- Basic -->
+                    <div class="prop-section">
+                        <div class="prop-section-title">Basic</div>
+                        <div class="mb-2">
+                            <label class="form-label">Title</label>
+                            <input type="text" id="prop-title" class="form-control form-control-sm">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Chart Type</label>
+                            <select id="prop-chart-type" class="form-select form-select-sm">
+                                <optgroup label="Basic">
+                                    <option value="bar">Bar Chart</option><option value="horizontalBar">Horizontal Bar</option>
+                                    <option value="stackedBar">Stacked Bar</option><option value="line">Line Chart</option>
+                                    <option value="area">Area Chart</option><option value="pie">Pie Chart</option>
+                                    <option value="donut">Donut Chart</option><option value="scatter">Scatter Plot</option>
+                                    <option value="bubble">Bubble Chart</option><option value="radar">Radar Chart</option>
+                                </optgroup>
+                                <optgroup label="Advanced">
+                                    <option value="mixedBarLine">Mixed Bar+Line</option><option value="groupedBar">Grouped Bar</option>
+                                    <option value="waterfall">Waterfall</option><option value="funnel">Funnel Chart</option>
+                                    <option value="gauge">Gauge Chart</option><option value="treemap">Treemap</option>
+                                    <option value="heatmap">Heatmap</option><option value="sankey">Sankey Diagram</option>
+                                    <option value="sunburst">Sunburst</option><option value="polarArea">Polar Area</option>
+                                </optgroup>
+                                <optgroup label="Statistical">
+                                    <option value="histogram">Histogram</option><option value="boxPlot">Box Plot</option>
+                                    <option value="violin">Violin Plot</option><option value="bellCurve">Bell Curve</option>
+                                    <option value="pareto">Pareto Chart</option><option value="controlChart">Control Chart</option>
+                                    <option value="regressionLine">Regression Line</option><option value="confidenceBand">Confidence Band</option>
+                                    <option value="errorBar">Error Bar</option><option value="stemLeaf">Stem and Leaf</option>
+                                </optgroup>
+                                <optgroup label="Time Series">
+                                    <option value="timeLine">Time Line</option><option value="candlestick">Candlestick</option>
+                                    <option value="ohlc">OHLC Chart</option><option value="rangeArea">Range Area</option>
+                                    <option value="stepLine">Step Line</option><option value="streamGraph">Stream Graph</option>
+                                    <option value="eventTimeline">Event Timeline</option><option value="gantt">Gantt Chart</option>
+                                    <option value="burnDown">Burn Down</option><option value="velocityChart">Velocity Chart</option>
+                                </optgroup>
+                                <optgroup label="Comparison">
+                                    <option value="bulletChart">Bullet Chart</option><option value="marimekko">Marimekko</option>
+                                    <option value="dotPlot">Dot Plot</option><option value="lollipop">Lollipop Chart</option>
+                                    <option value="dumbbell">Dumbbell Chart</option><option value="slope">Slope Chart</option>
+                                    <option value="divergingBar">Diverging Bar</option><option value="spanChart">Span Chart</option>
+                                    <option value="pairedBar">Paired Bar</option><option value="populationPyramid">Population Pyramid</option>
+                                </optgroup>
+                                <optgroup label="Geographic">
+                                    <option value="choropleth">Choropleth Map</option><option value="bubbleMap">Bubble Map</option>
+                                    <option value="heatMapGeo">Heat Map Geographic</option><option value="flowMap">Flow Map</option>
+                                    <option value="spikeMap">Spike Map</option>
+                                </optgroup>
+                                <optgroup label="Relationship">
+                                    <option value="networkGraph">Network Graph</option><option value="chordDiagram">Chord Diagram</option>
+                                    <option value="arcDiagram">Arc Diagram</option><option value="forceDirected">Force-Directed</option>
+                                    <option value="matrix">Matrix Chart</option>
+                                </optgroup>
+                                <optgroup label="Part-to-Whole">
+                                    <option value="stackedBar100">100% Stacked Bar</option><option value="stackedArea100">100% Stacked Area</option>
+                                    <option value="waffleChart">Waffle Chart</option><option value="pictograph">Pictograph</option>
+                                    <option value="nightingaleRose">Nightingale Rose</option>
+                                </optgroup>
+                                <optgroup label="KPI / Metrics">
+                                    <option value="kpiCard">KPI Card</option><option value="sparkline">Sparkline</option>
+                                    <option value="progressBar">Progress Bar</option><option value="radialProgress">Radial Progress</option>
+                                    <option value="metricTile">Metric Tile</option>
+                                </optgroup>
+                                <optgroup label="Data / Interactive">
+                                    <option value="table">Table Chart</option><option value="slicer">Slicer</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label">Width (cols)</label>
+                                <select id="prop-width" class="form-select form-select-sm">
+                                    <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                                    <option value="5">5</option><option value="6" selected>6</option>
+                                    <option value="8">8</option><option value="12">12</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Height (px)</label>
+                                <input type="number" id="prop-height" class="form-control form-control-sm" min="150" max="800" step="50">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data -->
+                    <div class="prop-section">
+                        <div class="prop-section-title">Data</div>
+                        <div class="mb-2">
+                            <label class="form-label">Dataset</label>
+                            <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
+                                <option value="sales">Sales</option>
+                                <option value="population">Population</option>
+                                <option value="weather">Weather</option>
+                                <option value="finance">Finance</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Label Field</label>
+                            <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Value Field</label>
+                            <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 chart-type-field" data-chart-types="mixedBarLine" style="display:none">
+                            <label class="form-label">Line Value Field</label>
+                            <select id="prop-line-value-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                            <label class="form-label">X Field</label>
+                            <select id="prop-x-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                            <label class="form-label">Y Field</label>
+                            <select id="prop-y-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 chart-type-field" data-chart-types="bubble" style="display:none">
+                            <label class="form-label">R (Size) Field</label>
+                            <select id="prop-r-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 chart-type-field" data-chart-types="stackedBar,groupedBar,stackedBar100,stackedArea100" style="display:none">
+                            <label class="form-label">Group By Field</label>
+                            <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
+                            <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Aggregation</label>
+                            <select id="prop-agg-function" class="form-select form-select-sm">
+                                <option value="SUM">SUM</option><option value="AVG">AVG</option>
+                                <option value="COUNT">COUNT</option><option value="MAX">MAX</option>
+                                <option value="MIN">MIN</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Custom JSON Data</label>
+                            <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Style -->
+                    <div class="prop-section">
+                        <div class="prop-section-title">Style</div>
+                        <div class="mb-2">
+                            <label class="form-label">Primary Color</label>
+                            <input type="color" id="prop-color-palette" class="form-control form-control-sm">
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input type="checkbox" id="prop-show-legend" class="form-check-input">
+                            <label class="form-check-label" for="prop-show-legend">Show Legend</label>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Legend Position</label>
+                            <select id="prop-legend-position" class="form-select form-select-sm">
+                                <option value="top">Top</option><option value="bottom">Bottom</option>
+                                <option value="left">Left</option><option value="right">Right</option>
+                            </select>
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input type="checkbox" id="prop-fill-area" class="form-check-input">
+                            <label class="form-check-label" for="prop-fill-area">Fill Area (Line)</label>
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input type="checkbox" id="prop-show-tooltips" class="form-check-input">
+                            <label class="form-check-label" for="prop-show-tooltips">Show Tooltips</label>
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input type="checkbox" id="prop-animated" class="form-check-input">
+                            <label class="form-check-label" for="prop-animated">Animated</label>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label">Title Font Size</label>
+                                <input type="number" id="prop-title-font-size" class="form-control form-control-sm" min="10" max="28">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Border Radius</label>
+                                <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Data Fields sub-panel -->
+            <div class="data-fields-panel">
+                <div class="panel-header">
+                    <h6 class="mb-0"><i class="bi bi-table me-2"></i>Data Fields</h6>
+                </div>
+                <div id="data-fields-list" class="data-fields-scroll"></div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="~/js/chartLibrary.js"></script>
+<script src="~/js/chartRenderer.js"></script>
+<script src="~/js/propertiesPanel.js"></script>
+<script src="~/js/canvasManager.js"></script>
+<script src="~/js/exportManager.js"></script>
+<script>
+(function() {
+    const initialCharts = @Html.Raw(ViewBag.InitialCharts ?? "[]");
+    const chartLibraryData = @Html.Raw(ViewBag.ChartLibrary ?? "[]");
+    const datasets = @Html.Raw(ViewBag.Datasets ?? "[]");
+    const pages = @Html.Raw(ViewBag.Pages ?? "[]");
+    const activePageIndex = @(ViewBag.ActivePageIndex ?? 0);
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('toggle-library-panel')?.addEventListener('click', function() {
+            const panel = document.querySelector('.library-panel');
+            panel.classList.toggle('collapsed');
+            const icon = this.querySelector('i');
+            icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+        });
+        document.getElementById('toggle-properties-panel')?.addEventListener('click', function() {
+            const panel = document.querySelector('.properties-panel');
+            panel.classList.toggle('collapsed');
+            const icon = this.querySelector('i');
+            icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
+        });
+
+        chartLibrary.init(chartLibraryData);
+        canvasManager.init(initialCharts, pages, activePageIndex);
+
+        // Populate dataset options safely (use DOM API to avoid XSS)
+        const ds = document.getElementById('prop-dataset');
+        if (ds && datasets.length) {
+            ds.innerHTML = '';
+            datasets.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d.charAt(0).toUpperCase() + d.slice(1);
+                ds.appendChild(opt);
+            });
+        }
+
+        function updateCount() {
+            const el = document.getElementById('chart-count-label');
+            if (el) el.textContent = `${canvasManager.charts.length} chart${canvasManager.charts.length !== 1 ? 's' : ''}`;
+        }
+        setInterval(updateCount, 500);
+    });
+})();
+
+function promptRename() {
+    const current = document.getElementById('canvas-name-display').textContent;
+    const name = prompt('Enter canvas name:', current);
+    if (name && name.trim()) {
+        document.getElementById('canvas-name-display').textContent = name.trim();
+        fetch('/api/chart/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim() })
+        });
+    }
+}
+</script>
+</body>
+</html>

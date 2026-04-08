@@ -1,0 +1,196 @@
+@{
+    ViewData["Title"] = "SEO Management";
+    Layout = "_Layout";
+}
+
+<div class="admin-page">
+    <div class="container-fluid py-4">
+        <div class="admin-header mb-4 d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="admin-title">
+                    <i class="bi bi-search me-2"></i>SEO Management
+                </h1>
+                <p class="admin-subtitle">Manage page metadata, sitemaps, and robots.txt</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-cp" onclick="seoManager.previewRobots()">
+                    <i class="bi bi-robot me-1"></i>robots.txt
+                </button>
+                <button class="btn btn-outline-cp" onclick="seoManager.previewSitemap()">
+                    <i class="bi bi-map me-1"></i>Preview Sitemap
+                </button>
+                <button class="btn btn-outline-secondary" onclick="seoManager.seedDefaults()">
+                    <i class="bi bi-database-fill-add me-1"></i>Seed Defaults
+                </button>
+                <button class="btn cp-btn-gradient" onclick="seoManager.openAddModal()">
+                    <i class="bi bi-plus-lg me-1"></i>Add Entry
+                </button>
+            </div>
+        </div>
+
+        <div id="seoAlert" class="alert d-none"></div>
+
+        <!-- SEO Entries Table -->
+        <div class="glass-card p-0 overflow-hidden">
+            <table class="table table-hover mb-0" id="seoTable">
+                <thead class="cp-table-head">
+                    <tr>
+                        <th>Page URL</th>
+                        <th>Title</th>
+                        <th>Description</th>
+                        <th>Priority</th>
+                        <th>Freq</th>
+                        <th>Sitemap</th>
+                        <th>SEO Score</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="seoTableBody">
+                    <tr>
+                        <td colspan="8" class="text-center py-4">
+                            <span class="spinner-border spinner-border-sm me-2"></span>Loading SEO entries...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="seoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content cp-modal">
+            <div class="modal-header cp-modal-header">
+                <h5 class="modal-title" id="seoModalTitle">Add SEO Entry</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="seoId" value="0" />
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label-cp">Page URL *</label>
+                        <input type="text" class="form-control cp-input" id="seoPageUrl" placeholder="/about" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">Page Title</label>
+                        <input type="text" class="form-control cp-input" id="seoTitle" placeholder="About Us — ChatPortal2" />
+                        <small class="text-muted" id="seoTitleCount">0 / 60 chars</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">Meta Keywords</label>
+                        <input type="text" class="form-control cp-input" id="seoKeywords" placeholder="analytics, AI, chat" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label-cp">Meta Description</label>
+                        <textarea class="form-control cp-input" id="seoMetaDesc" rows="2" placeholder="Describe this page for search engines..."></textarea>
+                        <small class="text-muted" id="seoDescCount">0 / 160 chars</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">OG Title</label>
+                        <input type="text" class="form-control cp-input" id="seoOgTitle" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">OG Image URL</label>
+                        <input type="text" class="form-control cp-input" id="seoOgImage" placeholder="https://..." />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label-cp">OG Description</label>
+                        <textarea class="form-control cp-input" id="seoOgDesc" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">Canonical URL</label>
+                        <input type="text" class="form-control cp-input" id="seoCanonical" placeholder="https://..." />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label-cp">Robots Directive</label>
+                        <select class="form-select cp-input" id="seoRobots">
+                            <option value="index, follow">index, follow</option>
+                            <option value="noindex, nofollow">noindex, nofollow</option>
+                            <option value="noindex, follow">noindex, follow</option>
+                            <option value="index, nofollow">index, nofollow</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label-cp">Sitemap Priority (0.0 – 1.0)</label>
+                        <input type="range" class="form-range" id="seoPriority" min="0" max="1" step="0.1" value="0.5"
+                               oninput="document.getElementById('seoPriorityVal').textContent=this.value" />
+                        <span id="seoPriorityVal">0.5</span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label-cp">Change Frequency</label>
+                        <select class="form-select cp-input" id="seoChangeFreq">
+                            <option value="always">Always</option>
+                            <option value="hourly">Hourly</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly" selected>Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                            <option value="never">Never</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-center mt-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="seoIncludeSitemap" checked />
+                            <label class="form-check-label" for="seoIncludeSitemap">Include in Sitemap</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label-cp">Structured Data (JSON-LD)</label>
+                        <textarea class="form-control cp-input font-monospace" id="seoStructuredData" rows="4"
+                                  placeholder='{"@@context":"https://schema.org","@@type":"WebPage"}'></textarea>
+                    </div>
+                    <!-- SEO Score -->
+                    <div class="col-12">
+                        <div class="seo-score-panel">
+                            <span class="seo-score-label">SEO Score:</span>
+                            <div class="seo-score-bar">
+                                <div class="seo-score-fill" id="seoScoreFill" style="width:0%"></div>
+                            </div>
+                            <span id="seoScoreText">0/100</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer cp-modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" onclick="seoManager.saveEntry()">
+                    <i class="bi bi-floppy me-1"></i>Save Entry
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content cp-modal">
+            <div class="modal-header cp-modal-header">
+                <h5 class="modal-title" id="previewModalTitle">Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="previewContent" class="bg-light p-3 rounded small" style="max-height:500px;overflow:auto"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="~/js/seo.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    seoManager.loadEntries();
+    // Live char counts
+    document.getElementById('seoTitle')?.addEventListener('input', function() {
+        document.getElementById('seoTitleCount').textContent = `${this.value.length} / 60 chars`;
+        seoManager.updateScore();
+    });
+    document.getElementById('seoMetaDesc')?.addEventListener('input', function() {
+        document.getElementById('seoDescCount').textContent = `${this.value.length} / 160 chars`;
+        seoManager.updateScore();
+    });
+});
+</script>
+}

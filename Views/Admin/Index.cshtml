@@ -1,0 +1,103 @@
+@{
+    ViewData["Title"] = "Admin Dashboard";
+    Layout = "_Layout";
+}
+
+<div class="admin-page">
+    <div class="container-fluid py-4">
+        <div class="admin-header mb-4">
+            <h1 class="admin-title">
+                <i class="bi bi-shield-lock me-2"></i>Super Admin Dashboard
+            </h1>
+            <p class="admin-subtitle">System overview and management</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card glass-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <i class="bi bi-building"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalOrgs</div>
+                        <div class="stat-label">Organizations</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card glass-card">
+                    <div class="stat-icon stat-icon-green">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalUsers</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card glass-card">
+                    <div class="stat-icon stat-icon-purple">
+                        <i class="bi bi-folder-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalWorkspaces</div>
+                        <div class="stat-label">Workspaces</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card glass-card">
+                    <div class="stat-icon stat-icon-orange">
+                        <i class="bi bi-chat-dots-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value">@ViewBag.TotalMessages</div>
+                        <div class="stat-label">Chat Messages</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Actions -->
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-search"></i>
+                    </div>
+                    <h4>Manage SEO</h4>
+                    <p>Control page titles, meta descriptions, Open Graph tags, and generate dynamic sitemaps.</p>
+                    <a href="/admin/seo" class="btn cp-btn-gradient">
+                        <i class="bi bi-search me-2"></i>Manage SEO
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-people"></i>
+                    </div>
+                    <h4>User Management</h4>
+                    <p>View, manage, and configure user accounts, roles, and subscription plans.</p>
+                    <button class="btn btn-outline-cp">
+                        <i class="bi bi-people me-2"></i>Manage Users
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="admin-action-card glass-card">
+                    <div class="admin-action-icon">
+                        <i class="bi bi-bar-chart"></i>
+                    </div>
+                    <h4>Analytics</h4>
+                    <p>System usage, active users, popular features, and performance metrics.</p>
+                    <a href="/dashboard" class="btn btn-outline-cp">
+                        <i class="bi bi-bar-chart me-2"></i>View Analytics
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

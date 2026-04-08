@@ -1,0 +1,76 @@
+@{
+    ViewData["Title"] = "Create Account";
+    Layout = "_Layout";
+}
+
+<div class="auth-page">
+    <div class="container">
+        <div class="row justify-content-center min-vh-100 align-items-center">
+            <div class="col-md-5">
+                <div class="auth-card glass-card">
+                    <div class="auth-header text-center mb-4">
+                        <div class="auth-logo">
+                            <i class="bi bi-bar-chart-fill"></i>
+                        </div>
+                        <h2 class="auth-title">Create your account</h2>
+                        <p class="auth-subtitle">Start your 30-day free trial — no credit card required</p>
+                    </div>
+                    <div id="regAlert" class="alert d-none"></div>
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label class="form-label-cp">Full Name</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-person input-icon"></i>
+                                <input type="text" class="form-control cp-input" id="regName" placeholder="John Smith" required />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label-cp">Email Address</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-envelope input-icon"></i>
+                                <input type="email" class="form-control cp-input" id="regEmail" placeholder="you@example.com" required />
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label-cp">Password</label>
+                            <div class="input-group-cp">
+                                <i class="bi bi-lock input-icon"></i>
+                                <input type="password" class="form-control cp-input" id="regPassword" placeholder="At least 8 characters" required minlength="8" />
+                            </div>
+                        </div>
+                        <button type="submit" class="btn cp-btn-gradient w-100 btn-lg" id="regBtn">
+                            <i class="bi bi-rocket-takeoff me-2"></i>Create Account &amp; Start Trial
+                        </button>
+                    </form>
+                    <div class="auth-footer mt-4 text-center">
+                        <p>Already have an account? <a href="/auth/login" class="auth-link">Sign in</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+$('#registerForm').on('submit', function(e) {
+    e.preventDefault();
+    const btn = $('#regBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Creating account...');
+    $.ajax({
+        url: '/api/auth/register',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ email: $('#regEmail').val(), password: $('#regPassword').val(), fullName: $('#regName').val() }),
+        success: function(r) {
+            localStorage.setItem('cp_user', JSON.stringify(r.user));
+            localStorage.setItem('cp_token', r.token);
+            window.location.href = '/chat';
+        },
+        error: function(e) {
+            $('#regAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Registration failed.');
+            btn.prop('disabled', false).html('<i class="bi bi-rocket-takeoff me-2"></i>Create Account & Start Trial');
+        }
+    });
+});
+</script>
+}

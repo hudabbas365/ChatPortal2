@@ -1,0 +1,64 @@
+<aside class="cp-left-panel" id="leftPanel">
+    <div class="left-panel-header">
+        <a href="/" class="panel-brand">
+            <i class="bi bi-bar-chart-fill"></i>
+            <span>ChatPortal2</span>
+        </a>
+        <button class="btn btn-icon panel-close-btn" id="panelCloseBtn">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+
+    <div class="panel-section">
+        <div class="panel-section-label">Organization</div>
+        <div class="panel-org-info" id="orgInfo">
+            <i class="bi bi-building me-2"></i><span id="orgName">My Organization</span>
+        </div>
+    </div>
+
+    <div class="panel-section">
+        <div class="panel-section-label d-flex justify-content-between align-items-center">
+            Workspaces
+            <button class="btn btn-icon btn-xs" id="addWorkspaceBtn" title="Add Workspace">
+                <i class="bi bi-plus"></i>
+            </button>
+        </div>
+        <div class="panel-list" id="workspaceList">
+            <div class="panel-list-item active" data-workspace-id="0">
+                <i class="bi bi-folder me-2"></i>Default Workspace
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-section">
+        <div class="panel-section-label d-flex justify-content-between align-items-center">
+            AI Agents
+            <button class="btn btn-icon btn-xs" id="addAgentBtn" title="Add Agent">
+                <i class="bi bi-plus"></i>
+            </button>
+        </div>
+        <div class="panel-list" id="agentList">
+            <div class="panel-list-item active" data-agent-id="0">
+                <i class="bi bi-robot me-2"></i>Default Agent
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-section">
+        <div class="panel-section-label">Datasources</div>
+        <div class="panel-list" id="datasourceList">
+            <div class="panel-list-item" data-ds-id="0">
+                <i class="bi bi-database me-2"></i>Sample Data
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-footer">
+        <a href="/org/settings" class="panel-footer-link">
+            <i class="bi bi-gear me-2"></i>Settings
+        </a>
+        <a href="/admin" class="panel-footer-link">
+            <i class="bi bi-shield-lock me-2"></i>Admin
+        </a>
+    </div>
+</aside>

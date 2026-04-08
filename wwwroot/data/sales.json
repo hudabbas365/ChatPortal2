@@ -1,0 +1,14 @@
+[
+  {"month":"Jan","region":"North","product":"Widget A","revenue":42000,"units":320,"profit":12000,"growth":5.2},
+  {"month":"Jan","region":"South","product":"Widget B","revenue":35000,"units":280,"profit":9800,"growth":3.1},
+  {"month":"Jan","region":"East","product":"Widget C","revenue":28000,"units":190,"profit":7500,"growth":7.4},
+  {"month":"Feb","region":"North","product":"Widget A","revenue":45000,"units":350,"profit":13500,"growth":7.1},
+  {"month":"Feb","region":"South","product":"Widget B","revenue":38000,"units":295,"profit":10200,"growth":8.6},
+  {"month":"Feb","region":"East","product":"Widget C","revenue":31000,"units":210,"profit":8200,"growth":10.7},
+  {"month":"Mar","region":"North","product":"Widget A","revenue":51000,"units":400,"profit":15000,"growth":13.3},
+  {"month":"Mar","region":"South","product":"Widget B","revenue":41000,"units":320,"profit":11500,"growth":7.9},
+  {"month":"Mar","region":"East","product":"Widget C","revenue":34000,"units":230,"profit":9100,"growth":9.7},
+  {"month":"Apr","region":"North","product":"Widget A","revenue":48000,"units":380,"profit":14200,"growth":6.1},
+  {"month":"Apr","region":"South","product":"Widget B","revenue":43000,"units":340,"profit":12000,"growth":4.9},
+  {"month":"Apr","region":"East","product":"Widget C","revenue":36000,"units":245,"profit":9800,"growth":5.9}
+]

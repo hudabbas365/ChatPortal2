@@ -1,0 +1,31 @@
+<nav class="cp-navbar">
+    <div class="container-fluid">
+        <a class="navbar-brand-cp" href="/">
+            <i class="bi bi-bar-chart-fill"></i>
+            <span>ChatPortal2</span>
+        </a>
+        <button class="navbar-toggler-cp" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
+            <i class="bi bi-list"></i>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav-cp me-auto">
+                <li><a href="/" class="nav-link-cp @(ViewContext.RouteData.Values["action"]?.ToString() == "Index" && ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")">Home</a></li>
+                <li><a href="/about" class="nav-link-cp">About</a></li>
+                <li><a href="/pricing" class="nav-link-cp">Pricing</a></li>
+                <li><a href="/docs" class="nav-link-cp">Docs</a></li>
+                <li><a href="/blog" class="nav-link-cp">Blog</a></li>
+            </ul>
+            <div class="navbar-actions-cp">
+                <a href="/chat" class="btn btn-sm btn-outline-cp me-2">
+                    <i class="bi bi-chat-dots me-1"></i>Chat
+                </a>
+                <a href="/dashboard" class="btn btn-sm btn-outline-cp me-2">
+                    <i class="bi bi-bar-chart me-1"></i>Dashboard
+                </a>
+                <a href="/auth/login" class="btn btn-sm cp-btn-gradient" id="navAuthBtn">
+                    <i class="bi bi-person me-1"></i>Sign In
+                </a>
+            </div>
+        </div>
+    </div>
+</nav>
