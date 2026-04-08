@@ -12,6 +12,37 @@
         return div.innerHTML;
     }
 
+    // Safely extract and parse a data_response JSON object from text
+    function tryParseDataResponse(text) {
+        let start = text.indexOf('{');
+        while (start !== -1) {
+            let depth = 0;
+            let inString = false;
+            let escape = false;
+            for (let i = start; i < text.length; i++) {
+                const ch = text[i];
+                if (escape) { escape = false; continue; }
+                if (ch === '\\' && inString) { escape = true; continue; }
+                if (ch === '"') { inString = !inString; continue; }
+                if (inString) continue;
+                if (ch === '{') depth++;
+                else if (ch === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        const candidate = text.slice(start, i + 1);
+                        try {
+                            const obj = JSON.parse(candidate);
+                            if (obj && obj.type === 'data_response') return obj;
+                        } catch { /* not valid JSON */ }
+                        break;
+                    }
+                }
+            }
+            start = text.indexOf('{', start + 1);
+        }
+        return null;
+    }
+
     function addMessage(role, content, streaming) {
         const container = document.getElementById('chatMessages');
         if (!container) return null;
@@ -261,14 +292,11 @@
                 }
             }
 
-            // Try to detect structured JSON response
+            // Try to detect structured JSON response using a safe extraction
             if (aiBubble && fullText) {
-                const jsonMatch = fullText.match(/\{[\s\S]*"type"\s*:\s*"data_response"[\s\S]*\}/);
-                if (jsonMatch) {
-                    try {
-                        const parsed = JSON.parse(jsonMatch[0]);
-                        renderDataResponse(aiBubble, parsed);
-                    } catch { /* not valid JSON, keep as text */ }
+                const parsed = tryParseDataResponse(fullText);
+                if (parsed) {
+                    renderDataResponse(aiBubble, parsed);
                 } else {
                     aiBubble.textContent = fullText;
                 }

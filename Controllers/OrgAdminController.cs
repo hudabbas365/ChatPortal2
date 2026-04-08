@@ -55,7 +55,10 @@ public class OrgAdminController : Controller
             Role = req.Role ?? "User",
             OrganizationId = req.OrganizationId
         };
-        var tempPassword = "Invite@" + Guid.NewGuid().ToString("N")[..8];
+        // Generate a cryptographically random temporary password
+        var randomBytes = new byte[16];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
+        var tempPassword = "I!" + Convert.ToBase64String(randomBytes).Replace("+", "a").Replace("/", "b").Replace("=", "C")[..16];
         var result = await _userManager.CreateAsync(user, tempPassword);
         if (!result.Succeeded)
             return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });

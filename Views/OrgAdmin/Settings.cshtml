@@ -128,7 +128,7 @@
                     <h4>Activity Log</h4>
                     <p class="text-muted">Recent actions performed in your organization.</p>
                     <div id="activityLog"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading activity...</div></div>
-                    <div id="activityPagination" class="mt-3 d-flex justify-content-between align-items-center" style="display:none!important">
+                    <div id="activityPagination" class="mt-3 d-flex justify-content-between align-items-center d-none">
                         <span class="small text-muted" id="activityPagingInfo"></span>
                         <div>
                             <button class="btn btn-sm btn-outline-secondary me-1" id="activityPrevBtn" disabled>
@@ -223,7 +223,7 @@
                         <ul class="list-unstyled text-start mb-4">${features.map(f => '<li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>' + f + '</li>').join('')}</ul>
                         ${isCurrent
                             ? '<button class="btn btn-outline-primary w-100" disabled>Active</button>'
-                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeплан('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Upgrade'}</button>`}
+                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeplan('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Upgrade'}</button>`}
                     </div>
                 </div>
             </div>`;
@@ -281,7 +281,7 @@
         activityTotal = total;
         if (!items || items.length === 0) {
             document.getElementById('activityLog').innerHTML = '<p class="text-muted">No activity recorded yet.</p>';
-            document.getElementById('activityPagination').style.display = 'none';
+            document.getElementById('activityPagination').classList.add('d-none');
             return;
         }
         const rows = items.map(a => {
@@ -310,7 +310,7 @@
                 </table>
             </div>`;
         const pagination = document.getElementById('activityPagination');
-        pagination.style.removeProperty('display');
+        pagination.classList.remove('d-none');
         document.getElementById('activityPagingInfo').textContent = `Page ${activityPage} of ${Math.ceil(total / pageSize)} (${total} total)`;
         document.getElementById('activityPrevBtn').disabled = activityPage <= 1;
         document.getElementById('activityNextBtn').disabled = activityPage >= Math.ceil(total / pageSize);
