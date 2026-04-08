@@ -37,12 +37,19 @@ public class AuthController : Controller
         if (string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Password))
             return BadRequest(new { error = "Email and password are required." });
 
+        // Create Organization first
+        var orgName = !string.IsNullOrWhiteSpace(req.OrganizationName) ? req.OrganizationName : (req.FullName ?? req.Email) + "'s Organization";
+        var org = new Organization { Name = orgName };
+        _db.Organizations.Add(org);
+        await _db.SaveChangesAsync();
+
         var user = new ApplicationUser
         {
             UserName = req.Email,
             Email = req.Email,
             FullName = req.FullName ?? req.Email,
-            Role = "User"
+            Role = "OrgAdmin",
+            OrganizationId = org.Id
         };
 
         var result = await _userManager.CreateAsync(user, req.Password);
@@ -56,7 +63,7 @@ public class AuthController : Controller
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);
 
-        return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role } });
+        return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName = org.Name } });
     }
 
     [HttpPost("/api/auth/login")]
@@ -76,7 +83,10 @@ public class AuthController : Controller
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);
 
-        return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role } });
+        _db.ActivityLogs.Add(new ActivityLog { Action = "login", Description = $"{user.Email} signed in.", UserId = user.Id, OrganizationId = user.OrganizationId });
+        await _db.SaveChangesAsync();
+
+        return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId } });
     }
 
     [HttpPost("/api/auth/logout")]
@@ -122,6 +132,7 @@ public class RegisterRequest
     public string? Email { get; set; }
     public string? Password { get; set; }
     public string? FullName { get; set; }
+    public string? OrganizationName { get; set; }
 }
 
 public class LoginRequest

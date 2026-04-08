@@ -54,6 +54,9 @@
     </div>
 
     <div class="panel-footer">
+        <a href="/org/settings?tab=activity" class="panel-footer-link">
+            <i class="bi bi-activity me-2"></i>Activity
+        </a>
         <a href="/org/settings" class="panel-footer-link">
             <i class="bi bi-gear me-2"></i>Settings
         </a>
@@ -62,3 +65,116 @@
         </a>
     </div>
 </aside>
+
+<!-- Add Workspace Modal -->
+<div class="modal fade" id="addWorkspaceModal" tabindex="-1" aria-labelledby="addWorkspaceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addWorkspaceModalLabel"><i class="bi bi-folder-plus me-2"></i>Create Workspace</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="wsModalAlert" class="alert d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Workspace Name</label>
+                    <input type="text" class="form-control cp-input" id="wsName" placeholder="e.g. Sales Analytics" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="createWorkspaceBtn">
+                    <i class="bi bi-folder-plus me-1"></i>Create
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Agent Modal -->
+<div class="modal fade" id="addAgentModal" tabindex="-1" aria-labelledby="addAgentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addAgentModalLabel"><i class="bi bi-robot me-2"></i>Create AI Agent</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="agentModalAlert" class="alert d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Agent Name</label>
+                    <input type="text" class="form-control cp-input" id="agentName" placeholder="e.g. Sales Agent" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">System Prompt</label>
+                    <textarea class="form-control cp-input" id="agentSystemPrompt" rows="4" placeholder="You are a helpful data assistant..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Datasource</label>
+                    <div class="d-flex gap-2">
+                        <select class="form-select cp-input" id="agentDatasource">
+                            <option value="">-- Select or create datasource --</option>
+                        </select>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="openDatasourceModalBtn" title="Connect new datasource">
+                            <i class="bi bi-plug me-1"></i>Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="createAgentBtn">
+                    <i class="bi bi-robot me-1"></i>Create Agent
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Connect Datasource Modal -->
+<div class="modal fade" id="addDatasourceModal" tabindex="-1" aria-labelledby="addDatasourceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addDatasourceModalLabel"><i class="bi bi-plug me-2"></i>Connect Datasource</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="dsModalAlert" class="alert d-none"></div>
+                <div id="dsTypeSelector">
+                    <div class="mb-3">
+                        <input type="text" class="form-control cp-input" id="dsTypeSearch" placeholder="Search datasource types..." />
+                    </div>
+                    <div id="dsTypeGrid" class="ds-type-grid"></div>
+                </div>
+                <div id="dsConfigForm" style="display:none">
+                    <div class="mb-3">
+                        <button class="btn btn-sm btn-outline-secondary" id="dsBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
+                        <span class="ms-2 fw-bold" id="dsSelectedTypeName"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Datasource Name</label>
+                        <input type="text" class="form-control cp-input" id="dsName" placeholder="e.g. Sales DB" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Connection String / URL</label>
+                        <input type="text" class="form-control cp-input" id="dsConnectionString" placeholder="Server=...;Database=..." />
+                    </div>
+                    <div id="dsFieldsPreview" style="display:none">
+                        <label class="form-label">Available Fields</label>
+                        <div id="dsFieldsList" class="d-flex flex-wrap gap-2 mt-1"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-primary" id="dsTestBtn" style="display:none">
+                    <i class="bi bi-wifi me-1"></i>Test &amp; Load Fields
+                </button>
+                <button type="button" class="btn cp-btn-gradient" id="saveDatasourceBtn" style="display:none">
+                    <i class="bi bi-plug me-1"></i>Connect &amp; Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

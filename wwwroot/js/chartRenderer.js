@@ -108,11 +108,49 @@ class ChartRenderer {
 
         const ctx = canvasEl.getContext('2d');
         const config = this.buildConfig(chartDef, data);
+
+        // Add cross-filter click handler
+        const labelField = chartDef.mapping?.labelField || 'label';
+        if (!config.options) config.options = {};
+        if (!config.options.plugins) config.options.plugins = {};
+        config.options.onClick = (event, elements) => {
+            if (!elements || !elements.length) return;
+            const idx = elements[0].index;
+            const label = config.data?.labels?.[idx];
+            if (label !== undefined && window.CrossFilter) {
+                if (window.CrossFilter.activeFilter?.value === label) {
+                    window.CrossFilter.clear();
+                } else {
+                    window.CrossFilter.apply(labelField, label, label);
+                }
+            }
+        };
+
         try {
             this.instances[chartDef.id] = new Chart(ctx, config);
         } catch(e) {
             console.warn('Chart render error:', e);
         }
+
+        // Listen for cross-filter events and re-render with filtered data
+        this._crossFilterListener = this._crossFilterListener || {};
+        if (this._crossFilterListener[chartDef.id]) {
+            document.removeEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
+        }
+        this._crossFilterListener[chartDef.id] = async (e) => {
+            const filter = e.detail;
+            let filtered = data;
+            if (filter && data.rawData) {
+                const fData = data.rawData.filter(row => String(row[filter.field]) === String(filter.value));
+                filtered = { labels: fData.map(r => r[labelField]), values: fData.map(r => parseFloat(r[chartDef.mapping?.valueField || 'value']) || 0), rawData: data.rawData };
+            }
+            const inst = this.instances[chartDef.id];
+            if (!inst) return;
+            inst.data.labels = filtered.labels || data.labels;
+            inst.data.datasets[0].data = filtered.values || data.values;
+            inst.update();
+        };
+        document.addEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
     }
 
     async fetchData(chartDef) {

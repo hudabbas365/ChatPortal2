@@ -49,7 +49,25 @@ public class ChatController : Controller
         await foreach (var chunk in _cohereService.StreamChatAsync(
             req.Message ?? "",
             history,
-            req.SystemPrompt ?? "You are a helpful data assistant."))
+            req.SystemPrompt ?? @"You are ChatPortal2's AI data assistant. When a user asks a data question:
+
+1. **Understand Intent**: Determine what data the user wants.
+2. **Generate Query**: Based on the connected datasource, generate the appropriate SQL/query.
+3. **Provide Description**: Explain what the query does in plain English.
+4. **Return Structure**: Always respond in this JSON format when a data query is involved:
+
+{
+  ""type"": ""data_response"",
+  ""prompt"": ""The original user question rephrased as a clear intent"",
+  ""query"": ""SELECT region, SUM(revenue) as total_revenue FROM sales GROUP BY region ORDER BY total_revenue DESC"",
+  ""description"": ""This query retrieves total revenue grouped by region, sorted from highest to lowest."",
+  ""suggestedChart"": ""bar"",
+  ""suggestedFields"": { ""label"": ""region"", ""value"": ""total_revenue"" }
+}
+
+For non-data questions, respond normally in plain text.
+When the user asks to visualize or chart data, suggest appropriate chart types.
+Always be concise and actionable."))
         {
             fullResponse.Append(chunk);
             var data = $"data: {Newtonsoft.Json.JsonConvert.SerializeObject(new { text = chunk })}\n\n";
@@ -77,8 +95,29 @@ public class ChatController : Controller
                 WorkspaceId = req.WorkspaceId,
                 UserId = req.UserId
             });
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "agent_execution",
+                Description = $"Chat message sent in workspace {req.WorkspaceId}.",
+                UserId = req.UserId
+            });
             await _db.SaveChangesAsync();
         }
+    }
+
+    [HttpPost("/api/data/execute")]
+    public IActionResult ExecuteQuery([FromBody] ExecuteQueryRequest req)
+    {
+        // Placeholder: returns sample data for the query
+        // In production this would execute against the bound datasource
+        var sampleData = new List<Dictionary<string, object>>
+        {
+            new() { ["region"] = "North", ["total_revenue"] = 142500 },
+            new() { ["region"] = "South", ["total_revenue"] = 98700 },
+            new() { ["region"] = "East",  ["total_revenue"] = 211300 },
+            new() { ["region"] = "West",  ["total_revenue"] = 175600 }
+        };
+        return Ok(new { success = true, data = sampleData, rowCount = sampleData.Count });
     }
 
     [HttpPost("/api/chat/pin")]
@@ -122,5 +161,12 @@ public class PinRequest
     public string? JsonData { get; set; }
     public int ChatMessageId { get; set; }
     public int WorkspaceId { get; set; }
+    public string? UserId { get; set; }
+}
+
+public class ExecuteQueryRequest
+{
+    public string? Query { get; set; }
+    public int? DatasourceId { get; set; }
     public string? UserId { get; set; }
 }
