@@ -8,148 +8,162 @@
 
     // ── Lineage view ────────────────────────────────────────
     WF._renderLineageView = function (agents, datasources, wsData) {
-        const reports = wsData.reports || [];
-        let html = '';
-        datasources.forEach(ds => {
-            const boundAgents = agents.filter(a => a.datasourceId === ds.id);
-            html += '<div class="wf-lineage-row">';
-            html += `
-            <div class="wf-lineage-node datasource" data-action="ds-detail" data-ds-id="${ds.guid}">
-                <div class="wf-lineage-icon"><i class="bi bi-database"></i></div>
-                <div class="wf-lineage-info">
-                    <div class="wf-lineage-name">${this._esc(ds.name)}</div>
-                    <div class="wf-lineage-type">${this._esc(ds.type || 'Datasource')}</div>
-                </div>
-                <span class="wf-lineage-badge connected"><i class="bi bi-check-circle-fill"></i> Connected</span>
-            </div>`;
-            html += '<div class="wf-lineage-connector"><span class="wf-connector-pulse"></span></div>';
-            html += '<div class="wf-lineage-targets">';
-            boundAgents.forEach(a => {
-                const agentReports = reports.filter(rpt => rpt.agentId === a.id);
-                html += '<div class="wf-lineage-agent-group">';
-                html += `
-                <div class="wf-lineage-node agent" data-action="agent-chat" data-agent-id="${a.guid}" data-ws-id="${wsData.guid}">
-                    <div class="wf-lineage-icon"><i class="bi bi-robot"></i></div>
-                    <div class="wf-lineage-info">
-                        <div class="wf-lineage-name">${this._esc(a.name)}</div>
-                        <div class="wf-lineage-type">AI Agent</div>
-                    </div>
-                </div>`;
-                // Sub-targets: reports linked to this agent + dashboard
-                const hasSubTargets = agentReports.length > 0;
-                if (hasSubTargets) {
-                    html += '<div class="wf-lineage-sub-targets">';
-                    agentReports.forEach(rpt => {
-                        html += `
-                        <div class="wf-report-binding-wrap">
-                            <div class="wf-report-binders">
-                                <div class="wf-report-binder from-agent">
-                                    <div class="wf-lineage-node agent mini">
-                                        <div class="wf-lineage-icon"><i class="bi bi-robot"></i></div>
-                                        <div class="wf-lineage-info">
-                                            <div class="wf-lineage-name">${this._esc(a.name)}</div>
-                                            <div class="wf-lineage-type">AI Agent</div>
-                                        </div>
-                                    </div>
-                                    <div class="wf-report-arrow-line"></div>
-                                    <span class="wf-report-arrow-label">AGENT</span>
-                                </div>
-                                <div class="wf-report-binder from-dashboard">
-                                    <div class="wf-lineage-node dashboard mini" data-action="dashboard" data-ws-id="${wsData.guid}">
-                                        <div class="wf-lineage-icon"><i class="bi bi-bar-chart-fill"></i></div>
-                                        <div class="wf-lineage-info">
-                                            <div class="wf-lineage-name">Dashboard</div>
-                                            <div class="wf-lineage-type">Visual Designer</div>
-                                        </div>
-                                    </div>
-                                    <div class="wf-report-arrow-line"></div>
-                                    <span class="wf-report-arrow-label">DASHBOARD</span>
-                                </div>
-                            </div>
-                            <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
-                                <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
-                                <div class="wf-lineage-info">
-                                    <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
-                                    <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')} · via ${this._esc(a.name)}</div>
-                                </div>
-                            </div>
-                        </div>`;
-                    });
+        var self = this;
+        var reports = wsData.reports || [];
+        var html = '';
+
+        datasources.forEach(function (ds) {
+            var boundAgents = agents.filter(function (a) { return a.datasourceId === ds.id; });
+            var agentLinkedReports = reports.filter(function (rpt) {
+                return rpt.agentId && boundAgents.some(function (a) { return a.id === rpt.agentId; });
+            });
+            var agentLinkedGuids = new Set(agentLinkedReports.map(function (r) { return r.guid; }));
+            var orphanedReports = reports.filter(function (rpt) {
+                return rpt.datasourceId === ds.id && !agentLinkedGuids.has(rpt.guid);
+            });
+            var hasAgents = boundAgents.length > 0;
+            var hasAgentReports = agentLinkedReports.length > 0;
+            var hasOrphanedReports = orphanedReports.length > 0;
+
+            html += '<div class="wf-flow-diagram">';
+
+            // ── Source column ──────────────────────────────
+            html += '<div class="wf-flow-col wf-flow-col-source">';
+            html += '<div class="wf-flow-node wf-flow-datasource" data-action="ds-detail" data-ds-id="' + self._esc(ds.guid) + '">';
+            html += '<div class="wf-flow-label">' + self._esc(ds.name) + '</div>';
+            html += '<div class="wf-flow-sublabel">' + self._esc(ds.type || 'Datasource') + '</div>';
+            html += '</div>';
+            html += '</div>'; // wf-flow-col-source
+
+            if (hasAgents) {
+                // ── Middle column: agent(s) + dashboard ───
+                var branchCount = boundAgents.length + 1; // agents + 1 dashboard
+                var wrapClass = branchCount <= 1 ? 'wf-flow-branch-wrap single-branch' : 'wf-flow-branch-wrap';
+                html += '<div class="wf-flow-col wf-flow-col-middle">';
+                html += '<div class="' + wrapClass + '">';
+
+                boundAgents.forEach(function (a) {
+                    html += '<div class="wf-flow-branch-row wf-flow-branch-top">';
+                    html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
+                    html += '<div class="wf-flow-node wf-flow-agent" data-action="agent-chat" data-agent-id="' + self._esc(a.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                    html += '<div class="wf-flow-label">' + self._esc(a.name) + '</div>';
+                    html += '<div class="wf-flow-sublabel">AI Agent</div>';
                     html += '</div>';
-                }
+                    if (hasAgentReports) {
+                        html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
+                    }
+                    html += '</div>'; // wf-flow-branch-row
+                });
+
+                // Dashboard branch
+                html += '<div class="wf-flow-branch-row wf-flow-branch-bottom">';
+                html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-label">Dashboard</div>';
+                html += '<div class="wf-flow-sublabel">Designer</div>';
                 html += '</div>';
-            });
-            // Dashboard node — rendered as a standalone target only when no reports are bound to agents yet
-            const hasAnyAgentReports = boundAgents.some(a => reports.some(rpt => rpt.agentId === a.id));
-            if (!hasAnyAgentReports) {
-                html += `
-                <div class="wf-lineage-agent-group">
-                    <div class="wf-lineage-node dashboard" data-action="dashboard" data-ws-id="${wsData.guid}">
-                        <div class="wf-lineage-icon"><i class="bi bi-bar-chart-fill"></i></div>
-                        <div class="wf-lineage-info">
-                            <div class="wf-lineage-name">Dashboard</div>
-                            <div class="wf-lineage-type">Visual Designer</div>
-                        </div>
-                    </div>
-                </div>`;
+                if (hasAgentReports) {
+                    html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
+                }
+                html += '</div>'; // wf-flow-branch-row
+
+                html += '<div class="wf-flow-v-spine-left"></div>';
+                if (hasAgentReports) {
+                    html += '<div class="wf-flow-v-spine-right"></div>';
+                }
+                html += '</div>'; // wf-flow-branch-wrap
+                html += '</div>'; // wf-flow-col-middle
+
+                // ── Report column ─────────────────────────
+                if (hasAgentReports) {
+                    html += '<div class="wf-flow-col wf-flow-col-report">';
+                    agentLinkedReports.forEach(function (rpt) {
+                        var agentForRpt = boundAgents.find(function (a) { return a.id === rpt.agentId; });
+                        var agentName = agentForRpt ? agentForRpt.name : '';
+                        html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                        html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
+                        html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + (agentName ? ' \xb7 via ' + self._esc(agentName) : '') + '</div>';
+                        html += '</div>';
+                    });
+                    html += '</div>'; // wf-flow-col-report
+                }
+
+            } else if (hasOrphanedReports) {
+                // ── No agents: dashboard in middle, orphaned reports on right ──
+                html += '<div class="wf-flow-col wf-flow-col-middle">';
+                html += '<div class="wf-flow-branch-wrap single-branch">';
+                html += '<div class="wf-flow-branch-row">';
+                html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-label">Dashboard</div>';
+                html += '<div class="wf-flow-sublabel">Designer</div>';
+                html += '</div>';
+                html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
+                html += '</div>'; // wf-flow-branch-row
+                html += '</div>'; // wf-flow-branch-wrap
+                html += '</div>'; // wf-flow-col-middle
+
+                html += '<div class="wf-flow-col wf-flow-col-report">';
+                orphanedReports.forEach(function (rpt) {
+                    html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                    html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
+                    html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + '</div>';
+                    html += '</div>';
+                });
+                html += '</div>'; // wf-flow-col-report
+
+            } else {
+                // ── No agents, no reports: just dashboard ──
+                html += '<div class="wf-flow-col wf-flow-col-middle">';
+                html += '<div class="wf-flow-branch-wrap single-branch">';
+                html += '<div class="wf-flow-branch-row">';
+                html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-label">Dashboard</div>';
+                html += '<div class="wf-flow-sublabel">Designer</div>';
+                html += '</div>';
+                html += '</div>'; // wf-flow-branch-row
+                html += '</div>'; // wf-flow-branch-wrap
+                html += '</div>'; // wf-flow-col-middle
             }
-            // Reports not linked to a specific agent (orphaned or datasource-only)
-            const agentLinkedIds = new Set(reports.filter(rpt => rpt.agentId && boundAgents.some(a => a.id === rpt.agentId)).map(rpt => rpt.guid));
-            const hasAgents = boundAgents.length > 0;
-            reports.filter(rpt => rpt.datasourceId === ds.id && !agentLinkedIds.has(rpt.guid)).forEach(rpt => {
-                html += `
-                <div class="wf-lineage-agent-group">
-                    <div class="wf-report-node-wrap">
-                        <div class="wf-report-arrows">
-                            ${hasAgents ? `<div class="wf-report-arrow from-agent">
-                                <span class="wf-report-arrow-label">Agent</span>
-                                <div class="wf-report-arrow-line"></div>
-                            </div>` : ''}
-                            <div class="wf-report-arrow from-dashboard">
-                                <span class="wf-report-arrow-label">Dashboard</span>
-                                <div class="wf-report-arrow-line"></div>
-                            </div>
-                        </div>
-                        <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
-                            <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
-                            <div class="wf-lineage-info">
-                                <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
-                                <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-            });
-            html += '</div></div>';
+
+            html += '</div>'; // wf-flow-diagram
         });
 
-        const unboundAgents = agents.filter(a => !a.datasourceId || !datasources.find(d => d.id === a.datasourceId));
+        // ── Unbound agents ─────────────────────────────────
+        var unboundAgents = agents.filter(function (a) {
+            return !a.datasourceId || !datasources.find(function (d) { return d.id === a.datasourceId; });
+        });
         if (unboundAgents.length > 0) {
-            html += '<div class="wf-lineage-row wf-lineage-unbound">';
-            html += `
-            <div class="wf-lineage-node unbound-source">
-                <div class="wf-lineage-icon"><i class="bi bi-link-45deg"></i></div>
-                <div class="wf-lineage-info">
-                    <div class="wf-lineage-name">Unbound</div>
-                    <div class="wf-lineage-type">No datasource attached</div>
-                </div>
-            </div>`;
-            html += '<div class="wf-lineage-connector"><span class="wf-connector-pulse"></span></div>';
-            html += '<div class="wf-lineage-targets">';
-            unboundAgents.forEach(a => {
-                html += `
-                <div class="wf-lineage-node agent" data-action="agent-chat" data-agent-id="${a.guid}" data-ws-id="${wsData.guid}">
-                    <div class="wf-lineage-icon"><i class="bi bi-robot"></i></div>
-                    <div class="wf-lineage-info">
-                        <div class="wf-lineage-name">${this._esc(a.name)}</div>
-                        <div class="wf-lineage-type">AI Agent</div>
-                    </div>
-                    <span class="wf-lineage-badge unbound"><i class="bi bi-exclamation-circle"></i> Unbound</span>
-                </div>`;
+            html += '<div class="wf-flow-unbound-row">';
+            html += '<span class="wf-flow-unbound-label">Unbound agents:</span>';
+            unboundAgents.forEach(function (a) {
+                html += '<div class="wf-flow-node wf-flow-agent" data-action="agent-chat" data-agent-id="' + self._esc(a.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-label">' + self._esc(a.name) + '</div>';
+                html += '<div class="wf-flow-sublabel">AI Agent \xb7 Unbound</div>';
+                html += '</div>';
             });
-            html += '</div></div>';
+            html += '</div>';
         }
+
+        requestAnimationFrame(function () { self._fixFlowSpines(); });
         return html;
+    };
+
+    WF._fixFlowSpines = function () {
+        document.querySelectorAll('.wf-flow-branch-wrap:not(.single-branch)').forEach(function (wrap) {
+            var rows = wrap.querySelectorAll('.wf-flow-branch-row');
+            if (rows.length < 2) return;
+            var wrapRect = wrap.getBoundingClientRect();
+            var topRect  = rows[0].getBoundingClientRect();
+            var botRect  = rows[rows.length - 1].getBoundingClientRect();
+            var topMid   = topRect.top  + topRect.height  / 2 - wrapRect.top;
+            var botMid   = botRect.top  + botRect.height  / 2 - wrapRect.top;
+            var spineLeft  = wrap.querySelector('.wf-flow-v-spine-left');
+            var spineRight = wrap.querySelector('.wf-flow-v-spine-right');
+            if (spineLeft)  { spineLeft.style.top  = topMid + 'px'; spineLeft.style.height  = (botMid - topMid) + 'px'; }
+            if (spineRight) { spineRight.style.top = topMid + 'px'; spineRight.style.height = (botMid - topMid) + 'px'; }
+        });
     };
 
     // ── Show / hide New Artifact dropdown in topbar ──────────
