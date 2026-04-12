@@ -60,7 +60,7 @@
         return { getAll, createChat, appendMessage, deleteChat, getChat };
     })();
 
-    // ── Thinking Panel ──────────────────────────────────────────────
+    // ── Thinking Panel ┬─────────────────────────────────────────────
     const ThinkingPanel = (function() {
         let _activeTab = 'context';
 
@@ -743,7 +743,7 @@
                 }));
             } catch (_) {}
 
-            window.location.href = '/dashboard';
+            window.location.href = '/Dashboard?workspace=' + encodeURIComponent(currentWorkspaceId || '');
         });
 
         // ── Analyze chart with AI (vision) ───────────────────────────

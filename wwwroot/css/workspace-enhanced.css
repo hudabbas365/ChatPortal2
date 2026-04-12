@@ -111,7 +111,7 @@
     transition: var(--cp-transition);
     z-index: 2;
 }
-.wf-lineage-row:hover .wfe-insights-del {
+.wf-flow-diagram:hover .wfe-insights-del {
     display: inline-flex;
 }
 .wfe-insights-del:hover {

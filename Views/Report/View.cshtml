@@ -22,48 +22,57 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
     <link rel="stylesheet" href="~/css/site.css" />
+    <link rel="stylesheet" href="~/css/dashboard-shapes.css" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
     <style>
-        body { background: #f0f2f5; font-family: 'Inter', sans-serif; margin: 0; }
+        body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-serif; margin: 0; }
+
+        /* ── Navbar ────────────────────────────────────── */
         .rv-navbar {
             display: flex; align-items: center; gap: 12px;
-            padding: 10px 20px; background: #fff;
-            border-bottom: 1px solid #e2e8f0;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            padding: 10px 20px; background: var(--cp-surface, #fff);
+            border-bottom: 1px solid var(--cp-border, #e2e8f0);
+            box-shadow: var(--cp-shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
         }
         .rv-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
-        .rv-brand:hover { color: #4A90D9; }
+        .rv-brand:hover { color: var(--cp-primary, #4A90D9); }
         .rv-brand-text { font-weight: 700; font-size: 0.95rem; }
+
+        /* ── Breadcrumbs ──────────────────────────────── */
         .rv-breadcrumb {
             display: flex; align-items: center; gap: 6px;
             margin-left: 12px; font-size: 0.88rem;
         }
-        .rv-breadcrumb a {
-            color: #4A90D9; text-decoration: none; font-weight: 500;
-        }
+        .rv-breadcrumb a { color: var(--cp-primary, #4A90D9); text-decoration: none; font-weight: 500; }
         .rv-breadcrumb a:hover { text-decoration: underline; }
-        .rv-breadcrumb .rv-sep { color: #cbd5e1; font-size: 0.7rem; }
-        .rv-breadcrumb .rv-current { font-weight: 600; color: #1e293b; }
+        .rv-breadcrumb .rv-sep { color: var(--cp-border, #cbd5e1); font-size: 0.7rem; }
+        .rv-breadcrumb .rv-current { font-weight: 600; color: var(--cp-text, #1e293b); }
         .rv-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
-        .rv-badge-published { background: #d1fae5; color: #065f46; }
-        .rv-badge-draft { background: #fef3c7; color: #92400e; }
-        .rv-meta { display: flex; align-items: center; gap: 14px; font-size: 0.78rem; color: #64748b; }
+        .rv-badge-published { background: var(--cp-success-light, #d1fae5); color: var(--cp-success, #065f46); }
+        .rv-badge-draft { background: var(--cp-orange-light, #fef3c7); color: var(--cp-orange, #92400e); }
+        .rv-meta { display: flex; align-items: center; gap: 14px; font-size: 0.78rem; color: var(--cp-text-muted, #64748b); }
         .rv-meta i { font-size: 0.72rem; }
+
+        /* ── Toolbar ──────────────────────────────────── */
         .rv-toolbar {
             margin-left: auto; display: flex; align-items: center; gap: 8px;
         }
         .rv-toolbar .btn {
             display: inline-flex; align-items: center; gap: 5px;
-            font-size: 0.78rem; padding: 5px 12px; border-radius: 6px;
-            font-weight: 500; border: 1px solid #e2e8f0; background: #fff;
-            color: #475569; cursor: pointer; transition: all 0.15s;
+            font-size: 0.78rem; padding: 5px 12px; border-radius: var(--cp-radius, 6px);
+            font-weight: 500; border: 1px solid var(--cp-border, #e2e8f0);
+            background: var(--cp-surface, #fff); color: var(--cp-text, #475569);
+            cursor: pointer; transition: var(--cp-transition, all 0.15s);
+            text-decoration: none;
         }
-        .rv-toolbar .btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+        .rv-toolbar .btn:hover { background: var(--cp-bg, #f1f5f9); border-color: var(--cp-border, #cbd5e1); }
         .rv-toolbar .btn i { font-size: 0.82rem; }
         .rv-toolbar .btn-primary-rv {
-            background: #4A90D9; color: #fff; border-color: #4A90D9;
+            background: var(--cp-gradient, #4A90D9); color: #fff; border-color: var(--cp-primary, #4A90D9);
         }
-        .rv-toolbar .btn-primary-rv:hover { background: #3a7bc8; }
+        .rv-toolbar .btn-primary-rv:hover { opacity: 0.9; }
+
+        /* ── Share modal ──────────────────────────────── */
         .rv-share-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(0,0,0,0.4); z-index: 9999;
@@ -71,68 +80,65 @@
         }
         .rv-share-overlay.active { display: flex; }
         .rv-share-box {
-            background: #fff; border-radius: 10px; padding: 24px 28px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15); width: 420px; max-width: 90vw;
+            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 10px);
+            padding: 24px 28px; box-shadow: var(--cp-shadow, 0 8px 30px rgba(0,0,0,0.15));
+            width: 420px; max-width: 90vw;
         }
         .rv-share-box h5 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
-        .rv-share-url {
-            display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-        }
+        .rv-share-url { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
         .rv-share-url input {
-            flex: 1; font-size: 0.8rem; padding: 7px 10px; border: 1px solid #e2e8f0;
-            border-radius: 6px; background: #f8fafc; color: #334155;
+            flex: 1; font-size: 0.8rem; padding: 7px 10px;
+            border: 1px solid var(--cp-border, #e2e8f0); border-radius: 6px;
+            background: var(--cp-bg, #f8fafc); color: var(--cp-text, #334155);
         }
         .rv-share-url button {
             font-size: 0.78rem; padding: 7px 14px; border-radius: 6px;
-            border: 1px solid #4A90D9; background: #4A90D9; color: #fff;
-            cursor: pointer; white-space: nowrap; font-weight: 500;
+            border: 1px solid var(--cp-primary, #4A90D9); background: var(--cp-primary, #4A90D9);
+            color: #fff; cursor: pointer; white-space: nowrap; font-weight: 500;
         }
-        .rv-share-url button:hover { background: #3a7bc8; }
-        .rv-share-note {
-            font-size: 0.72rem; color: #94a3b8; margin-bottom: 8px;
-        }
+        .rv-share-url button:hover { opacity: 0.9; }
+        .rv-share-note { font-size: 0.72rem; color: var(--cp-text-muted, #94a3b8); margin-bottom: 8px; }
         .rv-share-close {
             font-size: 0.78rem; padding: 5px 14px; border-radius: 6px;
-            border: 1px solid #e2e8f0; background: #fff; color: #475569;
-            cursor: pointer; float: right;
+            border: 1px solid var(--cp-border, #e2e8f0); background: var(--cp-surface, #fff);
+            color: var(--cp-text, #475569); cursor: pointer; float: right;
         }
-        .rv-canvas-wrap {
-            max-width: 1200px; margin: 24px auto; padding: 0 16px;
-        }
+
+        /* ── Canvas layout ────────────────────────────── */
+        .rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
         .rv-page {
-            background: #fff; border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 8px);
+            box-shadow: var(--cp-shadow-sm, 0 1px 4px rgba(0,0,0,0.06));
             margin-bottom: 24px; padding: 16px;
-            position: relative; min-height: 400px;
-            overflow: hidden;
+            position: relative; min-height: 400px; overflow: hidden;
         }
         .rv-page-title {
-            font-size: 0.78rem; font-weight: 600; color: #94a3b8;
+            font-size: 0.78rem; font-weight: 600; color: var(--cp-text-muted, #94a3b8);
             margin-bottom: 12px; padding-bottom: 6px;
-            border-bottom: 1px solid #f1f5f9;
+            border-bottom: 1px solid var(--cp-border, #f1f5f9);
         }
-        .rv-chart-card {
-            position: absolute; border-radius: 6px;
-            background: #fff; border: 1px solid #e8ecf1;
-            padding: 10px; overflow: hidden;
-            box-sizing: border-box;
+
+        /* ── Chart cards: reuse dashboard .chart-card from site.css, read-only overrides ── */
+        .rv-page .chart-card {
+            cursor: default;
+            overflow: hidden;
         }
-        .rv-chart-title {
-            font-size: 0.75rem; font-weight: 600; color: #475569;
-            margin-bottom: 6px; white-space: nowrap; overflow: hidden;
-            text-overflow: ellipsis;
+        .rv-page .chart-card:hover {
+            border-color: var(--cp-primary-light);
+            transform: none;
         }
-        .rv-chart-canvas-wrap { width: 100%; height: calc(100% - 28px); }
-        .rv-chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
-        .rv-chart-no-data {
-            display: flex; align-items: center; justify-content: center;
-            height: calc(100% - 28px); color: #94a3b8; font-size: 0.8rem;
-            flex-direction: column; gap: 4px;
+        .rv-page .chart-card .chart-card-actions,
+        .rv-page .chart-card .chart-drag-handle,
+        .rv-page .chart-card .chart-resize-handle,
+        .rv-page .chart-card .shape-hover-actions {
+            display: none !important;
         }
-        .rv-chart-no-data i { font-size: 1.4rem; }
-        .rv-empty {
-            text-align: center; padding: 60px 20px; color: #94a3b8;
-        }
+        .rv-page .chart-card.shape-card { cursor: default; }
+        .rv-page .chart-card.shape-card:hover { border-color: transparent; }
+        .rv-page .chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+        /* ── Empty & export states ─────────────────────── */
+        .rv-empty { text-align: center; padding: 60px 20px; color: var(--cp-text-muted, #94a3b8); }
         .rv-empty i { font-size: 2.5rem; margin-bottom: 12px; display: block; }
         .rv-export-overlay {
             display: none; position: fixed; inset: 0;
@@ -141,15 +147,16 @@
         }
         .rv-export-overlay.active { display: flex; }
         .rv-export-box {
-            background: #fff; border-radius: 10px; padding: 30px 40px;
-            text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 10px);
+            padding: 30px 40px; text-align: center;
+            box-shadow: var(--cp-shadow, 0 8px 30px rgba(0,0,0,0.15));
         }
         .rv-export-box .spinner-border { width: 2rem; height: 2rem; margin-bottom: 12px; }
-        .rv-export-box p { margin: 0; font-size: 0.9rem; color: #475569; }
+        .rv-export-box p { margin: 0; font-size: 0.9rem; color: var(--cp-text, #475569); }
 
         @@media print {
             body { background: #fff !important; }
-            .rv-navbar, .rv-toolbar, .rv-export-overlay { display: none !important; }
+            .rv-navbar, .rv-toolbar, .rv-export-overlay, .rv-share-overlay { display: none !important; }
             .rv-canvas-wrap { margin: 0; padding: 0; max-width: 100%; }
             .rv-page {
                 box-shadow: none; border: none;
@@ -188,7 +195,7 @@
         <div class="rv-toolbar">
             @if (!string.IsNullOrEmpty(workspaceGuid))
             {
-                <a class="btn" href="/chat#ws=@workspaceGuid" title="Back to Workspace">
+                <a class="btn" href="/chat?workspace=@workspaceGuid" title="Back to Workspace">
                     <i class="bi bi-arrow-left"></i> Workspace
                 </a>
                 <a class="btn" href="/dashboard?workspace=@workspaceGuid&report=@reportGuid" title="Edit in Dashboard">
@@ -237,6 +244,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="~/js/chartRenderer.js"></script>
+    <script src="~/js/shapeManager.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script>
@@ -246,6 +255,13 @@
         const canvasJson = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(canvasJson));
         const datasourceId = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
         const wrap = document.getElementById('rvCanvasWrap');
+
+        // Set global datasource context so chartRenderer can fetch real data
+        if (datasourceId) window.currentDatasourceId = datasourceId;
+        @if (ViewBag.DatasourceType != null)
+        {
+            <text>window.currentDatasourceType = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.DatasourceType));</text>
+        }
 
         let parsed;
         try { parsed = JSON.parse(canvasJson); } catch { parsed = {}; }
@@ -258,7 +274,7 @@
 
         // Match dashboard colsToPixels calculation
         function colsToPixels(width) {
-            const baseWidth = Math.min(1200 - 32, 900); // max-width minus padding
+            const baseWidth = Math.min(1200 - 32, 900);
             const pct = (parseInt(width) || 6) / 12;
             return Math.round(Math.max(200, baseWidth * pct));
         }
@@ -270,6 +286,7 @@
             const pageEl = document.createElement('div');
             pageEl.className = 'rv-page';
             pageEl.style.position = 'relative';
+            if (page.background) pageEl.style.background = page.background;
 
             if (pages.length > 1) {
                 const title = document.createElement('div');
@@ -281,219 +298,63 @@
             // Calculate page height from chart positions
             let maxBottom = 400;
             charts.forEach(c => {
-                if (c.chartType && c.chartType.startsWith('shape-')) return;
-                const cardWidth = colsToPixels(c.width || 6);
                 const cardHeight = c.height || 300;
                 const bottom = (c.posY || 0) + cardHeight + 20;
                 if (bottom > maxBottom) maxBottom = bottom;
-                // Also check right edge to warn about overflow
-                const right = (c.posX || 0) + cardWidth;
-                // We don't expand width, but we track it
             });
             pageEl.style.minHeight = maxBottom + 'px';
 
             charts.forEach(c => {
-                // Skip shapes in read-only view
-                if (c.chartType && c.chartType.startsWith('shape-')) return;
-
-                const card = document.createElement('div');
-                card.className = 'rv-chart-card';
-
+                const isShape = window.ShapeManager && ShapeManager.isShape(c.chartType);
                 const cardWidth = colsToPixels(c.width || 6);
                 const cardHeight = c.height || 300;
                 const posX = c.posX || 0;
                 const posY = c.posY || 0;
+                const zIdx = c.zIndex || 1;
 
-                card.style.left = posX + 'px';
-                card.style.top = posY + 'px';
-                card.style.width = cardWidth + 'px';
-                card.style.height = cardHeight + 'px';
+                // Build card using the same .chart-card classes as the Dashboard
+                const card = document.createElement('div');
+                card.className = 'chart-card' + (isShape ? ' shape-card' : '');
+                card.style.cssText = 'left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;z-index:' + zIdx + ';';
 
-                const titleEl = document.createElement('div');
-                titleEl.className = 'rv-chart-title';
-                titleEl.textContent = c.title || c.chartType || 'Chart';
-                card.appendChild(titleEl);
+                if (isShape) {
+                    // Shape: render SVG via ShapeManager (same as dashboard)
+                    const canvasWrap = document.createElement('div');
+                    canvasWrap.className = 'chart-canvas-wrap';
+                    canvasWrap.style.height = cardHeight + 'px';
+                    card.appendChild(canvasWrap);
+                    pageEl.appendChild(card);
+                    requestAnimationFrame(() => ShapeManager.render(canvasWrap, c));
+                } else {
+                    // Chart: add header + canvas, render with chartRenderer (same engine as dashboard)
+                    const header = document.createElement('div');
+                    header.className = 'chart-card-header';
+                    const titleSpan = document.createElement('span');
+                    titleSpan.className = 'chart-title';
+                    titleSpan.textContent = c.title || c.chartType || 'Chart';
+                    header.appendChild(titleSpan);
+                    card.appendChild(header);
 
-                const canvasWrap = document.createElement('div');
-                canvasWrap.className = 'rv-chart-canvas-wrap';
-                const canvas = document.createElement('canvas');
-                canvasWrap.appendChild(canvas);
-                card.appendChild(canvasWrap);
+                    const canvasWrap = document.createElement('div');
+                    canvasWrap.className = 'chart-canvas-wrap';
+                    canvasWrap.style.height = (cardHeight - 36) + 'px';
+                    const canvas = document.createElement('canvas');
+                    canvasWrap.appendChild(canvas);
+                    card.appendChild(canvasWrap);
+                    pageEl.appendChild(card);
 
-                pageEl.appendChild(card);
+                    // Ensure datasource context on chart definition
+                    if (!c.datasourceId && datasourceId) c.datasourceId = datasourceId;
 
-                // Fetch data and render chart
-                renderReadOnlyChart(canvas, canvasWrap, c);
+                    // Render using the same engine as the Dashboard
+                    if (window.chartRenderer) {
+                        requestAnimationFrame(() => chartRenderer.render(c, canvas));
+                    }
+                }
             });
 
             wrap.appendChild(pageEl);
         });
-
-        async function renderReadOnlyChart(canvas, canvasWrap, chartDef) {
-            const dsId = chartDef.datasourceId || datasourceId;
-            // Defensive: extract string from object (e.g. {name:'TableName'} from API)
-            let rawDs = chartDef.datasetName || '';
-            if (typeof rawDs === 'object') rawDs = rawDs.name || rawDs.Name || '';
-            const dataset = String(rawDs);
-            const mapping = chartDef.mapping || {};
-            let labels = null;
-            let values = null;
-            let multiValues = null;
-            const mvFields = (mapping.multiValueFields || []).filter(Boolean);
-
-            // Try custom JSON data first (inline data stored in the chart)
-            if (chartDef.customJsonData) {
-                try {
-                    const parsed = JSON.parse(chartDef.customJsonData);
-                    if (parsed && Array.isArray(parsed.labels) && Array.isArray(parsed.values) && parsed.labels.length > 0) {
-                        labels = parsed.labels.map(l => String(l ?? ''));
-                        values = parsed.values.map(v => parseFloat(v) || 0);
-                    } else if (Array.isArray(parsed) && parsed.length > 0) {
-                        const keys = Object.keys(parsed[0]);
-                        const lf = mapping.labelField || keys[0];
-                        const vf = mapping.valueField || keys[1] || keys[0];
-                        labels = parsed.map(r => String(r[lf] ?? ''));
-                        values = parsed.map(r => parseFloat(r[vf]) || 0);
-                    }
-                } catch {}
-            }
-
-            // Try datasource table-based query (PRIMARY)
-            if (!labels && dsId && dataset && dataset !== '[object Object]') {
-                try {
-                    const agg = chartDef.aggregation || {};
-                    const labelField = mapping.labelField || '';
-                    const valueField = mapping.valueField || '';
-                    const rowLimit = chartDef.rowLimit || 100;
-                    const whereClause = chartDef.filterWhere || '';
-                    const whereSQL = whereClause ? ' WHERE ' + whereClause : '';
-                    const fmtTable = dataset.includes('.')
-                        ? dataset.split('.').map(p => '[' + p + ']').join('.')
-                        : '[' + dataset + ']';
-                    // Build selected columns including multiValueFields
-                    var selectedCols;
-                    if (labelField && valueField) {
-                        var allCols = ['[' + labelField + ']', '[' + valueField + ']'];
-                        mvFields.forEach(function(f) { if (f !== valueField) allCols.push('[' + f + ']'); });
-                        selectedCols = allCols.join(', ');
-                    } else {
-                        selectedCols = '*';
-                    }
-                    let query;
-                    if (agg.enabled && labelField && valueField) {
-                        const aggCols = '[' + labelField + '], ' + (agg.function || 'SUM') + '([' + valueField + ']) as [' + valueField + ']';
-                        query = 'SELECT TOP ' + rowLimit + ' ' + aggCols + ' FROM ' + fmtTable + whereSQL + ' GROUP BY [' + labelField + ']';
-                    } else {
-                        query = 'SELECT TOP ' + rowLimit + ' ' + selectedCols + ' FROM ' + fmtTable + whereSQL;
-                    }
-                    const r = await fetch('/api/data/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: query, datasourceId: dsId })
-                    });
-                    const result = await r.json();
-                    if (result.success && result.data && result.data.length > 0) {
-                        const keys = Object.keys(result.data[0]);
-                        const lf = keys.find(k => k.toLowerCase() === (labelField || '').toLowerCase()) || keys[0];
-                        const vf = keys.find(k => k.toLowerCase() === (valueField || '').toLowerCase()) || keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
-                        labels = result.data.map(r => String(r[lf] ?? ''));
-                        values = result.data.map(r => parseFloat(r[vf]) || 0);
-                        // Extract additional value fields
-                        if (mvFields.length > 0) {
-                            multiValues = mvFields.map(function(f) {
-                                var rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
-                                return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
-                            });
-                        }
-                    }
-                } catch {}
-            }
-
-            // Fallback: use pre-built dataQuery
-            if (!labels && dsId && chartDef.dataQuery && !chartDef.dataQuery.includes('[object Object]')) {
-                try {
-                    const r = await fetch('/api/data/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: chartDef.dataQuery, datasourceId: dsId })
-                    });
-                    const result = await r.json();
-                    if (result.success && result.data && result.data.length > 0) {
-                        const keys = Object.keys(result.data[0]);
-                        const lf = keys.find(k => k.toLowerCase() === (mapping.labelField || '').toLowerCase()) || keys[0];
-                        const vf = keys.find(k => k.toLowerCase() === (mapping.valueField || '').toLowerCase()) || keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
-                        labels = result.data.map(r => String(r[lf] ?? ''));
-                        values = result.data.map(r => parseFloat(r[vf]) || 0);
-                        if (mvFields.length > 0) {
-                            multiValues = mvFields.map(function(f) {
-                                var rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
-                                return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
-                            });
-                        }
-                    }
-                } catch {}
-            }
-
-            if (!labels || !labels.length) {
-                // Show no-data indicator instead of empty chart
-                canvas.style.display = 'none';
-                const noData = document.createElement('div');
-                noData.className = 'rv-chart-no-data';
-                noData.innerHTML = '<i class="bi bi-exclamation-circle"></i><span>No data available</span>';
-                canvasWrap.appendChild(noData);
-                return;
-            }
-
-            const chartType = chartDef.chartType || 'bar';
-            const type = chartType === 'donut' ? 'doughnut'
-                       : chartType === 'area' ? 'line'
-                       : ['bar','line','pie','doughnut','radar','polarArea','bubble','scatter'].includes(chartType) ? chartType : 'bar';
-
-            const style = chartDef.style || {};
-            const basePalette = ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548','#607D8B','#E91E63'];
-            const userColor = (style.colorPalette && style.colorPalette.startsWith('#')) ? style.colorPalette : null;
-            const palette = userColor ? [userColor, ...basePalette.filter(c => c !== userColor)] : basePalette;
-            const usePerPoint = ['pie','doughnut','polarArea','bar'].includes(type);
-            const bgColors = usePerPoint
-                ? labels.map((_, i) => palette[i % palette.length])
-                : (userColor || palette[0]);
-
-            const ds = {
-                label: mapping.valueField || chartDef.title || 'Value',
-                data: values,
-                backgroundColor: bgColors,
-                borderColor: style.borderColor || '#2C6FAC',
-                fill: chartType === 'area' || style.fillArea
-            };
-            var datasets = [ds];
-            // Multi-series: additional value fields
-            if (multiValues && multiValues.length > 0 && !usePerPoint) {
-                multiValues.forEach(function(mv, i) {
-                    var ci = (i + 1) % palette.length;
-                    datasets.push({
-                        label: mv.field || ('Series ' + (i + 2)),
-                        data: mv.values,
-                        backgroundColor: palette[ci],
-                        borderColor: palette[ci],
-                        fill: chartType === 'area' || style.fillArea
-                    });
-                });
-            }
-
-            new Chart(canvas, {
-                type: type,
-                data: { labels, datasets: datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: style.showLegend !== false, position: style.legendPosition || 'top' },
-                        tooltip: { enabled: style.showTooltips !== false }
-                    },
-                    animation: { duration: style.animated !== false ? 600 : 0 }
-                }
-            });
-        }
     })();
 
     // PDF Export using html2canvas + jsPDF

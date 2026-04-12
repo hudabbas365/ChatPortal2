@@ -13,7 +13,33 @@
         init() {
             this._wireLeftPanel();
             this._wireViewToggle();
-            this._showLanding();
+
+            // Auto-select workspace from URL hash (?workspace='GUID) or query param (?workspace=GUID)
+            var wsGuid = null;
+            var hash = window.location.hash;
+            if (hash) {
+                var m = hash.match(/[#&]ws=([^&]+)/);
+                if (m) wsGuid = decodeURIComponent(m[1]);
+            }
+            if (!wsGuid) {
+                var params = new URLSearchParams(window.location.search);
+                wsGuid = params.get('workspace');
+            }
+            if (wsGuid) {
+                this._selectWorkspace(wsGuid);
+            } else {
+                this._showLanding();
+            }
+
+            // Handle hash changes while on the page
+            var self = this;
+            window.addEventListener('hashchange', function () {
+                var h = window.location.hash;
+                var match = h.match(/[#&]ws=([^&]+)/);
+                if (match) {
+                    self._selectWorkspace(decodeURIComponent(match[1]));
+                }
+            });
         },
 
         // ── Left panel: workspace list click + create ───────

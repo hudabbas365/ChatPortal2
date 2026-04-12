@@ -37,6 +37,7 @@
     /* Dashboard panel widths */
     --library-w:         260px;
     --properties-w:      300px;
+    --right-panels-w:    540px;
 }
 
 /* === Reset & Base === */
@@ -1764,7 +1765,7 @@ body.dashboard-body {
 .chart-card:hover .chart-resize-handle { opacity: 0.8; }
 .chart-card.resizing { outline: 2px dashed var(--cp-primary); }
 
-/* Properties panel */
+/* Properties panel (standalone fallback + base styles) */
 .properties-panel {
     width: var(--properties-w);
     min-width: var(--properties-w);
@@ -1975,14 +1976,15 @@ body.dashboard-body {
 .library-panel.collapsed > *:not(.panel-header) { display: none; }
 .library-panel.collapsed .panel-header { padding: 10px 6px; justify-content: center; flex-direction: column; }
 .library-panel.collapsed .panel-header > *:not(.panel-toggle-btn) { display: none; }
-.properties-panel.collapsed {
+/* Properties panel collapsed (standalone — outside right-panels-container) */
+:not(.right-panels-container) > .properties-panel.collapsed {
     width: 36px;
     min-width: 36px;
     overflow: hidden;
 }
-.properties-panel.collapsed > *:not(.panel-header) { display: none; }
-.properties-panel.collapsed .panel-header { padding: 10px 6px; justify-content: center; flex-direction: column; }
-.properties-panel.collapsed .panel-header > *:not(.panel-toggle-btn) { display: none; }
+:not(.right-panels-container) > .properties-panel.collapsed > *:not(.panel-header) { display: none; }
+:not(.right-panels-container) > .properties-panel.collapsed .panel-header { padding: 10px 6px; justify-content: center; flex-direction: column; }
+:not(.right-panels-container) > .properties-panel.collapsed .panel-header > *:not(.panel-toggle-btn) { display: none; }
 .panel-toggle-btn {
     padding: 2px 6px;
     font-size: 0.75rem;
@@ -2124,6 +2126,332 @@ body.dashboard-body {
     font-size: 0.65rem;
 }
 .data-fields-group .data-fields-table tbody td:first-child { padding-left: 24px; }
+
+/* ============================================================
+   RIGHT PANELS CONTAINER — side-by-side Data Fields + Properties
+   ============================================================ */
+.right-panels-container {
+    display: flex;
+    flex-direction: row;
+    width: var(--right-panels-w);
+    min-width: var(--right-panels-w);
+    border-left: 1px solid var(--cp-border);
+    background: var(--cp-surface);
+    overflow: hidden;
+    transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+/* Data Fields panel — right column */
+.data-fields-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 200px;
+    width: 200px;
+    min-width: 36px;
+    border-left: 1px solid var(--cp-border);
+    overflow: hidden;
+    transition: width 0.2s ease, flex 0.2s ease;
+}
+.data-fields-panel .panel-header {
+    padding: 8px 12px;
+    gap: 6px;
+    background: linear-gradient(135deg, var(--cp-primary-light) 0%, var(--cp-surface) 100%);
+    border-bottom: 1px solid var(--cp-border);
+}
+.data-fields-panel .panel-header h6 {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--cp-primary-dark);
+}
+.data-fields-panel .right-panel-section-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+.data-fields-panel .right-panel-section-body::-webkit-scrollbar { width: 4px; }
+.data-fields-panel .right-panel-section-body::-webkit-scrollbar-thumb { background: var(--cp-border); border-radius: 2px; }
+/* Collapsed state — narrow strip showing only toggle button */
+.data-fields-panel.collapsed {
+    flex: 0 0 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    overflow: hidden;
+}
+.data-fields-panel.collapsed .right-panel-section-body { display: none; }
+.data-fields-panel.collapsed .panel-header {
+    border-bottom: none;
+    padding: 10px 6px;
+    justify-content: center;
+    flex-direction: column;
+}
+.data-fields-panel.collapsed .panel-header > *:not(.panel-toggle-btn) { display: none; }
+
+/* Properties panel — left column, fills remaining width */
+.right-panels-container > .properties-panel {
+    width: auto;
+    min-width: 0;
+    border-left: none;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: flex 0.2s ease;
+}
+.right-panels-container .properties-panel .panel-header {
+    padding: 8px 12px;
+    gap: 6px;
+    background: linear-gradient(135deg, #f0f2f5 0%, var(--cp-surface) 100%);
+    border-bottom: 1px solid var(--cp-border);
+}
+.right-panels-container .properties-panel .panel-header h6 {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--cp-text);
+}
+/* Collapsed state — narrow strip showing only toggle button */
+.right-panels-container > .properties-panel.collapsed {
+    flex: 0 0 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    overflow: hidden;
+}
+.right-panels-container > .properties-panel.collapsed > *:not(.panel-header) { display: none; }
+.right-panels-container > .properties-panel.collapsed .panel-header {
+    border-bottom: none;
+    padding: 10px 6px;
+    justify-content: center;
+    flex-direction: column;
+}
+.right-panels-container > .properties-panel.collapsed .panel-header > *:not(.panel-toggle-btn) { display: none; }
+
+/* When properties is collapsed, ONLY non-collapsed data-fields takes full width */
+.right-panels-container:has(.properties-panel.collapsed) .data-fields-panel:not(.collapsed) {
+    flex: 1;
+    width: auto;
+}
+/* When data-fields is collapsed, ONLY non-collapsed properties fills fully */
+.right-panels-container:has(.data-fields-panel.collapsed) .properties-panel:not(.collapsed) {
+    flex: 1;
+}
+/* When BOTH panels collapsed, shrink container */
+.right-panels-container:has(.properties-panel.collapsed):has(.data-fields-panel.collapsed) {
+    width: auto;
+    min-width: auto;
+}
+/* Hide divider when either panel is collapsed */
+.right-panels-container:has(.data-fields-panel.collapsed) .right-panels-divider,
+.right-panels-container:has(.properties-panel.collapsed) .right-panels-divider {
+    display: none;
+}
+
+/* ── Resize divider between Data Fields and Properties (vertical bar) ── */
+.right-panels-divider {
+    width: 5px;
+    flex-shrink: 0;
+    cursor: ew-resize;
+    background: var(--cp-border);
+    position: relative;
+    transition: background 0.15s;
+}
+.right-panels-divider:hover,
+.right-panels-divider.active {
+    background: var(--cp-primary);
+}
+.right-panels-divider::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 24px;
+    border-left: 1px solid rgba(255,255,255,0.6);
+    border-right: 1px solid rgba(255,255,255,0.6);
+}
+
+/* ── Canvas Properties section ─────────────────── */
+.canvas-props-section {
+    padding: 10px 14px;
+    background: var(--cp-bg);
+    border-bottom: 1px solid var(--cp-border);
+}
+.canvas-props-section .prop-section-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--cp-text-muted);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--cp-border);
+}
+.canvas-props-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+/* ── Properties form scrollable body ────────────── */
+.properties-panel #properties-section-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+.properties-panel #properties-section-body::-webkit-scrollbar { width: 4px; }
+.properties-panel #properties-section-body::-webkit-scrollbar-thumb { background: var(--cp-border); border-radius: 2px; }
+
+/* ── Property form labels — tighter ─────────────── */
+#properties-form .form-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--cp-text-muted);
+    margin-bottom: 3px;
+}
+#properties-form .form-control-sm,
+#properties-form .form-select-sm {
+    font-size: 0.78rem;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--cp-border);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+#properties-form .form-control-sm:focus,
+#properties-form .form-select-sm:focus {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.12);
+}
+#properties-form .form-check-label {
+    font-size: 0.76rem;
+    color: var(--cp-text);
+}
+#properties-form .form-check-input:checked {
+    background-color: var(--cp-primary);
+    border-color: var(--cp-primary);
+}
+
+/* ── Multi-value fields rows ────────────────────── */
+.multi-value-field-row {
+    margin-bottom: 4px;
+}
+.multi-value-field-row .form-select-sm {
+    font-size: 0.75rem;
+    padding: 3px 6px;
+}
+
+/* ── Report Topnav Bar ──────────────────────────── */
+.report-topnav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 36px;
+    min-height: 36px;
+    background: linear-gradient(135deg, var(--cp-primary-light) 0%, #f8faff 50%, var(--cp-surface) 100%);
+    border-bottom: 1px solid var(--cp-border);
+    flex-shrink: 0;
+    gap: 8px;
+    z-index: 50;
+}
+.report-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    min-width: 0;
+    overflow: hidden;
+}
+.report-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 14px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--cp-transition);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.report-crumb i {
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+.report-crumb span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.report-crumb.workspace {
+    background: var(--cp-primary-light);
+    color: var(--cp-primary-dark);
+    border: 1px solid rgba(91, 155, 213, 0.2);
+}
+.report-crumb.workspace:hover {
+    background: var(--cp-primary);
+    color: #fff;
+}
+.report-crumb.datasource {
+    background: var(--cp-success-light);
+    color: #1a7a3a;
+    border: 1px solid rgba(46, 204, 113, 0.2);
+}
+.report-crumb.datasource:hover {
+    background: var(--cp-success);
+    color: #fff;
+}
+.report-crumb.agent {
+    background: var(--cp-purple-light);
+    color: var(--cp-purple);
+    border: 1px solid rgba(155, 89, 182, 0.2);
+}
+.report-crumb.agent:hover {
+    background: var(--cp-purple);
+    color: #fff;
+}
+.report-crumb-sep {
+    font-size: 0.6rem;
+    color: var(--cp-border);
+    flex-shrink: 0;
+}
+.report-topnav-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Responsive: narrow screens adjust right panels ── */
+@media (max-width: 1200px) {
+    .right-panels-container {
+        --right-panels-w: 440px;
+        width: 440px;
+        min-width: 440px;
+    }
+    .data-fields-panel { flex: 0 0 170px; width: 170px; }
+}
+@media (max-width: 900px) {
+    .right-panels-container {
+        position: fixed;
+        top: 52px;
+        right: 0;
+        width: 420px;
+        min-width: 420px;
+        height: calc(100vh - 52px);
+        z-index: 80;
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+    }
+    .right-panels-container.open {
+        transform: translateX(0);
+    }
+    .data-fields-panel { flex: 0 0 160px; width: 160px; }
+}
 
 /* ============================================================
    EMBED WIDGET

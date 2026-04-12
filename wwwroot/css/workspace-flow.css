@@ -536,16 +536,25 @@
 }
 
 .wf-flow-diagram {
-    display: flex;
+    justify-content: center;
+    width: 100%;
+    display: inline-flex;
     align-items: center;
     gap: 0;
     margin-bottom: 24px;
-    background: #fff;
-    border: 1.5px solid #ccc;
-    border-radius: 6px;
-    padding: 24px 28px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--cp-border);
+    border-radius: 14px;
+    padding: 28px 32px;
     position: relative;
     overflow: visible;
+    box-shadow: var(--cp-shadow-sm);
+    transition: box-shadow 0.2s ease;
+}
+.wf-flow-diagram:hover {
+    box-shadow: var(--cp-shadow);
 }
 
 /* Columns */
@@ -559,62 +568,124 @@
     flex-shrink: 0;
 }
 .wf-flow-col-middle {
-    flex: 1;
+    flex: 0 0 auto;
     align-items: stretch;
 }
 .wf-flow-col-report {
     flex-shrink: 0;
 }
 
-/* Nodes: plain rectangular boxes */
+/* ── Nodes — themed cards with left accent stripe ──────────── */
 .wf-flow-node {
-    background: #fff;
-    border: 2px solid #333;
-    border-radius: 3px;
-    padding: 14px 20px;
-    min-width: 140px;
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-left: 3px solid var(--cp-primary);
+    border-radius: var(--cp-radius);
+    padding: 12px 18px;
+    min-width: 148px;
+    max-width: 220px;
     cursor: pointer;
-    transition: box-shadow 0.18s ease;
+    transition: var(--cp-transition);
     position: relative;
     z-index: 1;
+    box-shadow: var(--cp-shadow-sm);
 }
 .wf-flow-node:hover {
-    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    border-color: var(--cp-primary);
+    box-shadow: 0 4px 16px rgba(91, 155, 213, 0.18);
+    transform: translateY(-2px);
 }
+.wf-flow-node:active {
+    transform: translateY(0);
+}
+
+/* Type-specific accent colors */
+.wf-flow-node.wf-flow-datasource {
+    border-left-color: var(--cp-primary);
+    background: linear-gradient(135deg, var(--cp-primary-light) 0%, var(--cp-surface) 40%);
+}
+.wf-flow-node.wf-flow-agent {
+    border-left-color: var(--cp-purple);
+    background: linear-gradient(135deg, var(--cp-purple-light) 0%, var(--cp-surface) 40%);
+}
+.wf-flow-node.wf-flow-dashboard {
+    border-left-color: var(--cp-success);
+    background: linear-gradient(135deg, var(--cp-success-light) 0%, var(--cp-surface) 40%);
+}
+.wf-flow-node.wf-flow-report {
+    border-left-color: var(--cp-orange);
+    background: linear-gradient(135deg, var(--cp-orange-light) 0%, var(--cp-surface) 40%);
+}
+
+/* Hover accent per type */
+.wf-flow-node.wf-flow-datasource:hover { border-color: var(--cp-primary); }
+.wf-flow-node.wf-flow-agent:hover      { border-color: var(--cp-purple);  }
+.wf-flow-node.wf-flow-dashboard:hover  { border-color: var(--cp-success); }
+.wf-flow-node.wf-flow-report:hover     { border-color: var(--cp-orange);  }
+
 .wf-flow-label {
     font-weight: 600;
     font-size: 0.88rem;
-    color: #1a1a1a;
+    color: var(--cp-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.35;
 }
 .wf-flow-sublabel {
-    font-size: 0.72rem;
-    color: #555;
+    font-size: 0.7rem;
+    color: var(--cp-text-muted);
     margin-top: 3px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
 }
 
-/* Horizontal connector lines */
+/* ── Horizontal connector lines ────────────────────────────── */
 .wf-flow-h-line {
     height: 2px;
-    background: #333;
+    background: var(--cp-border);
     flex-shrink: 0;
     align-self: center;
+    position: relative;
 }
 .wf-flow-h-line-out {
-    width: 32px;
+    width: 48px;
+    background: linear-gradient(90deg, var(--cp-primary) 0%, var(--cp-border) 100%);
 }
 .wf-flow-h-line-in {
-    width: 32px;
+    width: 48px;
+    background: linear-gradient(90deg, var(--cp-border) 0%, var(--cp-primary) 100%);
+}
+/* Connector dot at the line end closest to the node */
+.wf-flow-h-line-out::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cp-primary);
+}
+.wf-flow-h-line-in::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cp-primary);
 }
 
-/* Branch wrap: holds the two rows (agent top, dashboard bottom) */
+/* ── Branch wrap: agent / dashboard rows ───────────────────── */
 .wf-flow-branch-wrap {
     display: flex;
     flex-direction: column;
     position: relative;
-    gap: 16px;
+    gap: 18px;
 }
 
 /* Each branch row: h-line | node | h-line */
@@ -624,20 +695,21 @@
     gap: 0;
 }
 
-/* Vertical spine on left (connects datasource line to both branches) */
+/* ── Vertical spines ───────────────────────────────────────── */
 .wf-flow-v-spine-left {
     position: absolute;
     left: 0;
     width: 2px;
-    background: #333;
+    background: linear-gradient(180deg, var(--cp-primary) 0%, var(--cp-border) 50%, var(--cp-primary) 100%);
+    border-radius: 1px;
 }
 
-/* Vertical spine on right (connects both branch lines to report) */
 .wf-flow-v-spine-right {
     position: absolute;
     right: 0;
     width: 2px;
-    background: #333;
+    background: linear-gradient(180deg, var(--cp-primary) 0%, var(--cp-border) 50%, var(--cp-primary) 100%);
+    border-radius: 1px;
 }
 
 /* Single-agent: no branch split needed (hide spines) */
@@ -646,21 +718,29 @@
     display: none;
 }
 
-/* ── Unbound agents row (below main diagram) ────────── */
+/* ── Unbound agents row (below main diagram) ───────────────── */
 .wf-flow-unbound-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
-    border: 1.5px dashed #aaa;
-    border-radius: 6px;
+    padding: 14px 18px;
+    border: 1.5px dashed var(--cp-border);
+    border-radius: var(--cp-radius);
     margin-bottom: 16px;
-    background: #fafafa;
+    background: var(--cp-bg);
+}
+.wf-flow-unbound-row .wf-flow-node {
+    border-left-color: var(--cp-danger);
+    background: linear-gradient(135deg, var(--cp-danger-light) 0%, var(--cp-surface) 40%);
+}
+.wf-flow-unbound-row .wf-flow-node:hover {
+    border-color: var(--cp-danger);
 }
 .wf-flow-unbound-label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--cp-text-muted);
     font-style: italic;
+    font-weight: 500;
 }
 
 /* ── Legacy compat ─────────────────────────────────── */

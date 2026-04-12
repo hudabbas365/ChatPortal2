@@ -1,6 +1,6 @@
 @model ChatPortal2.Models.CanvasState
 @{
-    ViewData["Title"] = "Dashboard — Report Designer";
+    ViewData["Title"] = "Report Designer";
     Layout = null;
     var canvasName = ViewBag.CanvasName as string ?? "My Report";
 }
@@ -31,7 +31,7 @@
         <div class="navbar-brand">
             <a href="/" class="brand-link">
                 <i class="bi bi-bar-chart-fill text-primary me-2"></i>
-                <span class="brand-text">ChatPortal2</span>
+                <span class="brand-text">AI Insights</span>
             </a>
         </div>
         <div class="navbar-title">
@@ -164,335 +164,374 @@
             </div>
         </main>
 
-        <!-- Right Panel -->
-        <aside class="properties-panel">
-            <div class="panel-header">
-                <button id="toggle-properties-panel" class="panel-toggle-btn me-1" title="Collapse panel"><i class="bi bi-chevron-right"></i></button>
-            </div>
-
-            <!-- Data Fields collapsible section -->
-            <div class="right-panel-section" id="data-fields-section">
-                <div class="right-panel-section-header" id="data-fields-toggle">
-                    <i class="bi bi-chevron-down right-panel-chevron"></i>
-                    <i class="bi bi-table me-1" style="color:var(--cp-primary)"></i>
-                    <span class="right-panel-section-label">Data Fields</span>
-                    <span class="right-panel-section-badge" id="data-fields-count"></span>
-                </div>
-                <div class="right-panel-section-body" id="data-fields-tab-content">
-                    <div id="data-fields-list" class="data-fields-scroll"></div>
-                </div>
-            </div>
-
-            <!-- Properties collapsible section -->
-            <div class="right-panel-section" id="properties-section">
-                <div class="right-panel-section-header" id="properties-toggle">
-                    <i class="bi bi-chevron-down right-panel-chevron"></i>
-                    <i class="bi bi-gear me-1" style="color:var(--cp-primary)"></i>
-                    <span class="right-panel-section-label">Properties</span>
-                </div>
-                <div class="right-panel-section-body" id="properties-section-body">
-                    <!-- Canvas / Page Properties (always visible) -->
-                    <div class="canvas-props-section" id="canvasPropsSection">
-                        <div class="prop-section-title">Canvas Properties</div>
-                        <div class="canvas-props-row">
-                            <div class="flex-fill">
-                                <label class="form-label" style="font-size:0.72rem">Width (px)</label>
-                                <input type="number" id="canvas-prop-width" class="form-control form-control-sm" value="1200" min="600" max="3000" step="50">
-                            </div>
-                            <div class="flex-fill">
-                                <label class="form-label" style="font-size:0.72rem">Height (px)</label>
-                                <input type="number" id="canvas-prop-height" class="form-control form-control-sm" value="900" min="400" max="3000" step="50">
-                            </div>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label" style="font-size:0.72rem">Background</label>
-                            <div class="d-flex gap-2">
-                                <input type="color" id="canvas-prop-bg" class="form-control form-control-color form-control-sm" value="#ffffff" style="width:40px;height:32px">
-                                <input type="text" id="canvas-prop-bg-text" class="form-control form-control-sm" value="#ffffff" style="flex:1">
-                            </div>
-                        </div>
+        <!-- Right Panels Container -->
+        <div class="right-panels-container">
+                <!-- Right Panel 1: Properties -->
+           <aside class="properties-panel" id="properties-aside">
+                    <div class="panel-header">
+                        <i class="bi bi-gear me-1" style="color:var(--cp-primary)"></i>
+                        <h6 class="mb-0">Properties</h6>
+                        <button id="toggle-properties-panel" class="panel-toggle-btn ms-1" title="Collapse panel"><i class="bi bi-chevron-left"></i></button>
                     </div>
-                    <div id="properties-empty" class="empty-state-small">
-                        <i class="bi bi-cursor-fill text-muted mb-2"></i>
-                        <small class="text-muted">Select a chart to edit its properties</small>
-                    </div>
-                    <div id="properties-form" style="display:none">
-                        <div id="properties-tab-content" class="properties-scroll">
-                    <div class="p-3">
-                        <!-- Basic -->
-                        <div class="prop-section">
-                            <div class="prop-section-title">Basic</div>
-                            <div class="mb-2">
-                                <label class="form-label">Title</label>
-                                <input type="text" id="prop-title" class="form-control form-control-sm">
-                            </div>
-                            <div class="mb-2 chart-only-section">
-                                <label class="form-label">Chart Type</label>
-                                <select id="prop-chart-type" class="form-select form-select-sm">
-                                    <optgroup label="Basic">
-                                        <option value="bar">Bar Chart</option><option value="horizontalBar">Horizontal Bar</option>
-                                        <option value="stackedBar">Stacked Bar</option><option value="line">Line Chart</option>
-                                        <option value="area">Area Chart</option><option value="pie">Pie Chart</option>
-                                        <option value="donut">Donut Chart</option><option value="scatter">Scatter Plot</option>
-                                        <option value="bubble">Bubble Chart</option><option value="radar">Radar Chart</option>
-                                    </optgroup>
-                                    <optgroup label="Advanced">
-                                        <option value="mixedBarLine">Mixed Bar+Line</option><option value="groupedBar">Grouped Bar</option>
-                                        <option value="waterfall">Waterfall</option><option value="funnel">Funnel Chart</option>
-                                        <option value="gauge">Gauge Chart</option><option value="treemap">Treemap</option>
-                                        <option value="heatmap">Heatmap</option><option value="sankey">Sankey Diagram</option>
-                                        <option value="sunburst">Sunburst</option><option value="polarArea">Polar Area</option>
-                                    </optgroup>
-                                    <optgroup label="Statistical">
-                                        <option value="histogram">Histogram</option><option value="boxPlot">Box Plot</option>
-                                        <option value="violin">Violin Plot</option><option value="bellCurve">Bell Curve</option>
-                                        <option value="pareto">Pareto Chart</option><option value="controlChart">Control Chart</option>
-                                        <option value="regressionLine">Regression Line</option><option value="confidenceBand">Confidence Band</option>
-                                        <option value="errorBar">Error Bar</option><option value="stemLeaf">Stem and Leaf</option>
-                                    </optgroup>
-                                    <optgroup label="Time Series">
-                                        <option value="timeLine">Time Line</option><option value="candlestick">Candlestick</option>
-                                        <option value="ohlc">OHLC Chart</option><option value="rangeArea">Range Area</option>
-                                        <option value="stepLine">Step Line</option><option value="streamGraph">Stream Graph</option>
-                                        <option value="eventTimeline">Event Timeline</option><option value="gantt">Gantt Chart</option>
-                                        <option value="burnDown">Burn Down</option><option value="velocityChart">Velocity Chart</option>
-                                    </optgroup>
-                                    <optgroup label="Comparison">
-                                        <option value="bulletChart">Bullet Chart</option><option value="marimekko">Marimekko</option>
-                                        <option value="dotPlot">Dot Plot</option><option value="lollipop">Lollipop Chart</option>
-                                        <option value="dumbbell">Dumbbell Chart</option><option value="slope">Slope Chart</option>
-                                        <option value="divergingBar">Diverging Bar</option><option value="spanChart">Span Chart</option>
-                                        <option value="pairedBar">Paired Bar</option><option value="populationPyramid">Population Pyramid</option>
-                                    </optgroup>
-                                    <optgroup label="Geographic">
-                                        <option value="choropleth">Choropleth Map</option><option value="bubbleMap">Bubble Map</option>
-                                        <option value="heatMapGeo">Heat Map Geographic</option><option value="flowMap">Flow Map</option>
-                                        <option value="spikeMap">Spike Map</option>
-                                    </optgroup>
-                                    <optgroup label="Relationship">
-                                        <option value="networkGraph">Network Graph</option><option value="chordDiagram">Chord Diagram</option>
-                                        <option value="arcDiagram">Arc Diagram</option><option value="forceDirected">Force-Directed</option>
-                                        <option value="matrix">Matrix Chart</option>
-                                    </optgroup>
-                                    <optgroup label="Part-to-Whole">
-                                        <option value="stackedBar100">100% Stacked Bar</option><option value="stackedArea100">100% Stacked Area</option>
-                                        <option value="waffleChart">Waffle Chart</option><option value="pictograph">Pictograph</option>
-                                        <option value="nightingaleRose">Nightingale Rose</option>
-                                    </optgroup>
-                                    <optgroup label="KPI / Metrics">
-                                        <option value="kpiCard">KPI Card</option><option value="sparkline">Sparkline</option>
-                                        <option value="progressBar">Progress Bar</option><option value="radialProgress">Radial Progress</option>
-                                        <option value="metricTile">Metric Tile</option>
-                                    </optgroup>
-                                    <optgroup label="Data / Interactive">
-                                        <option value="table">Table Chart</option><option value="slicer">Slicer</option>
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label">Width (cols)</label>
-                                    <select id="prop-width" class="form-select form-select-sm">
-                                        <option value="2">2</option><option value="3">3</option><option value="4">4</option>
-                                        <option value="5">5</option><option value="6" selected>6</option>
-                                        <option value="8">8</option><option value="12">12</option>
-                                    </select>
+                    <div class="right-panel-section-body" id="properties-section-body">
+                        <!-- Canvas / Page Properties (always visible) -->
+                        <div class="canvas-props-section" id="canvasPropsSection">
+                            <div class="prop-section-title">Canvas Properties</div>
+                            <div class="canvas-props-row">
+                                <div class="flex-fill">
+                                    <label class="form-label" style="font-size:0.72rem">Width (px)</label>
+                                    <input type="number" id="canvas-prop-width" class="form-control form-control-sm" value="1200" min="600" max="3000" step="50">
                                 </div>
-                                <div class="col-6">
-                                    <label class="form-label">Height (px)</label>
-                                    <input type="number" id="prop-height" class="form-control form-control-sm" min="150" max="800" step="50">
+                                <div class="flex-fill">
+                                    <label class="form-label" style="font-size:0.72rem">Height (px)</label>
+                                    <input type="number" id="canvas-prop-height" class="form-control form-control-sm" value="900" min="400" max="3000" step="50">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" style="font-size:0.72rem">Background</label>
+                                <div class="d-flex gap-2">
+                                    <input type="color" id="canvas-prop-bg" class="form-control form-control-color form-control-sm" value="#ffffff" style="width:40px;height:32px">
+                                    <input type="text" id="canvas-prop-bg-text" class="form-control form-control-sm" value="#ffffff" style="flex:1">
                                 </div>
                             </div>
                         </div>
-
-                        <!-- Data (chart-only) -->
-                        <div class="prop-section chart-only-section">
-                            <div class="prop-section-title">Data</div>
-                            <div class="mb-2">
-                                <label class="form-label">Table</label>
-                                <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
-                                    <option value="">-- Select table --</option>
-                                </select>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Label Field</label>
-                                <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Value Field</label>
-                                <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2" id="multi-value-fields-section">
-                                <div class="d-flex align-items-center justify-content-between mb-1">
-                                    <label class="form-label mb-0" style="font-size:0.72rem">Additional Value Fields</label>
-                                    <button type="button" id="add-value-field-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add another value field">
-                                        <i class="bi bi-plus"></i> Add
-                                    </button>
-                                </div>
-                                <div id="multi-value-fields-container"></div>
-                            </div>
-                            <div class="mb-2 chart-type-field" data-chart-types="mixedBarLine" style="display:none">
-                                <label class="form-label">Line Value Field</label>
-                                <select id="prop-line-value-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
-                                <label class="form-label">X Field</label>
-                                <select id="prop-x-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
-                                <label class="form-label">Y Field</label>
-                                <select id="prop-y-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2 chart-type-field" data-chart-types="bubble" style="display:none">
-                                <label class="form-label">R (Size) Field</label>
-                                <select id="prop-r-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2 chart-type-field" data-chart-types="stackedBar,groupedBar,stackedBar100,stackedArea100" style="display:none">
-                                <label class="form-label">Group By Field</label>
-                                <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
-                            </div>
-                            <div class="mb-2 form-check">
-                                <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
-                                <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Aggregation</label>
-                                <select id="prop-agg-function" class="form-select form-select-sm">
-                                    <option value="SUM">SUM</option><option value="AVG">AVG</option>
-                                    <option value="COUNT">COUNT</option><option value="MAX">MAX</option>
-                                    <option value="MIN">MIN</option>
-                                </select>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Row Limit</label>
-                                <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="100" placeholder="100">
-                            </div>
-                            <div class="mb-2" style="display:none">
-                                <input type="hidden" id="prop-filter-where" />
-                            </div>
-                            <div class="mb-2">
-                                <div class="d-flex align-items-center justify-content-between mb-1">
-                                    <label class="form-label mb-0">WHERE Conditions</label>
-                                    <button type="button" id="pp-add-condition-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add condition row">
-                                        <i class="bi bi-plus"></i> Add
-                                    </button>
-                                </div>
-                                <div id="pp-conditions"></div>
-                            </div>
-                            <div class="mb-2">
-                                <div class="d-flex align-items-center justify-content-between mb-1">
-                                    <label class="form-label mb-0">SQL Query</label>
-                                    <button type="button" id="pp-ai-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-purple,#9B59B6)" title="Generate SQL using AI">
-                                        <i class="bi bi-stars me-1"></i>AI Generate
-                                    </button>
-                                </div>
-                                <textarea id="pp-sql-area" class="form-control form-control-sm font-monospace" rows="4" placeholder="SELECT ..."></textarea>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Custom JSON Data</label>
-                                <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
-                            </div>
+                        <div id="properties-empty" class="empty-state-small">
+                            <i class="bi bi-cursor-fill text-muted mb-2"></i>
+                            <small class="text-muted">Select a chart to edit its properties</small>
                         </div>
-
-                        <!-- Style (chart-only) -->
-                        <div class="prop-section chart-only-section">
-                            <div class="prop-section-title">Style</div>
-                            <div class="mb-2">
-                                <label class="form-label">Primary Color</label>
-                                <input type="color" id="prop-color-palette" class="form-control form-control-sm">
-                            </div>
-                            <div class="mb-2 form-check">
-                                <input type="checkbox" id="prop-show-legend" class="form-check-input">
-                                <label class="form-check-label" for="prop-show-legend">Show Legend</label>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Legend Position</label>
-                                <select id="prop-legend-position" class="form-select form-select-sm">
-                                    <option value="top">Top</option><option value="bottom">Bottom</option>
-                                    <option value="left">Left</option><option value="right">Right</option>
-                                </select>
-                            </div>
-                            <div class="mb-2 form-check">
-                                <input type="checkbox" id="prop-fill-area" class="form-check-input">
-                                <label class="form-check-label" for="prop-fill-area">Fill Area (Line)</label>
-                            </div>
-                            <div class="mb-2 form-check">
-                                <input type="checkbox" id="prop-show-tooltips" class="form-check-input">
-                                <label class="form-check-label" for="prop-show-tooltips">Show Tooltips</label>
-                            </div>
-                            <div class="mb-2 form-check">
-                                <input type="checkbox" id="prop-animated" class="form-check-input">
-                                <label class="form-check-label" for="prop-animated">Animated</label>
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label">Title Font Size</label>
-                                    <input type="number" id="prop-title-font-size" class="form-control form-control-sm" min="10" max="28">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label">Border Radius</label>
-                                    <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Shape Properties (shown only for shapes) -->
-                        <div class="prop-section" id="shape-props-section" style="display:none">
-                            <div class="prop-section-title">Shape Style</div>
-                            <div class="mb-2">
-                                <label class="form-label">Fill Color</label>
-                                <input type="color" id="prop-shape-fill" class="form-control form-control-sm">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Stroke Color</label>
-                                <input type="color" id="prop-shape-stroke" class="form-control form-control-sm">
-                            </div>
-                            <div class="row g-2 mb-2">
-                                <div class="col-6">
-                                    <label class="form-label">Stroke Width</label>
-                                    <input type="number" id="prop-shape-stroke-width" class="form-control form-control-sm" min="0" max="20">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label">Corner Radius</label>
-                                    <input type="number" id="prop-shape-corner-radius" class="form-control form-control-sm" min="0" max="50">
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Opacity</label>
-                                <input type="range" id="prop-shape-opacity" class="form-range" min="0" max="1" step="0.05">
-                            </div>
-                            <div class="shape-textbox-field">
-                                <div class="prop-section-title">Text</div>
-                                <div class="mb-2">
-                                    <label class="form-label">Text Content</label>
-                                    <textarea id="prop-shape-text" class="form-control form-control-sm" rows="2"></textarea>
-                                </div>
-                                <div class="row g-2 mb-2">
-                                    <div class="col-6">
-                                        <label class="form-label">Font Size</label>
-                                        <input type="number" id="prop-shape-font-size" class="form-control form-control-sm" min="8" max="72">
+                        <div id="properties-form" style="display:none">
+                            <div id="properties-tab-content" class="properties-scroll">
+                                <div class="p-3">
+                                    <!-- Basic -->
+                                    <div class="prop-section">
+                                        <div class="prop-section-title">Basic</div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Title</label>
+                                            <input type="text" id="prop-title" class="form-control form-control-sm">
+                                        </div>
+                                        <div class="mb-2 chart-only-section">
+                                            <label class="form-label">Chart Type</label>
+                                            <select id="prop-chart-type" class="form-select form-select-sm">
+                                                <optgroup label="Basic">
+                                                    <option value="bar">Bar Chart</option>
+                                                    <option value="horizontalBar">Horizontal Bar</option>
+                                                    <option value="stackedBar">Stacked Bar</option>
+                                                    <option value="line">Line Chart</option>
+                                                    <option value="area">Area Chart</option>
+                                                    <option value="pie">Pie Chart</option>
+                                                    <option value="donut">Donut Chart</option>
+                                                    <option value="scatter">Scatter Plot</option>
+                                                    <option value="bubble">Bubble Chart</option>
+                                                    <option value="radar">Radar Chart</option>
+                                                </optgroup>
+                                                <optgroup label="Advanced">
+                                                    <option value="mixedBarLine">Mixed Bar+Line</option>
+                                                    <option value="groupedBar">Grouped Bar</option>
+                                                    <option value="waterfall">Waterfall</option>
+                                                    <option value="funnel">Funnel Chart</option>
+                                                    <option value="gauge">Gauge Chart</option>
+                                                    <option value="treemap">Treemap</option>
+                                                    <option value="heatmap">Heatmap</option>
+                                                    <option value="sankey">Sankey Diagram</option>
+                                                    <option value="sunburst">Sunburst</option>
+                                                    <option value="polarArea">Polar Area</option>
+                                                </optgroup>
+                                                <optgroup label="Statistical">
+                                                    <option value="histogram">Histogram</option>
+                                                    <option value="boxPlot">Box Plot</option>
+                                                    <option value="violin">Violin Plot</option>
+                                                    <option value="bellCurve">Bell Curve</option>
+                                                    <option value="pareto">Pareto Chart</option>
+                                                    <option value="controlChart">Control Chart</option>
+                                                    <option value="regressionLine">Regression Line</option>
+                                                    <option value="confidenceBand">Confidence Band</option>
+                                                    <option value="errorBar">Error Bar</option>
+                                                    <option value="stemLeaf">Stem and Leaf</option>
+                                                </optgroup>
+                                                <optgroup label="Time Series">
+                                                    <option value="timeLine">Time Line</option>
+                                                    <option value="candlestick">Candlestick</option>
+                                                    <option value="ohlc">OHLC Chart</option>
+                                                    <option value="rangeArea">Range Area</option>
+                                                    <option value="stepLine">Step Line</option>
+                                                    <option value="streamGraph">Stream Graph</option>
+                                                    <option value="eventTimeline">Event Timeline</option>
+                                                    <option value="gantt">Gantt Chart</option>
+                                                    <option value="burnDown">Burn Down</option>
+                                                    <option value="velocityChart">Velocity Chart</option>
+                                                </optgroup>
+                                                <optgroup label="Comparison">
+                                                    <option value="bulletChart">Bullet Chart</option>
+                                                    <option value="marimekko">Marimekko</option>
+                                                    <option value="dotPlot">Dot Plot</option>
+                                                    <option value="lollipop">Lollipop Chart</option>
+                                                    <option value="dumbbell">Dumbbell Chart</option>
+                                                    <option value="slope">Slope Chart</option>
+                                                    <option value="divergingBar">Diverging Bar</option>
+                                                    <option value="spanChart">Span Chart</option>
+                                                    <option value="pairedBar">Paired Bar</option>
+                                                    <option value="populationPyramid">Population Pyramid</option>
+                                                </optgroup>
+                                                <optgroup label="Geographic">
+                                                    <option value="choropleth">Choropleth Map</option>
+                                                    <option value="bubbleMap">Bubble Map</option>
+                                                    <option value="heatMapGeo">Heat Map Geographic</option>
+                                                    <option value="flowMap">Flow Map</option>
+                                                    <option value="spikeMap">Spike Map</option>
+                                                </optgroup>
+                                                <optgroup label="Relationship">
+                                                    <option value="networkGraph">Network Graph</option>
+                                                    <option value="chordDiagram">Chord Diagram</option>
+                                                    <option value="arcDiagram">Arc Diagram</option>
+                                                    <option value="forceDirected">Force-Directed</option>
+                                                    <option value="matrix">Matrix Chart</option>
+                                                </optgroup>
+                                                <optgroup label="Part-to-Whole">
+                                                    <option value="stackedBar100">100% Stacked Bar</option>
+                                                    <option value="stackedArea100">100% Stacked Area</option>
+                                                    <option value="waffleChart">Waffle Chart</option>
+                                                    <option value="pictograph">Pictograph</option>
+                                                    <option value="nightingaleRose">Nightingale Rose</option>
+                                                </optgroup>
+                                                <optgroup label="KPI / Metrics">
+                                                    <option value="kpiCard">KPI Card</option>
+                                                    <option value="sparkline">Sparkline</option>
+                                                    <option value="progressBar">Progress Bar</option>
+                                                    <option value="radialProgress">Radial Progress</option>
+                                                    <option value="metricTile">Metric Tile</option>
+                                                </optgroup>
+                                                <optgroup label="Data / Interactive">
+                                                    <option value="table">Table Chart</option>
+                                                    <option value="slicer">Slicer</option>
+                                                </optgroup>
+                                            </select>
+                                        </div>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Width (cols)</label>
+                                                <select id="prop-width" class="form-select form-select-sm">
+                                                    <option value="2">2</option>
+                                                    <option value="3">3</option>
+                                                    <option value="4">4</option>
+                                                    <option value="5">5</option>
+                                                    <option value="6" selected>6</option>
+                                                    <option value="8">8</option>
+                                                    <option value="12">12</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Height (px)</label>
+                                                <input type="number" id="prop-height" class="form-control form-control-sm" min="150" max="800" step="50">
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="col-6">
-                                        <label class="form-label">Alignment</label>
-                                        <select id="prop-shape-text-align" class="form-select form-select-sm">
-                                            <option value="left">Left</option>
-                                            <option value="center">Center</option>
-                                            <option value="right">Right</option>
-                                        </select>
+
+                                    <!-- Data (chart-only) -->
+                                    <div class="prop-section chart-only-section">
+                                        <div class="prop-section-title">Data</div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Table</label>
+                                            <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
+                                                <option value="">-- Select table --</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Label Field</label>
+                                            <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Value Field</label>
+                                            <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2" id="multi-value-fields-section">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="form-label mb-0" style="font-size:0.72rem">Additional Value Fields</label>
+                                                <button type="button" id="add-value-field-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add another value field">
+                                                    <i class="bi bi-plus"></i> Add
+                                                </button>
+                                            </div>
+                                            <div id="multi-value-fields-container"></div>
+                                        </div>
+                                        <div class="mb-2 chart-type-field" data-chart-types="mixedBarLine" style="display:none">
+                                            <label class="form-label">Line Value Field</label>
+                                            <select id="prop-line-value-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                                            <label class="form-label">X Field</label>
+                                            <select id="prop-x-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                                            <label class="form-label">Y Field</label>
+                                            <select id="prop-y-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2 chart-type-field" data-chart-types="bubble" style="display:none">
+                                            <label class="form-label">R (Size) Field</label>
+                                            <select id="prop-r-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2 chart-type-field" data-chart-types="stackedBar,groupedBar,stackedBar100,stackedArea100" style="display:none">
+                                            <label class="form-label">Group By Field</label>
+                                            <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
+                                            <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Aggregation</label>
+                                            <select id="prop-agg-function" class="form-select form-select-sm">
+                                                <option value="SUM">SUM</option>
+                                                <option value="AVG">AVG</option>
+                                                <option value="COUNT">COUNT</option>
+                                                <option value="MAX">MAX</option>
+                                                <option value="MIN">MIN</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Row Limit</label>
+                                            <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="100" placeholder="100">
+                                        </div>
+                                        <div class="mb-2" style="display:none">
+                                            <input type="hidden" id="prop-filter-where" />
+                                        </div>
+                                        <div class="mb-2">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="form-label mb-0">WHERE Conditions</label>
+                                                <button type="button" id="pp-add-condition-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add condition row">
+                                                    <i class="bi bi-plus"></i> Add
+                                                </button>
+                                            </div>
+                                            <div id="pp-conditions"></div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="form-label mb-0">SQL Query</label>
+                                                <button type="button" id="pp-ai-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-purple,#9B59B6)" title="Generate SQL using AI">
+                                                    <i class="bi bi-stars me-1"></i>AI Generate
+                                                </button>
+                                            </div>
+                                            <textarea id="pp-sql-area" class="form-control form-control-sm font-monospace" rows="4" placeholder="SELECT ..."></textarea>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Custom JSON Data</label>
+                                            <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
+                                        </div>
+                                    </div>
+
+                                    <!-- Style (chart-only) -->
+                                    <div class="prop-section chart-only-section">
+                                        <div class="prop-section-title">Style</div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Primary Color</label>
+                                            <input type="color" id="prop-color-palette" class="form-control form-control-sm">
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-show-legend" class="form-check-input">
+                                            <label class="form-check-label" for="prop-show-legend">Show Legend</label>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Legend Position</label>
+                                            <select id="prop-legend-position" class="form-select form-select-sm">
+                                                <option value="top">Top</option>
+                                                <option value="bottom">Bottom</option>
+                                                <option value="left">Left</option>
+                                                <option value="right">Right</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-fill-area" class="form-check-input">
+                                            <label class="form-check-label" for="prop-fill-area">Fill Area (Line)</label>
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-show-tooltips" class="form-check-input">
+                                            <label class="form-check-label" for="prop-show-tooltips">Show Tooltips</label>
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-animated" class="form-check-input">
+                                            <label class="form-check-label" for="prop-animated">Animated</label>
+                                        </div>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Title Font Size</label>
+                                                <input type="number" id="prop-title-font-size" class="form-control form-control-sm" min="10" max="28">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Border Radius</label>
+                                                <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Shape Properties (shown only for shapes) -->
+                                    <div class="prop-section" id="shape-props-section" style="display:none">
+                                        <div class="prop-section-title">Shape Style</div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Fill Color</label>
+                                            <input type="color" id="prop-shape-fill" class="form-control form-control-sm">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Stroke Color</label>
+                                            <input type="color" id="prop-shape-stroke" class="form-control form-control-sm">
+                                        </div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Stroke Width</label>
+                                                <input type="number" id="prop-shape-stroke-width" class="form-control form-control-sm" min="0" max="20">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Corner Radius</label>
+                                                <input type="number" id="prop-shape-corner-radius" class="form-control form-control-sm" min="0" max="50">
+                                            </div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Opacity</label>
+                                            <input type="range" id="prop-shape-opacity" class="form-range" min="0" max="1" step="0.05">
+                                        </div>
+                                        <div class="shape-textbox-field">
+                                            <div class="prop-section-title">Text</div>
+                                            <div class="mb-2">
+                                                <label class="form-label">Text Content</label>
+                                                <textarea id="prop-shape-text" class="form-control form-control-sm" rows="2"></textarea>
+                                            </div>
+                                            <div class="row g-2 mb-2">
+                                                <div class="col-6">
+                                                    <label class="form-label">Font Size</label>
+                                                    <input type="number" id="prop-shape-font-size" class="form-control form-control-sm" min="8" max="72">
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label">Alignment</label>
+                                                    <select id="prop-shape-text-align" class="form-select form-select-sm">
+                                                        <option value="left">Left</option>
+                                                        <option value="center">Center</option>
+                                                        <option value="right">Right</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label class="form-label">Font Color</label>
+                                                <input type="color" id="prop-shape-font-color" class="form-control form-control-sm">
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Font Color</label>
-                                    <input type="color" id="prop-shape-font-color" class="form-control form-control-sm">
-                                </div>
-                            </div>
-                        </div>
+                            </div><!-- /properties-tab-content -->
+                        </div><!-- /properties-section-body -->
+                </aside>
+
+            <!-- Resize divider between panels -->
+            <div class="right-panels-divider" id="right-panels-divider" title="Drag to resize"></div>
+                <!-- Right Panel 2: Data Fields -->
+           <aside class="data-fields-panel" id="data-fields-aside">
+                    <div class="panel-header">
+                        <i class="bi bi-table me-1" style="color:var(--cp-primary)"></i>
+                        <h6 class="mb-0">Data Fields</h6>
+                        <span class="right-panel-section-badge ms-auto" id="data-fields-count"></span>
+                        <button id="toggle-data-fields-panel" class="panel-toggle-btn ms-1" title="Collapse panel"><i class="bi bi-chevron-right"></i></button>
                     </div>
-                </div><!-- /properties-tab-content -->
-            </div><!-- /properties-form -->
-                </div><!-- /properties-section-body -->
-            </div><!-- /properties-section -->
-        </aside>
+                    <div class="right-panel-section-body" id="data-fields-tab-content">
+                        <div id="data-fields-list" class="data-fields-scroll"></div>
+                    </div>
+                </aside>
+        </div><!-- /right-panels-container -->
     </div>
 
     <!-- Filter Panel (right flyout) -->
@@ -616,12 +655,54 @@
             const icon = this.querySelector('i');
             icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
         });
-        document.getElementById('toggle-properties-panel')?.addEventListener('click', function() {
-            const panel = document.querySelector('.properties-panel');
+        document.getElementById('toggle-data-fields-panel')?.addEventListener('click', function() {
+            const panel = document.getElementById('data-fields-aside');
+            if (!panel) return;
             panel.classList.toggle('collapsed');
             const icon = this.querySelector('i');
             icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
         });
+        document.getElementById('toggle-properties-panel')?.addEventListener('click', function() {
+            const panel = document.getElementById('properties-aside');
+            if (!panel) return;
+            panel.classList.toggle('collapsed');
+            const icon = this.querySelector('i');
+            icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+        });
+
+        // ── Right-panels divider resize (horizontal) ────────────
+        (function wireRightPanelsDivider() {
+            const divider = document.getElementById('right-panels-divider');
+            const dfPanel = document.getElementById('data-fields-aside');
+            if (!divider || !dfPanel) return;
+            let isResizing = false;
+            let startX = 0;
+            let startW = 0;
+            divider.addEventListener('mousedown', function(e) {
+                isResizing = true;
+                startX = e.clientX;
+                startW = dfPanel.offsetWidth;
+                divider.classList.add('active');
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (!isResizing) return;
+                const delta = e.clientX - startX;
+                const newW = Math.max(80, Math.min(500, startW - delta));
+                dfPanel.style.width = newW + 'px';
+                dfPanel.style.flex = '0 0 ' + newW + 'px';
+            });
+            document.addEventListener('mouseup', function() {
+                if (isResizing) {
+                    isResizing = false;
+                    divider.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        })();
 
         // ── Pre-load real table names BEFORE chart init so charts use correct tables ──
         if (window.currentDatasourceId) {
@@ -747,7 +828,7 @@
                     wsName.textContent = wsGuid;
                     wsTag.style.display = '';
                     wsTag.title = 'Back to workspace';
-                    wsTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                            wsTag.addEventListener('click', () => { window.location.href = '/chat?workspace=' + encodeURIComponent(wsGuid); });
                     fetch('/api/workspaces/' + encodeURIComponent(wsGuid))
                         .then(r => r.ok ? r.json() : null)
                         .then(data => {
@@ -765,7 +846,7 @@
                                         dsEl.textContent = dsList[0].name;
                                         dsTag.style.display = '';
                                         dsTag.title = 'Datasource: ' + dsList[0].name;
-                                                        dsTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                                        dsTag.addEventListener('click', () => { window.location.href = '/chat?workspace=' + encodeURIComponent(wsGuid); });
                                     }
                                     if (dsSep) dsSep.style.display = '';
                                     // Set global datasource ID and type so chartRenderer + propertiesPanel use real data
@@ -786,7 +867,7 @@
                                         agEl.textContent = agentList[0].name;
                                         agTag.style.display = '';
                                         agTag.title = 'Agent: ' + agentList[0].name;
-                                                        agTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                                        agTag.addEventListener('click', () => { window.location.href = '/chat?workspace=' + encodeURIComponent(wsGuid); });
                                     }
                                     if (agSep) agSep.style.display = '';
                                 }

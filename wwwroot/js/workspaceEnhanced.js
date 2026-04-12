@@ -162,8 +162,8 @@
         _injectArtifactDeleteBtns(data) {
             var self = this;
             // Single cascade delete button on each lineage row (datasource group)
-            document.querySelectorAll('.wf-lineage-row').forEach(function (row) {
-                var dsNode = row.querySelector('.wf-lineage-node.datasource[data-ds-id]');
+            document.querySelectorAll('.wf-flow-diagram').forEach(function (row) {
+                var dsNode = row.querySelector('.wf-flow-node.wf-flow-datasource[data-ds-id]');
                 if (!dsNode || row.querySelector('.wfe-insights-del')) return;
                 var dsGuid = dsNode.dataset.dsId;
                 var btn = document.createElement('button');

@@ -34,6 +34,7 @@
             html += '<div class="wf-flow-sublabel">' + self._esc(ds.type || 'Datasource') + '</div>';
             html += '</div>';
             html += '</div>'; // wf-flow-col-source
+            html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
 
             if (hasAgents) {
                 // ── Middle column: agent(s) + dashboard ───
@@ -76,6 +77,7 @@
 
                 // ── Report column ─────────────────────────
                 if (hasAgentReports) {
+                    html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
                     html += '<div class="wf-flow-col wf-flow-col-report">';
                     agentLinkedReports.forEach(function (rpt) {
                         var agentForRpt = boundAgents.find(function (a) { return a.id === rpt.agentId; });
@@ -103,6 +105,7 @@
                 html += '</div>'; // wf-flow-branch-wrap
                 html += '</div>'; // wf-flow-col-middle
 
+                html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
                 html += '<div class="wf-flow-col wf-flow-col-report">';
                 orphanedReports.forEach(function (rpt) {
                     html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
