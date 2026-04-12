@@ -2,8 +2,10 @@ using ChatPortal2.Data;
 using ChatPortal2.Models;
 using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using System.Text;
 
 namespace ChatPortal2.Controllers;
@@ -15,13 +17,15 @@ public class ChatController : Controller
     private readonly CohereService _cohereService;
     private readonly JwtService _jwtService;
     private readonly IQueryExecutionService _queryService;
+    private readonly ITokenBudgetService _tokenBudget;
 
-    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService)
+    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService, ITokenBudgetService tokenBudget)
     {
         _db = db;
         _cohereService = cohereService;
         _jwtService = jwtService;
         _queryService = queryService;
+        _tokenBudget = tokenBudget;
     }
 
     [HttpGet("/chat")]
@@ -46,6 +50,26 @@ public class ChatController : Controller
         Response.Headers.Append("Connection", "keep-alive");
 
         var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
+
+        // Check token budget for the organization
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        int? orgId = null;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            orgId = await _db.Users.Where(u => u.Id == userId).Select(u => u.OrganizationId).FirstOrDefaultAsync();
+        }
+
+        if (orgId.HasValue && orgId.Value > 0)
+        {
+            if (!await _tokenBudget.HasBudgetAsync(orgId.Value))
+            {
+                var errData = $"data: {Newtonsoft.Json.JsonConvert.SerializeObject(new { text = "Monthly AI token budget exceeded. Contact your organisation admin." })}\n\n";
+                await Response.WriteAsync(errData);
+                await Response.WriteAsync("data: [DONE]\n\n");
+                await Response.Body.FlushAsync();
+                return;
+            }
+        }
 
         var history = new List<(string role, string content)>();
         if (wsId > 0)
@@ -124,8 +148,17 @@ Always be concise and actionable.";
         await Response.WriteAsync("data: [DONE]\n\n");
         await Response.Body.FlushAsync();
 
+        // Record token usage (estimate: 1 token â‰ˆ 4 characters for input + output)
+        if (orgId.HasValue && orgId.Value > 0)
+        {
+            var inputText = (req.Message ?? "") + effectiveSystemPrompt;
+            var estimatedTokens = (inputText.Length + fullResponse.Length) / 4;
+            if (estimatedTokens > 0)
+                await _tokenBudget.RecordUsageAsync(orgId.Value, userId, estimatedTokens);
+        }
+
         // Save messages to DB
-        if (wsId > 0 && !string.IsNullOrEmpty(req.UserId))
+        if (wsId > 0 && !string.IsNullOrEmpty(userId))
         {
             _db.ChatMessages.Add(new ChatMessage
             {
@@ -133,7 +166,7 @@ Always be concise and actionable.";
                 Content = req.Message ?? "",
                 WorkspaceId = wsId,
                 AgentId = req.AgentId,
-                UserId = req.UserId
+                UserId = userId
             });
             _db.ChatMessages.Add(new ChatMessage
             {
@@ -141,13 +174,13 @@ Always be concise and actionable.";
                 Content = fullResponse.ToString(),
                 WorkspaceId = wsId,
                 AgentId = req.AgentId,
-                UserId = req.UserId
+                UserId = userId
             });
             _db.ActivityLogs.Add(new ActivityLog
             {
                 Action = "agent_execution",
                 Description = $"Chat message sent in workspace {wsId}.",
-                UserId = req.UserId
+                UserId = userId
             });
             await _db.SaveChangesAsync();
         }
@@ -159,7 +192,7 @@ Always be concise and actionable.";
     {
         var query = (req.Query ?? "").Trim();
 
-        // Server-side read-only guard — block all write operations
+        // Server-side read-only guard ï¿½ block all write operations
         var normalized = System.Text.RegularExpressions.Regex.Replace(
             query.ToUpperInvariant(), @"\s+", " ").Trim();
         var writeOps = new[] { "INSERT","UPDATE","DELETE","DROP","CREATE","ALTER",
@@ -190,7 +223,7 @@ Always be concise and actionable.";
             }
         }
 
-        // Fallback: no datasource connected — return informative error
+        // Fallback: no datasource connected ï¿½ return informative error
         return Ok(new
         {
             success = false,

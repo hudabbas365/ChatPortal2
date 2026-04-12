@@ -2,8 +2,10 @@ using ChatPortal2.Data;
 using ChatPortal2.Models;
 using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -37,11 +39,13 @@ public class DatasourceController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IQueryExecutionService _queryService;
+    private readonly IWorkspacePermissionService _permissions;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions)
     {
         _db = db;
         _queryService = queryService;
+        _permissions = permissions;
     }
 
     private async Task<int> ResolveOrganizationIdAsync(int supplied, string? userId)
@@ -87,7 +91,15 @@ public class DatasourceController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] DatasourceRequest req)
     {
-        var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, req.UserId);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+
+        if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
+        {
+            if (!await _permissions.CanEditAsync(req.WorkspaceId.Value, userId))
+                return StatusCode(403, new { error = "You need Editor or Admin role to create datasources." });
+        }
+
+        var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, userId);
 
         var ds = new Datasource
         {
@@ -106,7 +118,7 @@ public class DatasourceController : ControllerBase
         {
             Action = "datasource_created",
             Description = $"Datasource '{ds.Name}' ({ds.Type}) connected.",
-            UserId = req.UserId ?? "",
+            UserId = userId,
             OrganizationId = orgId
         });
         await _db.SaveChangesAsync();
@@ -385,6 +397,11 @@ public class DatasourceController : ControllerBase
             ds = await _db.Datasources.FindAsync(intId);
         if (ds == null) return NotFound();
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var wsId = ds.WorkspaceId ?? req.WorkspaceId ?? 0;
+        if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to update datasources." });
+
         if (req.Name != null) ds.Name = req.Name;
         if (req.DbUser != null) ds.DbUser = req.DbUser;
         if (req.DbPassword != null) ds.DbPassword = req.DbPassword;
@@ -403,6 +420,11 @@ public class DatasourceController : ControllerBase
         if (ds == null)
             ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var wsId = ds.WorkspaceId ?? 0;
+        if (wsId > 0 && !await _permissions.CanDeleteAsync(wsId, userId))
+            return StatusCode(403, new { error = "Only Admins can delete datasources." });
 
         // Null out Agent references to avoid FK constraint failures
         var agents = await _db.Agents.Where(a => a.DatasourceId == ds.Id).ToListAsync();

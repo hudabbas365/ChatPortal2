@@ -1,0 +1,19 @@
+/* Role-based visibility helpers */
+.perm-hidden { display: none !important; }
+
+/* Shown only after JS confirms Admin */
+.perm-admin-only { display: none; }
+
+/* Shown for Editor and Admin */
+.perm-editor-plus { display: none; }
+
+/* Hidden for Viewers, shown for others */
+.perm-viewer-hidden { display: none; }
+
+/* Viewer mode: lock down interactive controls */
+.viewer-mode .btn-delete,
+.viewer-mode .btn-create-agent,
+.viewer-mode .agent-panel,
+.viewer-mode #aiInsightsSection { display: none !important; }
+
+.viewer-mode .btn-edit { pointer-events: none; opacity: 0.5; }

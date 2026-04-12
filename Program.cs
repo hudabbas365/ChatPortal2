@@ -76,6 +76,9 @@ builder.Services.AddSingleton<IChartService, ChartService>();
 builder.Services.AddSingleton<IDataService, DataService>();
 builder.Services.AddSingleton<IQueryExecutionService, QueryExecutionService>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();
+builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 
 // Session support
 builder.Services.AddDistributedMemoryCache();
@@ -361,6 +364,39 @@ async Task ApplySchemaPatchesAsync(AppDbContext db)
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE ChatMessages ADD COLUMN \"AgentId\" TEXT";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Create TokenUsages table if it doesn't exist
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS TokenUsages (
+                    Id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    OrganizationId INTEGER NOT NULL,
+                    UserId         TEXT NOT NULL DEFAULT '',
+                    TokensUsed     INTEGER NOT NULL DEFAULT 0,
+                    Year           INTEGER NOT NULL DEFAULT 0,
+                    Month          INTEGER NOT NULL DEFAULT 0,
+                    CreatedAt      TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY(OrganizationId) REFERENCES Organizations(Id) ON DELETE CASCADE
+                )";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Add MonthlyTokenBudget column to Organizations if missing
+        var orgCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info('Organizations')";
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                orgCols.Add(reader.GetString(1));
+        }
+        if (!orgCols.Contains("MonthlyTokenBudget"))
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "ALTER TABLE Organizations ADD COLUMN \"MonthlyTokenBudget\" INTEGER NOT NULL DEFAULT 2000000";
             await cmd.ExecuteNonQueryAsync();
         }
     }

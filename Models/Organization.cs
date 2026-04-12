@@ -10,4 +10,5 @@ public class Organization
     public List<Workspace> Workspaces { get; set; } = new();
     public List<Datasource> Datasources { get; set; } = new();
     public List<Agent> Agents { get; set; } = new();
+    public int MonthlyTokenBudget { get; set; } = 2_000_000;
 }

@@ -1,8 +1,11 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
+using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -12,10 +15,14 @@ namespace ChatPortal2.Controllers;
 public class AgentController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IWorkspacePermissionService _permissions;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public AgentController(AppDbContext db)
+    public AgentController(AppDbContext db, IWorkspacePermissionService permissions, UserManager<ApplicationUser> userManager)
     {
         _db = db;
+        _permissions = permissions;
+        _userManager = userManager;
     }
 
     private async Task<int> ResolveOrganizationIdAsync(int supplied, string? userId)
@@ -49,6 +56,15 @@ public class AgentController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int? workspaceId, [FromQuery] int? organizationId)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+
+        // If workspace context provided, block Viewers from seeing agents
+        if (workspaceId.HasValue && workspaceId.Value > 0)
+        {
+            if (!await _permissions.CanViewAgentsAsync(workspaceId.Value, userId))
+                return StatusCode(403, new { error = "AI Insights are not available for Viewers." });
+        }
+
         var query = _db.Agents.AsQueryable();
         if (organizationId.HasValue)
             query = query.Where(a => a.OrganizationId == organizationId.Value);
@@ -59,7 +75,15 @@ public class AgentController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] AgentRequest req)
     {
-        var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, req.UserId);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+
+        if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
+        {
+            if (!await _permissions.CanEditAsync(req.WorkspaceId.Value, userId))
+                return StatusCode(403, new { error = "You need Editor or Admin role to create agents." });
+        }
+
+        var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, userId);
 
         var agent = new Agent
         {
@@ -76,7 +100,7 @@ public class AgentController : ControllerBase
         {
             Action = "agent_created",
             Description = $"Agent '{agent.Name}' created.",
-            UserId = req.UserId ?? "",
+            UserId = userId,
             OrganizationId = orgId
         });
         await _db.SaveChangesAsync();
@@ -89,6 +113,11 @@ public class AgentController : ControllerBase
     {
         var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Guid == guid);
         if (agent == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var wsId = agent.WorkspaceId ?? req.WorkspaceId ?? 0;
+        if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to update agents." });
 
         if (req.Name != null) agent.Name = req.Name;
         if (req.SystemPrompt != null) agent.SystemPrompt = req.SystemPrompt;
@@ -107,6 +136,11 @@ public class AgentController : ControllerBase
         if (agent == null)
             agent = await _db.Agents.FirstOrDefaultAsync(a => a.Guid == guid);
         if (agent == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var wsId = agent.WorkspaceId ?? 0;
+        if (wsId > 0 && !await _permissions.CanDeleteAsync(wsId, userId))
+            return StatusCode(403, new { error = "Only Admins can delete agents." });
 
         // Null out Dashboard references to avoid FK constraint failures
         var dashboards = await _db.Dashboards.Where(d => d.AgentId == agent.Id).ToListAsync();
