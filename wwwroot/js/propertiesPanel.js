@@ -708,22 +708,38 @@ class PropertiesPanel {
     _collectConditionsSQL() {
         const container = document.getElementById('pp-conditions');
         if (!container) return '';
+        // Allowed operators to prevent injection via operator field
+        const allowedOps = new Set(['=','!=','>','<','>=','<=','LIKE','IN','IS NULL','IS NOT NULL']);
         const parts = [];
         container.querySelectorAll('.pp-condition-row').forEach(row => {
             const field = row.querySelector('.pp-cond-field')?.value || '';
             const op    = row.querySelector('.pp-cond-op')?.value || '=';
             const val   = row.querySelector('.pp-cond-val')?.value || '';
             if (!field) return;
-            if (op === 'IS NULL' || op === 'IS NOT NULL') {
-                parts.push(`[${field}] ${op}`);
-            } else if (op === 'IN') {
-                parts.push(`[${field}] IN (${val})`);
-            } else if (op === 'LIKE') {
-                parts.push(`[${field}] LIKE '${val.replace(/'/g, "''")}'`);
+            // Only use fields that are actually in the schema to prevent injection
+            const knownField = this.fields.includes(field)
+                ? field
+                : (this.fields.find(f => f.toLowerCase() === field.toLowerCase()) || null);
+            if (!knownField) return;
+            // Only allow known operators
+            const safeOp = allowedOps.has(op.toUpperCase()) ? op.toUpperCase() : '=';
+            const quotedField = '[' + knownField.replace(/\]/g, ']]') + ']';
+            if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') {
+                parts.push(`${quotedField} ${safeOp}`);
+            } else if (safeOp === 'IN') {
+                // val should be comma-separated; each entry is quoted if not numeric
+                const inParts = val.split(',').map(v => {
+                    const trimmed = v.trim();
+                    const isNum = !isNaN(parseFloat(trimmed)) && isFinite(trimmed) && trimmed !== '';
+                    return isNum ? trimmed : `'${trimmed.replace(/'/g, "''")}'`;
+                });
+                parts.push(`${quotedField} IN (${inParts.join(', ')})`);
+            } else if (safeOp === 'LIKE') {
+                parts.push(`${quotedField} LIKE '${val.replace(/'/g, "''")}'`);
             } else {
-                const numericVal = !isNaN(val) && val !== '';
-                const quotedVal = numericVal ? val : `'${val.replace(/'/g, "''")}'`;
-                parts.push(`[${field}] ${op} ${quotedVal}`);
+                const isNum = !isNaN(parseFloat(val)) && isFinite(val) && val !== '';
+                const quotedVal = isNum ? val : `'${val.replace(/'/g, "''")}'`;
+                parts.push(`${quotedField} ${safeOp} ${quotedVal}`);
             }
         });
         return parts.join(' AND ');
@@ -869,7 +885,8 @@ class PropertiesPanel {
     }
 
     // Shape property methods
-    showShapeProps(show) {        const shapeSection = document.getElementById('shape-props-section');
+    showShapeProps(show) {
+        const shapeSection = document.getElementById('shape-props-section');
         const chartSections = document.querySelectorAll('.chart-only-section');
         if (shapeSection) shapeSection.style.display = show ? 'block' : 'none';
         chartSections.forEach(s => s.style.display = show ? 'none' : '');
