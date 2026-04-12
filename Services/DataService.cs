@@ -66,9 +66,14 @@ public class DataService : IDataService
         var data = GetData(datasetName);
         if (!data.Any()) return new { labels = Array.Empty<string>(), values = Array.Empty<double>() };
 
+        // Resolve field names case-insensitively against actual dataset keys
+        var allKeys = data[0].Keys.ToList();
+        var actualLabel = allKeys.FirstOrDefault(k => k.Equals(labelField, StringComparison.OrdinalIgnoreCase)) ?? labelField;
+        var actualValue = allKeys.FirstOrDefault(k => k.Equals(valueField, StringComparison.OrdinalIgnoreCase)) ?? valueField;
+
         var groups = data
-            .Where(r => r.ContainsKey(labelField) && r.ContainsKey(valueField))
-            .GroupBy(r => r[labelField]?.ToString() ?? "")
+            .Where(r => r.ContainsKey(actualLabel) && r.ContainsKey(actualValue))
+            .GroupBy(r => r[actualLabel]?.ToString() ?? "")
             .ToList();
 
         var labels = groups.Select(g => g.Key).ToArray();
@@ -76,7 +81,7 @@ public class DataService : IDataService
         {
             var nums = g.Select(r =>
             {
-                if (double.TryParse(r[valueField]?.ToString(), out double v)) return v;
+                if (double.TryParse(r[actualValue]?.ToString(), out double v)) return v;
                 return 0.0;
             }).ToList();
 

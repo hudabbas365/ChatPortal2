@@ -114,7 +114,7 @@
 
         <!-- Communication -->
         <h5 class="fw-semibold mb-3 text-muted">Communication</h5>
-        <div class="row g-4">
+        <div class="row g-4 mb-5">
             <div class="col-md-6">
                 <div class="admin-action-card glass-card">
                     <div class="admin-action-icon">
@@ -140,5 +140,120 @@
                 </div>
             </div>
         </div>
+
+        <!-- Platform Users Management -->
+        <h5 class="fw-semibold mb-3 text-muted">Platform Users</h5>
+        <div class="glass-card p-4 mb-5">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="input-group input-group-sm" style="max-width:300px">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="superUserSearch" placeholder="Search users...">
+                </div>
+                <span class="text-muted small" id="superUserCount"></span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0" id="superUsersTable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Organization</th>
+                            <th>Role</th>
+                            <th style="width:120px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="superUsersBody">
+                        <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-hourglass-split me-1"></i>Loading users...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+(function() {
+    let _allUsers = [];
+
+    async function loadUsers() {
+        try {
+            const r = await fetch('/api/admin/super/users');
+            if (!r.ok) throw new Error();
+            _allUsers = await r.json();
+            renderUsers(_allUsers);
+        } catch {
+            document.getElementById('superUsersBody').innerHTML =
+                '<tr><td colspan="5" class="text-center text-danger py-4">Failed to load users.</td></tr>';
+        }
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    function renderUsers(users) {
+        const tbody = document.getElementById('superUsersBody');
+        const countEl = document.getElementById('superUserCount');
+        if (countEl) countEl.textContent = users.length + ' users';
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No users found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = users.map(u => `
+            <tr data-user-id="${esc(u.id)}">
+                <td>${esc(u.fullName || '—')}</td>
+                <td>${esc(u.email)}</td>
+                <td>${esc(u.organizationName || '—')}</td>
+                <td>
+                    <select class="form-select form-select-sm super-role-sel" data-user-id="${esc(u.id)}" style="width:130px">
+                        <option value="User" ${u.role === 'User' ? 'selected' : ''}>User</option>
+                        <option value="OrgAdmin" ${u.role === 'OrgAdmin' ? 'selected' : ''}>Org Admin</option>
+                        <option value="SuperAdmin" ${u.role === 'SuperAdmin' ? 'selected' : ''}>Super Admin</option>
+                    </select>
+                </td>
+                <td>
+                    <button class="btn btn-xs btn-outline-primary super-save-role" data-user-id="${esc(u.id)}">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+        tbody.querySelectorAll('.super-save-role').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const userId = btn.dataset.userId;
+                const sel = tbody.querySelector(`.super-role-sel[data-user-id="${userId}"]`);
+                if (!sel) return;
+                btn.disabled = true;
+                try {
+                    const r = await fetch('/api/admin/super/users/' + encodeURIComponent(userId) + '/role', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role: sel.value })
+                    });
+                    if (!r.ok) throw new Error();
+                    btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Saved';
+                    setTimeout(() => { btn.innerHTML = '<i class="bi bi-check-lg"></i> Save'; btn.disabled = false; }, 1500);
+                } catch {
+                    alert('Failed to update role.');
+                    btn.disabled = false;
+                }
+            });
+        });
+    }
+
+    document.getElementById('superUserSearch')?.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        if (!q) { renderUsers(_allUsers); return; }
+        renderUsers(_allUsers.filter(u =>
+            (u.fullName || '').toLowerCase().includes(q) ||
+            (u.email || '').toLowerCase().includes(q) ||
+            (u.organizationName || '').toLowerCase().includes(q)
+        ));
+    });
+
+    document.addEventListener('DOMContentLoaded', loadUsers);
+})();
+</script>

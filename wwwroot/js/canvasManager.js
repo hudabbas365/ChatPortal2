@@ -7,13 +7,16 @@ class CanvasManager {
         this.selectedChartId = null;
         this._maxZIndex = 1;
         this._dragState = null;
+        this._addingPage = false;
     }
 
     init(initialCharts, pages, activePageIndex) {
         if (pages && pages.length > 0) {
             this.pages = pages;
             this.activePageIndex = activePageIndex || 0;
-            this.charts = this.pages[this.activePageIndex].charts || [];
+            // Ensure the page has a charts array so this.charts is always a reference to it
+            if (!this.pages[this.activePageIndex].charts) this.pages[this.activePageIndex].charts = [];
+            this.charts = this.pages[this.activePageIndex].charts;
         } else {
             this.pages = [{ name: 'Page 1', charts: initialCharts || [] }];
             this.activePageIndex = 0;
@@ -22,6 +25,9 @@ class CanvasManager {
         this.renderAll();
         this.renderPageTabs();
         this.initDropZone();
+
+        // Restore group outlines from chart definitions
+        if (window.groupManager) window.groupManager.restoreGroups(this.charts);
 
         const addBtn = document.getElementById('add-page-btn');
         if (addBtn) addBtn.addEventListener('click', () => this.addPage());
@@ -52,24 +58,38 @@ class CanvasManager {
     }
 
     async addChart(partial) {
+        if (this._pageSwitchPromise) await this._pageSwitchPromise;
+        const isShape = window.ShapeManager && ShapeManager.isShape(partial.chartType);
         const defaultX = 20 + (this.charts.length % 5) * 30;
         const defaultY = 20 + (this.charts.length % 5) * 30;
+        // Resolve default dataset: prefer first real table from datasource dropdown, else 'sales'
+        let defaultDataset = partial.datasetName || 'sales';
+        if (!partial.datasetName && window.currentDatasourceId) {
+            const dsSel = document.getElementById('prop-dataset');
+            if (dsSel && dsSel.options.length > 0) defaultDataset = dsSel.options[0].value;
+        }
+
         const chart = {
             id: 'c' + Date.now(),
             chartType: partial.chartType || 'bar',
-            title: partial.title || 'New Chart',
-            datasetName: partial.datasetName || 'sales',
-            width: partial.width || 6,
-            height: partial.height || 300,
+            title: partial.title || (isShape ? partial.chartType.replace('shape-', '').replace(/-/g, ' ') : 'New Chart'),
+            datasetName: defaultDataset,
+            datasourceId: partial.datasourceId || window.currentDatasourceId || null,
+            dataQuery: partial.dataQuery || null,
+            width: partial.width || (isShape ? 3 : 6),
+            height: partial.height || (isShape ? 180 : 300),
             gridCol: 0,
             gridRow: 0,
             posX: partial.posX !== undefined ? partial.posX : defaultX,
             posY: partial.posY !== undefined ? partial.posY : defaultY,
             zIndex: ++this._maxZIndex,
-            mapping: partial.mapping || { labelField: 'month', valueField: 'revenue', groupByField: '', xField: '', yField: '', rField: '', multiValueFields: [] },
-            aggregation: partial.aggregation || { function: 'SUM', enabled: true },
+            mapping: partial.mapping || { labelField: '', valueField: '', groupByField: '', xField: '', yField: '', rField: '', multiValueFields: [] },
+            aggregation: partial.aggregation || { function: 'SUM', enabled: !partial.customJsonData },
             style: partial.style || { backgroundColor: '#4A90D9', borderColor: '#2C6FAC', showLegend: true, legendPosition: 'top', showTooltips: true, fillArea: false, colorPalette: 'default', showDataLabels: false, fontFamily: 'Inter, sans-serif', titleFontSize: 14, animated: true, responsive: true, borderRadius: '4' },
-            customJsonData: partial.customJsonData || ''
+            customJsonData: partial.customJsonData || '',
+            rowLimit: partial.rowLimit || 100,
+            filterWhere: partial.filterWhere || '',
+            shapeProps: partial.shapeProps || (isShape ? ShapeManager.getDefaultShapeProps(partial.chartType) : null)
         };
 
         const resp = await fetch('/api/chart/add', {
@@ -87,6 +107,7 @@ class CanvasManager {
     }
 
     async deleteChart(chartId) {
+        if (this._pageSwitchPromise) await this._pageSwitchPromise;
         await fetch(`/api/chart/${chartId}`, { method: 'DELETE' });
         this.charts = this.charts.filter(c => c.id !== chartId);
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
@@ -108,13 +129,18 @@ class CanvasManager {
         await this.addChart(copy);
     }
 
-    selectChart(chartId) {
+    selectChart(chartId, ctrlKey) {
+        if (ctrlKey && window.groupManager) {
+            window.groupManager.toggleSelect(chartId);
+            this.selectedChartId = chartId;
+            document.dispatchEvent(new CustomEvent('chart:selected', { detail: { chartId } }));
+            return;
+        }
         this.selectedChartId = chartId;
         document.querySelectorAll('.chart-card').forEach(c => c.classList.remove('selected'));
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
         if (card) {
             card.classList.add('selected');
-            // Bring to front
             const chart = this.charts.find(c => c.id === chartId);
             if (chart) {
                 chart.zIndex = ++this._maxZIndex;
@@ -123,9 +149,12 @@ class CanvasManager {
         }
         const chart = this.charts.find(c => c.id === chartId);
         if (chart && window.propertiesPanel) window.propertiesPanel.load(chart);
+        if (window.groupManager) window.groupManager.selectOne(chartId);
+        document.dispatchEvent(new CustomEvent('chart:selected', { detail: { chartId } }));
     }
 
     async updateChart(chartDef) {
+        if (this._pageSwitchPromise) await this._pageSwitchPromise;
         const idx = this.charts.findIndex(c => c.id === chartDef.id);
         if (idx >= 0) this.charts[idx] = chartDef;
 
@@ -144,8 +173,12 @@ class CanvasManager {
             card.style.width = cardWidth + 'px';
             const canvasWrap = card.querySelector('.chart-canvas-wrap');
             if (canvasWrap) canvasWrap.style.height = (parseInt(chartDef.height) || 300) + 'px';
-            const canvasEl = card.querySelector('canvas');
-            if (canvasEl) await window.chartRenderer.render(chartDef, canvasEl);
+            if (window.ShapeManager && ShapeManager.isShape(chartDef.chartType)) {
+                if (canvasWrap) ShapeManager.render(canvasWrap, chartDef);
+            } else {
+                const canvasEl = card.querySelector('canvas');
+                if (canvasEl) await window.chartRenderer.render(chartDef, canvasEl);
+            }
         }
     }
 
@@ -184,27 +217,42 @@ class CanvasManager {
         card.dataset.chartId = chartDef.id;
         card.style.cssText = `left:${posX}px;top:${posY}px;width:${cardWidth}px;z-index:${zIdx};`;
 
-        card.innerHTML = `
-            <div class="chart-card-header">
-                <i class="bi bi-grip-vertical chart-drag-handle text-muted me-2" title="Drag to reposition"></i>
-                <span class="chart-title">${safeTitle}</span>
-                <div class="chart-card-actions ms-auto">
-                    <button class="btn btn-xs btn-icon" data-action="edit" title="Edit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate">
-                        <i class="bi bi-copy"></i>
-                    </button>
-                    <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete">
-                        <i class="bi bi-trash"></i>
-                    </button>
+        const isShape = window.ShapeManager && ShapeManager.isShape(chartDef.chartType);
+
+        if (isShape) {
+            card.classList.add('shape-card');
+            card.innerHTML = `
+                <div class="shape-hover-actions">
+                    <button class="btn btn-xs btn-icon" data-action="edit" title="Edit"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate"><i class="bi bi-copy"></i></button>
+                    <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>
                 </div>
-            </div>
-            <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px">
-                <canvas id="canvas-${safeId}"></canvas>
-            </div>
-            <div class="chart-resize-handle" title="Drag to resize"></div>
-        `;
+                <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px"></div>
+                <div class="chart-resize-handle" title="Drag to resize"></div>
+            `;
+        } else {
+            card.innerHTML = `
+                <div class="chart-card-header">
+                    <i class="bi bi-grip-vertical chart-drag-handle text-muted me-2" title="Drag to reposition"></i>
+                    <span class="chart-title">${safeTitle}</span>
+                    <div class="chart-card-actions ms-auto">
+                        <button class="btn btn-xs btn-icon" data-action="edit" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate">
+                            <i class="bi bi-copy"></i>
+                        </button>
+                        <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px">
+                    <canvas id="canvas-${safeId}"></canvas>
+                </div>
+                <div class="chart-resize-handle" title="Drag to resize"></div>
+            `;
+        }
 
         card.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -220,7 +268,7 @@ class CanvasManager {
         });
 
         card.addEventListener('mousedown', (e) => {
-            if (!e.target.closest('button')) this.selectChart(chartDef.id);
+            if (!e.target.closest('button')) this.selectChart(chartDef.id, e.ctrlKey || e.metaKey);
         });
 
         container.appendChild(card);
@@ -230,19 +278,34 @@ class CanvasManager {
         // Make resizable
         this._makeCardResizable(card, chartDef);
 
-        const canvasEl = card.querySelector('canvas');
-        requestAnimationFrame(() => window.chartRenderer.render(chartDef, canvasEl));
+        if (isShape) {
+            const canvasWrap = card.querySelector('.chart-canvas-wrap');
+            requestAnimationFrame(() => ShapeManager.render(canvasWrap, chartDef));
+        } else {
+            const canvasEl = card.querySelector('canvas');
+            requestAnimationFrame(() => window.chartRenderer.render(chartDef, canvasEl));
+        }
     }
 
     _makeCardDraggable(card, chartDef) {
-        const handle = card.querySelector('.chart-drag-handle');
+        const isShape = window.ShapeManager && ShapeManager.isShape(chartDef.chartType);
+        const handle = isShape ? card : card.querySelector('.chart-drag-handle');
         if (!handle) return;
 
         handle.addEventListener('mousedown', (e) => {
+            // For shapes, ignore clicks on action buttons and resize handle
+            if (isShape && (e.target.closest('button') || e.target.closest('.chart-resize-handle'))) return;
             e.preventDefault();
             e.stopPropagation();
 
-            this.selectChart(chartDef.id);
+            // Preserve multi-selection: only re-select if this card is NOT already selected
+            const gm = window.groupManager;
+            if (gm && gm.isSelected(chartDef.id) && gm.selectedCount > 1) {
+                // Already part of a multi-selection — keep it, just set as primary
+                this.selectedChartId = chartDef.id;
+            } else {
+                this.selectChart(chartDef.id);
+            }
 
             const container = document.getElementById('chart-canvas-drop');
             const scrollEl = container.parentElement; // .canvas-scroll
@@ -256,15 +319,31 @@ class CanvasManager {
             const offsetX = e.clientX - cardRect.left;
             const offsetY = e.clientY - cardRect.top;
 
+            // Snapshot start position for drag (handles multi-select + group)
+            const startPosX = chartDef.posX;
+            const startPosY = chartDef.posY;
+            if (gm) gm.snapshotDragPositions(chartDef.id);
+
             card.classList.add('dragging');
 
             const onMouseMove = (ev) => {
                 const sl = scrollEl ? scrollEl.scrollLeft : 0;
                 const st = scrollEl ? scrollEl.scrollTop  : 0;
-                const x = Math.max(0, ev.clientX - containerBase.left + (sl - scrollLeft) - offsetX);
-                const y = Math.max(0, ev.clientY - containerBase.top  + (st - scrollTop)  - offsetY);
+                let x = Math.max(0, ev.clientX - containerBase.left + (sl - scrollLeft) - offsetX);
+                let y = Math.max(0, ev.clientY - containerBase.top  + (st - scrollTop)  - offsetY);
+                // Snap to grid
+                if (window.layoutManager && window.layoutManager.snapToGrid) {
+                    x = window.layoutManager.snapValue(x);
+                    y = window.layoutManager.snapValue(y);
+                }
                 card.style.left = x + 'px';
                 card.style.top  = y + 'px';
+                // Move all drag siblings (multi-selected + group members)
+                if (gm) {
+                    const dx = x - startPosX;
+                    const dy = y - startPosY;
+                    gm.moveDragSiblings(chartDef.id, dx, dy);
+                }
             };
 
             const onMouseUp = (ev) => {
@@ -274,8 +353,12 @@ class CanvasManager {
 
                 const sl = scrollEl ? scrollEl.scrollLeft : 0;
                 const st = scrollEl ? scrollEl.scrollTop  : 0;
-                const x = Math.max(0, ev.clientX - containerBase.left + (sl - scrollLeft) - offsetX);
-                const y = Math.max(0, ev.clientY - containerBase.top  + (st - scrollTop)  - offsetY);
+                let x = Math.max(0, ev.clientX - containerBase.left + (sl - scrollLeft) - offsetX);
+                let y = Math.max(0, ev.clientY - containerBase.top  + (st - scrollTop)  - offsetY);
+                if (window.layoutManager && window.layoutManager.snapToGrid) {
+                    x = window.layoutManager.snapValue(x);
+                    y = window.layoutManager.snapValue(y);
+                }
                 chartDef.posX = Math.round(x);
                 chartDef.posY = Math.round(y);
 
@@ -289,6 +372,12 @@ class CanvasManager {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(chart)
                     }).catch(err => console.warn('Could not persist chart position:', err));
+                }
+                // Finalize all drag sibling positions (multi-selected + group)
+                if (gm) {
+                    const dx = Math.round(x) - startPosX;
+                    const dy = Math.round(y) - startPosY;
+                    gm.finalizeDragSiblings(chartDef.id, dx, dy);
                 }
             };
 
@@ -386,26 +475,35 @@ class CanvasManager {
         // Save current charts back to the current page
         this.pages[this.activePageIndex].charts = this.charts;
         this.activePageIndex = index;
-        this.charts = this.pages[index].charts || [];
+        // Ensure the target page has a charts array so this.charts references it
+        if (!this.pages[index].charts) this.pages[index].charts = [];
+        this.charts = this.pages[index].charts;
         this.renderAll();
         this.renderPageTabs();
-        fetch(`/api/page/switch/${index}`, { method: 'POST' })
-            .catch(err => console.warn('Could not persist page switch:', err));
+        this._pageSwitchPromise = fetch(`/api/page/switch/${index}`, { method: 'POST' })
+            .catch(err => console.warn('Could not persist page switch:', err))
+            .finally(() => { this._pageSwitchPromise = null; });
     }
 
     async addPage() {
-        const newPage = { name: this._getNextPageName(), charts: [] };
-        this.pages.push(newPage);
+        if (this._addingPage) return;
+        this._addingPage = true;
         try {
-            const resp = await fetch('/api/page/add', { method: 'POST' });
-            if (resp.ok) {
-                const data = await resp.json();
-                newPage.name = data.name || newPage.name;
+            const newPage = { name: this._getNextPageName(), charts: [] };
+            this.pages.push(newPage);
+            try {
+                const resp = await fetch('/api/page/add', { method: 'POST' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    newPage.name = data.name || newPage.name;
+                }
+            } catch (err) {
+                console.warn('Could not persist page add:', err);
             }
-        } catch (err) {
-            console.warn('Could not persist page add:', err);
+            this.switchPage(this.pages.length - 1);
+        } finally {
+            this._addingPage = false;
         }
-        this.switchPage(this.pages.length - 1);
     }
 
     _getNextPageName() {

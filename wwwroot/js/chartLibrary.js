@@ -52,15 +52,16 @@ class ChartLibrary {
         container.innerHTML = '';
         this.filteredCharts.forEach((group, idx) => {
             if (!group.charts || group.charts.length === 0) return;
+            const isBasic = group.group === 'Basic';
             const groupEl = document.createElement('div');
             groupEl.className = 'library-group mb-2';
             groupEl.innerHTML = `
-                <div class="library-group-header" data-bs-toggle="collapse" data-bs-target="#group-${idx}">
+                <div class="library-group-header${isBasic ? '' : ' collapsed'}" data-bs-toggle="collapse" data-bs-target="#group-${idx}">
                     <span class="group-name">${group.group}</span>
                     <span class="badge bg-secondary">${group.charts.length}</span>
                     <i class="bi bi-chevron-down ms-auto"></i>
                 </div>
-                <div class="collapse show" id="group-${idx}">
+                <div class="collapse${isBasic ? ' show' : ''}" id="group-${idx}">
                     <div class="library-items">
                         ${group.charts.map(c => `
                             <div class="library-item"

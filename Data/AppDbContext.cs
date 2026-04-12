@@ -17,6 +17,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
     public DbSet<SeoEntry> SeoEntries => Set<SeoEntry>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<WorkspaceUser> WorkspaceUsers => Set<WorkspaceUser>();
+    public DbSet<Dashboard> Dashboards => Set<Dashboard>();
+    public DbSet<Report> Reports => Set<Report>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -40,6 +43,28 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(w => w.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.Entity<Workspace>()
+            .HasOne(w => w.Owner)
+            .WithMany()
+            .HasForeignKey(w => w.OwnerId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Workspace>()
+            .HasIndex(w => w.Guid)
+            .IsUnique();
+
+        builder.Entity<Agent>()
+            .HasIndex(a => a.Guid)
+            .IsUnique();
+
+        builder.Entity<Datasource>()
+            .HasIndex(d => d.Guid)
+            .IsUnique();
+
+        builder.Entity<Dashboard>()
+            .HasIndex(d => d.Guid)
+            .IsUnique();
+
         builder.Entity<Agent>()
             .HasOne(a => a.Organization)
             .WithMany(o => o.Agents)
@@ -52,12 +77,87 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(a => a.DatasourceId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Entity<Agent>()
+            .HasOne(a => a.Workspace)
+            .WithMany()
+            .HasForeignKey(a => a.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Dashboard>()
+            .HasOne(d => d.Workspace)
+            .WithMany()
+            .HasForeignKey(d => d.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Dashboard>()
+            .HasOne(d => d.Agent)
+            .WithMany()
+            .HasForeignKey(d => d.AgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Dashboard>()
+            .HasOne(d => d.Datasource)
+            .WithMany()
+            .HasForeignKey(d => d.DatasourceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Report>()
+            .HasIndex(r => r.Guid)
+            .IsUnique();
+
+        builder.Entity<Report>()
+            .HasOne(r => r.Workspace)
+            .WithMany()
+            .HasForeignKey(r => r.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Report>()
+            .HasOne(r => r.Dashboard)
+            .WithMany()
+            .HasForeignKey(r => r.DashboardId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Report>()
+            .HasOne(r => r.Datasource)
+            .WithMany()
+            .HasForeignKey(r => r.DatasourceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Report>()
+            .HasOne(r => r.Agent)
+            .WithMany()
+            .HasForeignKey(r => r.AgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.Entity<Datasource>()
             .HasOne(d => d.Organization)
             .WithMany(o => o.Datasources)
             .HasForeignKey(d => d.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.Entity<Datasource>()
+            .HasOne(d => d.Workspace)
+            .WithMany()
+            .HasForeignKey(d => d.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<WorkspaceUser>()
+            .HasOne(wu => wu.Workspace)
+            .WithMany()
+            .HasForeignKey(wu => wu.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<WorkspaceUser>()
+            .HasOne(wu => wu.User)
+            .WithMany()
+            .HasForeignKey(wu => wu.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<WorkspaceUser>()
+            .HasIndex(wu => new { wu.WorkspaceId, wu.UserId })
+            .IsUnique();
+
+     
         builder.Entity<SeoEntry>()
             .HasIndex(s => s.PageUrl)
             .IsUnique();

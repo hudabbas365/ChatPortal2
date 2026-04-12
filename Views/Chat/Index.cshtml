@@ -4,40 +4,138 @@
 }
 
 <div class="chat-workspace" id="chatWorkspace">
-    <!-- Messages Area -->
-    <div class="chat-messages" id="chatMessages">
-        <div class="chat-welcome">
-            <div class="welcome-icon">
-                <i class="bi bi-robot"></i>
+
+    <!-- ── Main chat column ──────────────────────────── -->
+    <div class="chat-main-col">
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-welcome" id="chatWelcome">
+                <div class="welcome-icon">
+                    <i class="bi bi-robot"></i>
+                </div>
+                <h3>Hello! I'm your AI data assistant</h3>
+                <p class="welcome-subtitle" id="welcomeSubtitle">Ask me anything about your data. I can query your datasources, analyze trends, and create visualizations.</p>
+                <div class="welcome-ds-badge" id="welcomeDsBadge" style="display:none">
+                    <i class="bi bi-database-fill me-1"></i>
+                    <span id="welcomeDsName"></span>
+                    <span class="welcome-ds-type" id="welcomeDsType"></span>
+                </div>
+                <div class="welcome-suggestions" id="welcomeSuggestions">
+                    <button class="suggestion-chip" onclick="sendSuggestion(this)">What are the top revenue regions?</button>
+                    <button class="suggestion-chip" onclick="sendSuggestion(this)">Show me sales trends this quarter</button>
+                    <button class="suggestion-chip" onclick="sendSuggestion(this)">Compare performance by product</button>
+                </div>
             </div>
-            <h3>Hello! I'm your AI data assistant</h3>
-            <p>Ask me anything about your data. I can query your datasources, analyze trends, and create visualizations.</p>
-            <div class="welcome-suggestions">
-                <button class="suggestion-chip" onclick="sendSuggestion(this)">What are the top revenue regions?</button>
-                <button class="suggestion-chip" onclick="sendSuggestion(this)">Show me sales trends this quarter</button>
-                <button class="suggestion-chip" onclick="sendSuggestion(this)">Compare performance by product</button>
+        </div>
+
+        <!-- ── Cohere AI Progress Panel (collapsible) ─── -->
+        <div class="cohere-panel" id="coherePanel">
+            <div class="cohere-panel-bar" id="coherePanelBar">
+                <div class="cohere-panel-left">
+                    <span class="cohere-dot" id="cohereStatusDot"></span>
+                    <span class="cohere-status-text" id="cohereStatusText">
+                        <i class="bi bi-cpu me-1"></i>Cohere AI &middot; Ready
+                    </span>
+                </div>
+                <div class="cohere-panel-right">
+                    <span class="cohere-token-badge" id="cohereTokenBadge" style="display:none">
+                        <i class="bi bi-activity me-1"></i><span id="cohereTokenNum">0</span> tokens
+                    </span>
+                    <button class="cohere-toggle-btn" id="coherePanelToggle" title="Expand Cohere details">
+                        <i class="bi bi-chevron-up" id="cohereToggleIcon"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="cohere-panel-detail" id="coherePanelDetail">
+                <div class="cohere-detail-grid">
+                    <div class="cohere-detail-row">
+                        <span class="cohere-detail-label">Model</span>
+                        <span class="cohere-detail-val" id="cohereModel">command-r-plus</span>
+                    </div>
+                    <div class="cohere-detail-row">
+                        <span class="cohere-detail-label">Status</span>
+                        <span class="cohere-detail-val" id="cohereDetailStatus">Ready</span>
+                    </div>
+                    <div class="cohere-detail-row">
+                        <span class="cohere-detail-label">Chunks</span>
+                        <span class="cohere-detail-val" id="cohereChunkCount">—</span>
+                    </div>
+                    <div class="cohere-detail-row">
+                        <span class="cohere-detail-label">Est. tokens</span>
+                        <span class="cohere-detail-val" id="cohereTokenCount">—</span>
+                    </div>
+                    <div class="cohere-detail-row">
+                        <span class="cohere-detail-label">Latency</span>
+                        <span class="cohere-detail-val" id="cohereLatency">—</span>
+                    </div>
+                </div>
+                <div class="cohere-stream-log" id="cohereStreamLog"></div>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="chat-input-container">
+                <textarea class="chat-textarea" id="chatInput" placeholder="Ask anything about your data..." rows="1"></textarea>
+                <div class="chat-input-actions">
+                    <button class="btn btn-icon" id="chatSendBtn" title="Send">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="chat-input-footer">
+                <span class="input-hint"><i class="bi bi-info-circle me-1"></i>Press Enter to send, Shift+Enter for new line</span>
+                <span class="model-badge"><i class="bi bi-cpu me-1"></i>Powered by Cohere AI</span>
             </div>
         </div>
     </div>
 
-    <!-- Input Area -->
-    <div class="chat-input-area">
-        <div class="chat-input-container">
-            <textarea class="chat-textarea" id="chatInput" placeholder="Ask anything about your data..." rows="1"></textarea>
-            <div class="chat-input-actions">
-                <button class="btn btn-icon" id="chatSendBtn" title="Send">
-                    <i class="bi bi-send-fill"></i>
-                </button>
+    <!-- ── AI Context / Thinking Panel (right) ────────── -->
+    <div class="chat-thinking-panel" id="thinkingPanel">
+        <div class="tp-header">
+            <span class="tp-title"><i class="bi bi-cpu-fill me-2"></i>AI Context</span>
+            <button class="btn btn-icon tp-close-btn" id="thinkingPanelClose" title="Close panel">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="tp-tabs">
+            <button class="tp-tab tp-tab-active" data-tp-tab="context">
+                <i class="bi bi-broadcast me-1"></i>Context
+            </button>
+            <button class="tp-tab" data-tp-tab="schema">
+                <i class="bi bi-diagram-3 me-1"></i>Schema
+            </button>
+            <button class="tp-tab" data-tp-tab="history">
+                <i class="bi bi-clock-history me-1"></i>History
+            </button>
+        </div>
+        <div class="tp-body" id="thinkingPanelBody">
+            <div class="tp-empty">
+                <i class="bi bi-broadcast"></i>
+                <p class="mt-2">AI context will appear here as you chat.</p>
             </div>
         </div>
-        <div class="chat-input-footer">
-            <span class="input-hint"><i class="bi bi-info-circle me-1"></i>Press Enter to send, Shift+Enter for new line</span>
-            <span class="model-badge"><i class="bi bi-cpu me-1"></i>Powered by Cohere AI</span>
+        <div class="tp-body tp-schema-body" id="thinkingSchemaBody" style="display:none">
+            <div id="schemaExplorer">
+                <div class="tp-empty">
+                    <i class="bi bi-diagram-3"></i>
+                    <p class="mt-2">Select an agent to view datasource schema.</p>
+                </div>
+            </div>
+        </div>
+        <div class="tp-body tp-history-body" id="thinkingHistoryBody" style="display:none">
+            <div class="tp-history-toolbar">
+                <button class="btn btn-sm btn-outline-secondary w-100" id="newChatBtn">
+                    <i class="bi bi-plus-circle me-1"></i>New Chat
+                </button>
+            </div>
+            <div class="panel-list tp-chat-list" id="chatHistoryList">
+                <div class="panel-list-empty">No chats yet</div>
+            </div>
         </div>
     </div>
+
 </div>
 
 @section Scripts {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="~/js/chat.js"></script>
+<script src="~/js/chat.js" asp-append-version="true"></script>
 }

@@ -1,0 +1,77 @@
+/* Dashboard Chart Transfer — toast notifications & copy/paste UI
+   Complements dashboard-chart-transfer.js
+   CSS variables come from site.css (--cp-primary, --cp-surface, etc.)
+*/
+
+/* ── Toast container (fixed bottom-right) ───────────────────────── */
+.dct-toast-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    pointer-events: none;
+}
+
+.dct-toast {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .55rem 1rem;
+    border-radius: 8px;
+    font-size: .83rem;
+    font-weight: 500;
+    color: #fff;
+    background: #343a40;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, .28);
+    min-width: 220px;
+    max-width: 360px;
+    opacity: 0;
+    transform: translateY(10px) scale(.97);
+    transition: opacity .22s ease, transform .22s ease;
+    pointer-events: none;
+}
+
+.dct-toast.dct-toast-show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.dct-toast-success { background: #198754; }
+.dct-toast-info    { background: #0d6efd; }
+.dct-toast-warn    { background: #fd7e14; }
+.dct-toast-error   { background: #dc3545; }
+
+/* ── Per-card copy button ───────────────────────────────────────── */
+.dct-copy-btn {
+    transition: color .15s ease, opacity .15s ease;
+}
+
+.dct-copy-btn:hover {
+    color: var(--cp-primary, #4a90d9);
+    opacity: 1;
+}
+
+/* ── Paste button in the navbar ─────────────────────────────────── */
+.dct-navbar-btn {
+    transition: background-color .15s ease, color .15s ease;
+}
+
+.dct-navbar-btn:hover {
+    background-color: var(--cp-primary, #4a90d9);
+    border-color: var(--cp-primary, #4a90d9);
+    color: #fff;
+}
+
+/* ── Chart card "just received" highlight ───────────────────────── */
+@keyframes dct-card-arrive {
+    0%   { box-shadow: 0 0 0 0 rgba(74, 144, 217, .6); }
+    60%  { box-shadow: 0 0 0 8px rgba(74, 144, 217, .15); }
+    100% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0); }
+}
+
+.chart-card.dct-new-card {
+    animation: dct-card-arrive .7s ease-out forwards;
+}

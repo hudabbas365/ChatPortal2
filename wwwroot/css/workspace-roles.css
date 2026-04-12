@@ -1,0 +1,267 @@
+/* ── Workspace Roles & Permissions UI ─────────────────── */
+
+/* Workspace gear icon in left panel */
+.wf-ws-gear-btn {
+    background: none;
+    border: none;
+    color: var(--cp-text-muted, #8896a6);
+    padding: 2px 5px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.panel-list-item:hover .wf-ws-gear-btn,
+.panel-list-item.active .wf-ws-gear-btn {
+    opacity: 1;
+}
+.wf-ws-gear-btn:hover {
+    color: var(--cp-primary, #4A90D9);
+}
+
+/* Role badge in workspace user list */
+.wf-role-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.wf-role-badge.admin {
+    background: rgba(220, 53, 69, 0.12);
+    color: #dc3545;
+}
+.wf-role-badge.editor {
+    background: rgba(255, 193, 7, 0.15);
+    color: #c49000;
+}
+.wf-role-badge.viewer {
+    background: rgba(74, 144, 217, 0.12);
+    color: var(--cp-primary, #4A90D9);
+}
+
+/* People picker for workspace user management */
+.ws-people-picker {
+    position: relative;
+}
+.ws-people-picker-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--cp-bg-card, #fff);
+    border: 1px solid var(--cp-border, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1050;
+    display: none;
+}
+.ws-people-picker-results.open {
+    display: block;
+}
+.ws-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid var(--cp-border-light, #f1f3f5);
+}
+.ws-picker-item:last-child {
+    border-bottom: none;
+}
+.ws-picker-item:hover {
+    background: var(--cp-bg-hover, #f6f8fa);
+}
+.ws-picker-item-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--cp-primary, #4A90D9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.ws-picker-item-info {
+    flex: 1;
+    min-width: 0;
+}
+.ws-picker-item-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.ws-picker-item-email {
+    font-size: 0.72rem;
+    color: var(--cp-text-muted, #8896a6);
+}
+
+/* Role select in user management */
+.ws-role-select {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    background: var(--cp-bg-card, #fff);
+    cursor: pointer;
+}
+
+/* ── Report Top Navigation Bar (Breadcrumb) ──────────── */
+.report-topnav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--cp-bg-surface, #f8f9fb);
+    border-bottom: 1px solid var(--cp-border, #e2e8f0);
+    font-size: 0.82rem;
+}
+.report-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+.report-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 6px;
+    transition: background 0.15s, opacity 0.15s;
+}
+.report-crumb:hover {
+    background: rgba(0,0,0,0.06);
+    text-decoration: underline;
+}
+.report-crumb i:first-child {
+    font-size: 0.72rem;
+}
+.report-crumb.workspace {
+    color: var(--cp-primary, #4A90D9);
+}
+.report-crumb.datasource {
+    color: #28a745;
+}
+.report-crumb.agent {
+    color: #c49000;
+}
+.report-crumb-sep {
+    font-size: 0.6rem;
+    color: var(--cp-text-muted, #94a3b8);
+    flex-shrink: 0;
+}
+.report-topnav-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Canvas Properties Panel (in Dashboard) */
+.canvas-props-section {
+    padding: 12px;
+    border-bottom: 1px solid var(--cp-border-light, #f1f3f5);
+}
+.canvas-props-section .prop-section-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--cp-text-muted, #8896a6);
+    margin-bottom: 8px;
+}
+.canvas-props-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.canvas-props-row .form-control-sm {
+    font-size: 0.78rem;
+}
+
+/* Role visibility indicator in subnav */
+.chat-subnav-role {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-left: 8px;
+}
+.chat-subnav-role.admin { background: rgba(220,53,69,0.1); color: #dc3545; }
+.chat-subnav-role.editor { background: rgba(255,193,7,0.12); color: #c49000; }
+.chat-subnav-role.viewer { background: rgba(74,144,217,0.1); color: #4A90D9; }
+
+/* Artifact visibility tags on cards */
+.wf-artifact-visibility {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+}
+.wf-vis-tag {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--cp-bg-hover, #f0f2f5);
+    color: var(--cp-text-muted, #8896a6);
+}
+
+/* Report card in workspace home */
+.wf-artifact-icon.report {
+    background: rgba(156, 39, 176, 0.1);
+    color: #9c27b0;
+}
+
+/* Super Admin badge */
+.super-admin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+/* Workspace user management enhanced */
+.ws-manage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--cp-border-light, #f1f3f5);
+    margin-bottom: 12px;
+}
+.ws-manage-header h6 {
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+.ws-manage-count {
+    font-size: 0.72rem;
+    color: var(--cp-text-muted, #8896a6);
+}

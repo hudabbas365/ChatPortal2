@@ -1,0 +1,449 @@
+/* ============================================================
+   Workspace Settings Popup — Tab-based settings panel
+   ============================================================ */
+
+/* ── Overlay ─────────────────────────────────────────────── */
+.ws-settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(30, 45, 61, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.ws-settings-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ── Popup container ─────────────────────────────────────── */
+.ws-settings-popup {
+    display: flex;
+    width: 780px;
+    max-width: 92vw;
+    height: 540px;
+    max-height: 85vh;
+    background: var(--cp-surface);
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    transform: translateY(16px) scale(0.97);
+    transition: transform 0.25s ease;
+}
+.ws-settings-overlay.open .ws-settings-popup {
+    transform: translateY(0) scale(1);
+}
+
+/* ── Left sidebar tabs ───────────────────────────────────── */
+.ws-settings-sidebar {
+    width: 200px;
+    min-width: 200px;
+    background: var(--cp-bg);
+    border-right: 1px solid var(--cp-border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
+}
+.ws-settings-sidebar-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--cp-text-muted);
+    padding: 0 16px 10px;
+}
+.ws-settings-tab {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--cp-text);
+    cursor: pointer;
+    border: none;
+    background: none;
+    text-align: left;
+    width: 100%;
+    border-radius: 0;
+    transition: var(--cp-transition);
+    position: relative;
+}
+.ws-settings-tab i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+    color: var(--cp-text-muted);
+    transition: var(--cp-transition);
+}
+.ws-settings-tab:hover {
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+}
+.ws-settings-tab:hover i {
+    color: var(--cp-primary);
+}
+.ws-settings-tab.active {
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+    font-weight: 600;
+}
+.ws-settings-tab.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--cp-primary);
+}
+.ws-settings-tab.active i {
+    color: var(--cp-primary);
+}
+
+/* ── Right content area ──────────────────────────────────── */
+.ws-settings-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Header */
+.ws-settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--cp-border);
+    flex-shrink: 0;
+}
+.ws-settings-header-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--cp-text);
+    margin: 0;
+}
+.ws-settings-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    transition: var(--cp-transition);
+    font-size: 1.1rem;
+}
+.ws-settings-close-btn:hover {
+    background: var(--cp-danger-light);
+    color: var(--cp-danger);
+}
+
+/* Body */
+.ws-settings-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+/* Tab panels */
+.ws-settings-panel {
+    display: none;
+    animation: wsFadeIn 0.2s ease;
+}
+.ws-settings-panel.active {
+    display: block;
+}
+@keyframes wsFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Footer */
+.ws-settings-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--cp-border);
+    flex-shrink: 0;
+    background: var(--cp-bg);
+}
+
+/* ── Form elements inside popup ──────────────────────────── */
+.ws-settings-panel .ws-field {
+    margin-bottom: 20px;
+}
+.ws-settings-panel .ws-field-label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+}
+.ws-settings-panel .ws-field-hint {
+    font-size: 0.75rem;
+    color: var(--cp-text-muted);
+    margin-top: 4px;
+}
+.ws-settings-panel .form-control,
+.ws-settings-panel .form-select {
+    border: 1.5px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    font-size: 0.875rem;
+    padding: 9px 14px;
+    transition: var(--cp-transition);
+}
+.ws-settings-panel .form-control:focus,
+.ws-settings-panel .form-select:focus {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 3px rgba(91, 155, 213, 0.15);
+}
+
+/* ── Logo upload area ────────────────────────────────────── */
+.ws-logo-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.ws-logo-preview {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    background: var(--cp-primary-light);
+    border: 2px dashed var(--cp-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: var(--cp-transition);
+    position: relative;
+}
+.ws-logo-preview:hover {
+    border-color: var(--cp-primary);
+}
+.ws-logo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.ws-logo-preview .ws-logo-placeholder {
+    font-size: 1.6rem;
+    color: var(--cp-primary);
+}
+.ws-logo-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.ws-logo-actions .btn {
+    font-size: 0.8rem;
+    padding: 5px 14px;
+}
+
+/* ── Owner info ──────────────────────────────────────────── */
+.ws-owner-display {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+}
+.ws-owner-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.ws-owner-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--cp-text);
+}
+.ws-owner-email {
+    font-size: 0.78rem;
+    color: var(--cp-text-muted);
+}
+
+/* ── Agents tab ──────────────────────────────────────────── */
+.ws-agents-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.ws-agents-header h6 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+.ws-agents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ws-agent-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    transition: var(--cp-transition);
+}
+.ws-agent-card:hover {
+    box-shadow: var(--cp-shadow-sm);
+    border-color: var(--cp-primary);
+}
+.ws-agent-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--cp-purple-light);
+    color: var(--cp-purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.ws-agent-info {
+    flex: 1;
+    min-width: 0;
+}
+.ws-agent-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ws-agent-ds {
+    font-size: 0.75rem;
+    color: var(--cp-text-muted);
+}
+.ws-agent-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.ws-agents-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--cp-text-muted);
+}
+.ws-agents-empty i {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 8px;
+    opacity: 0.5;
+}
+.ws-agents-empty p {
+    font-size: 0.83rem;
+    margin: 4px 0 0;
+}
+
+/* ── Create agent inline form ────────────────────────────── */
+.ws-create-agent-form {
+    display: none;
+    padding: 16px;
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    margin-bottom: 16px;
+    animation: wsFadeIn 0.2s ease;
+}
+.ws-create-agent-form.show {
+    display: block;
+}
+.ws-create-agent-form .ws-field {
+    margin-bottom: 14px;
+}
+.ws-create-agent-form .ws-field:last-of-type {
+    margin-bottom: 0;
+}
+
+/* ── Alert inside settings ───────────────────────────────── */
+.ws-settings-alert {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    margin-bottom: 16px;
+    display: none;
+}
+.ws-settings-alert.show {
+    display: block;
+    animation: wsFadeIn 0.2s ease;
+}
+.ws-settings-alert.success {
+    background: var(--cp-success-light);
+    color: #1a7a3e;
+    border: 1px solid #b7e4c7;
+}
+.ws-settings-alert.error {
+    background: var(--cp-danger-light);
+    color: #b71c1c;
+    border: 1px solid #f5c6cb;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .ws-settings-popup {
+        flex-direction: column;
+        height: 90vh;
+        width: 95vw;
+    }
+    .ws-settings-sidebar {
+        width: 100%;
+        min-width: unset;
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--cp-border);
+    }
+    .ws-settings-sidebar-title {
+        display: none;
+    }
+    .ws-settings-tab {
+        padding: 10px 14px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .ws-settings-tab.active::before {
+        left: 6px;
+        right: 6px;
+        top: unset;
+        bottom: 0;
+        width: auto;
+        height: 3px;
+        border-radius: 3px 3px 0 0;
+    }
+}

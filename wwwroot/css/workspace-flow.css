@@ -1,0 +1,827 @@
+/* ============================================================
+   Workspace Flow — Inline workspace creation & artifact panels
+   No modals — everything renders inline in left panel + main area
+   ============================================================ */
+
+/* ── Inline workspace creation (left panel) ────────────────── */
+.wf-inline-create {
+    display: none;
+    padding: 6px 0 2px;
+}
+.wf-inline-create.active {
+    display: block;
+}
+.wf-inline-create-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.wf-inline-create-row input {
+    flex: 1;
+    padding: 5px 8px;
+    font-size: 0.8rem;
+    border: 1.5px solid var(--cp-border);
+    border-radius: 6px;
+    background: var(--cp-bg);
+    color: var(--cp-text);
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    transition: var(--cp-transition);
+}
+.wf-inline-create-row input:focus {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.12);
+}
+.wf-inline-create-row .wf-create-confirm,
+.wf-inline-create-row .wf-create-cancel {
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--cp-transition);
+    flex-shrink: 0;
+}
+.wf-create-confirm {
+    background: var(--cp-gradient);
+    color: #fff;
+}
+.wf-create-confirm:hover { opacity: 0.85; }
+.wf-create-cancel {
+    background: var(--cp-bg);
+    color: var(--cp-text-muted);
+    border: 1px solid var(--cp-border) !important;
+}
+.wf-create-cancel:hover { color: var(--cp-danger); border-color: var(--cp-danger) !important; }
+
+.wf-inline-alert {
+    font-size: 0.72rem;
+    color: var(--cp-danger);
+    padding: 2px 0;
+    display: none;
+}
+
+/* ── Active workspace indicator in left panel ──────────────── */
+.panel-list-item .wf-ws-status {
+    margin-left: auto;
+    font-size: 0.6rem;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.wf-ws-status.configured { background: var(--cp-success); }
+.wf-ws-status.unconfigured { background: var(--cp-orange); }
+.wf-ws-status.disconnected { background: var(--cp-danger); }
+
+/* ── Workspace Home Panel (main content area) ──────────────── */
+.wf-home-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+    background: var(--cp-bg);
+    animation: msg-in 0.18s ease;
+}
+.wf-home-panel.hidden { display: none; }
+
+.wf-home-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--cp-border);
+}
+.wf-home-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: var(--cp-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(91, 155, 213, 0.25);
+}
+.wf-home-meta {
+    flex: 1;
+    min-width: 0;
+}
+.wf-home-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--cp-text);
+    margin: 0 0 2px;
+}
+.wf-home-desc {
+    font-size: 0.82rem;
+    color: var(--cp-text-muted);
+    margin: 0;
+}
+
+/* ── View toggle (list / card) ─────────────────────────────── */
+.wf-view-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: 6px;
+    padding: 2px;
+    flex-shrink: 0;
+}
+.wf-view-btn {
+    border: none;
+    background: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+.wf-view-btn.active {
+    background: var(--cp-surface);
+    color: var(--cp-primary);
+    box-shadow: var(--cp-shadow-sm);
+}
+.wf-view-btn:hover:not(.active) { color: var(--cp-primary); }
+
+/* ── Artifacts grid (card view) ────────────────────────────── */
+.wf-artifacts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.wf-artifact-card {
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: var(--cp-transition);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+.wf-artifact-card:hover {
+    border-color: var(--cp-primary);
+    box-shadow: 0 4px 16px rgba(91, 155, 213, 0.14);
+    transform: translateY(-1px);
+}
+.wf-artifact-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.wf-artifact-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.wf-artifact-icon.agent { background: var(--cp-purple-light); color: var(--cp-purple); }
+.wf-artifact-icon.datasource { background: var(--cp-primary-light); color: var(--cp-primary); }
+.wf-artifact-icon.dashboard { background: var(--cp-success-light); color: var(--cp-success); }
+
+.wf-artifact-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wf-artifact-body {
+    font-size: 0.8rem;
+    color: var(--cp-text-muted);
+    line-height: 1.55;
+    margin-bottom: 12px;
+    min-height: 36px;
+}
+
+/* Binding badges */
+.wf-binding-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.wf-binding-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.02em;
+}
+.wf-binding-badge.connected {
+    background: var(--cp-success-light);
+    color: var(--cp-success);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.wf-binding-badge.unbound {
+    background: var(--cp-orange-light);
+    color: var(--cp-orange);
+    border: 1px solid rgba(230, 126, 34, 0.3);
+}
+.wf-artifact-status {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+.wf-artifact-status.ok { background: var(--cp-success); }
+.wf-artifact-status.warn { background: var(--cp-orange); }
+
+/* ── Artifacts list view ───────────────────────────────────── */
+.wf-artifacts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.wf-artifact-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+.wf-artifact-list-item:hover {
+    border-color: var(--cp-primary);
+    box-shadow: var(--cp-shadow-sm);
+}
+.wf-artifact-list-item .wf-artifact-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+}
+.wf-artifact-list-info {
+    flex: 1;
+    min-width: 0;
+}
+.wf-artifact-list-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--cp-text);
+}
+.wf-artifact-list-meta {
+    font-size: 0.72rem;
+    color: var(--cp-text-muted);
+}
+
+/* ── Empty workspace state ─────────────────────────────────── */
+.wf-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 80px 20px;
+}
+.wf-empty-icon {
+    width: 72px;
+    height: 72px;
+    background: var(--cp-primary-light);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: var(--cp-primary);
+    margin-bottom: 18px;
+}
+.wf-empty-state h4 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+.wf-empty-state p {
+    font-size: 0.85rem;
+    color: var(--cp-text-muted);
+    margin-bottom: 20px;
+    max-width: 360px;
+}
+
+/* ── Inline agent setup (inside main panel) ────────────────── */
+.wf-setup-section {
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    animation: msg-in 0.18s ease;
+}
+.wf-setup-section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--cp-border);
+}
+.wf-setup-section-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.wf-setup-section-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--cp-text);
+}
+.wf-setup-section-desc {
+    font-size: 0.75rem;
+    color: var(--cp-text-muted);
+}
+.wf-setup-field {
+    margin-bottom: 14px;
+}
+.wf-setup-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 5px;
+}
+.wf-setup-field input,
+.wf-setup-field textarea,
+.wf-setup-field select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--cp-border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-family: 'Inter', sans-serif;
+    color: var(--cp-text);
+    background: #fff;
+    transition: var(--cp-transition);
+}
+.wf-setup-field input:focus,
+.wf-setup-field textarea:focus,
+.wf-setup-field select:focus {
+    outline: none;
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 3px rgba(91, 155, 213, 0.12);
+}
+.wf-setup-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+.wf-setup-alert {
+    font-size: 0.78rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    display: none;
+}
+.wf-setup-alert.success {
+    display: block;
+    background: var(--cp-success-light);
+    color: var(--cp-success);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.wf-setup-alert.error {
+    display: block;
+    background: var(--cp-danger-light);
+    color: var(--cp-danger);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+/* ── Datasource type grid (inline) ─────────────────────────── */
+.wf-ds-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.wf-ds-type-btn {
+    padding: 10px 8px;
+    background: var(--cp-bg);
+    border: 1.5px solid var(--cp-border);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--cp-text);
+    cursor: pointer;
+    transition: var(--cp-transition);
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+}
+.wf-ds-type-btn:hover {
+    border-color: var(--cp-primary);
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+}
+.wf-ds-type-btn.selected {
+    border-color: var(--cp-primary);
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+    font-weight: 600;
+}
+
+/* Fields preview (inline) */
+.wf-fields-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 0;
+}
+.wf-fields-preview .badge {
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+/* ── Step indicator ────────────────────────────────────────── */
+.wf-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 24px;
+}
+.wf-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--cp-text-muted);
+    padding: 6px 12px;
+    border-radius: 20px;
+    transition: var(--cp-transition);
+}
+.wf-step.active {
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+    font-weight: 600;
+}
+.wf-step.done {
+    color: var(--cp-success);
+}
+.wf-step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.5px solid var(--cp-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.wf-step.active .wf-step-num {
+    background: var(--cp-gradient);
+    color: #fff;
+    border-color: var(--cp-primary);
+}
+.wf-step.done .wf-step-num {
+    background: var(--cp-success);
+    color: #fff;
+    border-color: var(--cp-success);
+}
+.wf-step-line {
+    width: 24px;
+    height: 1.5px;
+    background: var(--cp-border);
+    flex-shrink: 0;
+}
+
+/* ── Section titles inside home panel ──────────────────────── */
+.wf-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--cp-text-muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Lineage / flow view ───────────────────────────────────── */
+.wf-lineage-container {
+    padding: 12px 0;
+}
+.wf-lineage-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, var(--cp-primary-light) 0%, rgba(255,255,255,0.6) 100%);
+    border: 1px solid var(--cp-border);
+    border-radius: 16px;
+    padding: 22px 24px;
+    position: relative;
+    overflow: hidden;
+}
+.wf-lineage-row::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, var(--cp-border) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+/* ── Nodes ─────────────────────────────────────────── */
+.wf-lineage-node {
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    min-width: 200px;
+    flex-shrink: 0;
+    position: relative;
+    box-shadow: var(--cp-shadow-sm);
+    z-index: 1;
+}
+.wf-lineage-node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(91, 155, 213, 0.16);
+}
+.wf-lineage-node.datasource   { border-left: 3px solid var(--cp-primary); align-self: center; }
+.wf-lineage-node.datasource:hover { border-color: var(--cp-primary); }
+.wf-lineage-node.agent        { border-left: 3px solid var(--cp-purple, #9B59B6); }
+.wf-lineage-node.agent:hover  { border-color: var(--cp-purple, #9B59B6); }
+.wf-lineage-node.dashboard    { border-left: 3px solid #2e7d32; }
+.wf-lineage-node.dashboard:hover { border-color: #2e7d32; }
+.wf-lineage-node.unbound-source { border-left: 3px dashed var(--cp-danger); align-self: center; opacity: 0.85; }
+
+/* ── Icons ─────────────────────────────────────────── */
+.wf-lineage-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.wf-lineage-node.datasource .wf-lineage-icon {
+    background: linear-gradient(135deg, var(--cp-primary-light), #d0e6fa);
+    color: var(--cp-primary);
+}
+.wf-lineage-node.agent .wf-lineage-icon {
+    background: linear-gradient(135deg, var(--cp-purple-light, #f3e8ff), #e4d1f9);
+    color: var(--cp-purple, #7c3aed);
+}
+.wf-lineage-node.dashboard .wf-lineage-icon {
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    color: #2e7d32;
+}
+.wf-lineage-node.unbound-source .wf-lineage-icon {
+    background: var(--cp-danger-light);
+    color: var(--cp-danger);
+}
+
+/* ── Text ──────────────────────────────────────────── */
+.wf-lineage-info {
+    min-width: 0;
+    flex: 1;
+}
+.wf-lineage-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--cp-text);
+}
+.wf-lineage-type {
+    font-size: 0.73rem;
+    color: var(--cp-text-muted);
+    margin-top: 2px;
+}
+
+/* ── Status badges ─────────────────────────────────── */
+.wf-lineage-badge {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+.wf-lineage-badge.connected {
+    background: var(--cp-success-light);
+    color: var(--cp-success);
+}
+.wf-lineage-badge.unbound {
+    background: var(--cp-danger-light);
+    color: var(--cp-danger);
+}
+
+/* ── Connector trunk ───────────────────────────────── */
+.wf-lineage-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    min-width: 64px;
+    position: relative;
+    z-index: 1;
+    align-self: center;
+}
+.wf-lineage-connector::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 4px;
+    right: 6px;
+    height: 2px;
+    background: linear-gradient(to right, var(--cp-primary), var(--cp-primary-dark));
+    border-radius: 2px;
+    transform: translateY(-50%);
+}
+.wf-lineage-connector::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border: 5px solid transparent;
+    border-left: 7px solid var(--cp-primary-dark);
+}
+.wf-connector-pulse {
+    width: 8px;
+    height: 8px;
+    background: var(--cp-primary);
+    border-radius: 50%;
+    position: relative;
+    z-index: 2;
+    animation: wfConnectorPulse 2s ease-in-out infinite;
+    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.2);
+}
+@keyframes wfConnectorPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.15); }
+    50%      { opacity: 1;   transform: scale(1.3); box-shadow: 0 0 0 5px rgba(91, 155, 213, 0.25); }
+}
+
+/* ── Target column with branch lines ───────────────── */
+.wf-lineage-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: relative;
+    padding-left: 24px;
+}
+.wf-lineage-targets::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 26px;
+    bottom: 26px;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--cp-primary), var(--cp-primary-dark));
+    border-radius: 2px;
+    opacity: 0.35;
+    z-index: 1;
+}
+.wf-lineage-targets:has(> :only-child)::before { display: none; }
+.wf-lineage-targets:has(> :only-child) { padding-left: 0; }
+.wf-lineage-targets > .wf-lineage-node::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 50%;
+    width: 24px;
+    height: 2px;
+    background: var(--cp-primary);
+    opacity: 0.35;
+    transform: translateY(-50%);
+    z-index: 0;
+}
+.wf-lineage-targets:has(> :only-child) > .wf-lineage-node::before { display: none; }
+
+/* ── Agent group with nested report arrows ─────────── */
+.wf-lineage-agent-group {
+    position: relative;
+}
+.wf-lineage-targets > .wf-lineage-agent-group::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 26px;
+    width: 24px;
+    height: 2px;
+    background: var(--cp-primary);
+    opacity: 0.35;
+    z-index: 0;
+}
+.wf-lineage-targets:has(> :only-child) > .wf-lineage-agent-group::before { display: none; }
+
+/* Sub-targets: reports nested under an agent */
+.wf-lineage-sub-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-left: 32px;
+    position: relative;
+    margin-top: 8px;
+}
+.wf-lineage-sub-targets::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 20px;
+    width: 2px;
+    background: rgba(25, 135, 84, 0.35);
+    border-radius: 2px;
+}
+.wf-lineage-sub-targets:has(> :only-child)::before { display: none; }
+.wf-lineage-sub-targets:has(> :only-child) { padding-left: 16px; }
+.wf-lineage-sub-targets > .wf-lineage-node {
+    position: relative;
+}
+.wf-lineage-sub-targets > .wf-lineage-node::before {
+    content: '';
+    position: absolute;
+    left: -22px;
+    top: 50%;
+    width: 22px;
+    height: 2px;
+    background: rgba(25, 135, 84, 0.35);
+    transform: translateY(-50%);
+    z-index: 0;
+}
+.wf-lineage-sub-targets:has(> :only-child) > .wf-lineage-node::before { display: none; }
+/* Small vertical connector from agent down to sub-targets */
+.wf-lineage-agent-group > .wf-lineage-node.agent + .wf-lineage-sub-targets::after {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: -8px;
+    width: 2px;
+    height: 8px;
+    background: rgba(25, 135, 84, 0.35);
+    border-radius: 2px;
+}
+
+/* ── Legacy compat ─────────────────────────────────── */
+.wf-ds-connected { color: #16a34a; font-weight: 600; }
+.wf-ds-unbound   { color: var(--cp-danger, #dc3545); font-weight: 500; }
+
+/* ── Unbound row ───────────────────────────────────── */
+.wf-lineage-unbound {
+    border-style: dashed;
+    background: linear-gradient(135deg, var(--cp-danger-light) 0%, rgba(255,255,255,0.5) 100%);
+}
+.wf-lineage-unbound::after { opacity: 0.12; }
+.wf-lineage-unbound .wf-lineage-connector::before { background: var(--cp-danger); opacity: 0.35; }
+.wf-lineage-unbound .wf-lineage-connector::after  { border-left-color: var(--cp-danger); opacity: 0.5; }
+.wf-lineage-unbound .wf-connector-pulse { background: var(--cp-danger); box-shadow: 0 0 0 2px rgba(220,53,69,0.2); }
+.wf-lineage-unbound .wf-lineage-targets::before { background: var(--cp-danger); }
+.wf-lineage-unbound .wf-lineage-targets > .wf-lineage-node::before { background: var(--cp-danger); }
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .wf-home-panel { padding: 16px; }
+    .wf-artifacts-grid { grid-template-columns: 1fr; }
+    .wf-home-header { flex-wrap: wrap; }
+}

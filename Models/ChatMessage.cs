@@ -10,6 +10,7 @@ public class ChatMessage
     public string? ResultJson { get; set; }
     public bool IsPinned { get; set; } = false;
     public int WorkspaceId { get; set; }
+    public string? AgentId { get; set; }
     public string UserId { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

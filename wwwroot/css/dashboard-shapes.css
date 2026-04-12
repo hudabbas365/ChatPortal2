@@ -1,0 +1,107 @@
+/* Dashboard Shapes — SVG shape rendering styles */
+
+/* Shape cards: no background, no border, no shadow, no header */
+.chart-card.shape-card {
+    background: transparent;
+    border: 2px solid transparent;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+    cursor: grab;
+    min-width: 80px;
+}
+.chart-card.shape-card:hover {
+    border-color: rgba(91, 155, 213, 0.3);
+    box-shadow: none;
+    background: transparent;
+}
+.chart-card.shape-card.selected {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.2);
+    background: transparent;
+}
+.chart-card.shape-card.dragging {
+    opacity: 0.75;
+    cursor: grabbing;
+    box-shadow: none;
+}
+.chart-card.shape-card.multi-selected {
+    border-color: var(--cp-purple);
+    box-shadow: 0 0 0 2px rgba(155, 89, 182, 0.2);
+    background: transparent;
+}
+.chart-card.shape-card .chart-canvas-wrap {
+    padding: 0;
+}
+.chart-card.shape-card .chart-resize-handle {
+    background: linear-gradient(135deg, transparent 50%, var(--cp-primary) 50%);
+}
+
+/* Floating actions for shapes (appear on hover, top-right corner) */
+.shape-hover-actions {
+    position: absolute;
+    top: -28px;
+    right: 0;
+    display: flex;
+    gap: 2px;
+    padding: 3px 6px;
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 10;
+}
+.chart-card.shape-card:hover .shape-hover-actions,
+.chart-card.shape-card.selected .shape-hover-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.shape-canvas-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shape-canvas-wrap svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.shape-text-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    overflow: hidden;
+    word-break: break-word;
+    cursor: text;
+    z-index: 2;
+}
+
+.shape-text-overlay:focus {
+    outline: 2px dashed var(--cp-primary);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+
+/* Shape-specific property section */
+.prop-section-shape {
+    display: none;
+}
+
+.prop-section-shape.visible {
+    display: block;
+}

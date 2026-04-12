@@ -15,7 +15,13 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
     <link rel="stylesheet" href="~/css/site.css" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='18' width='6' height='12' rx='1' fill='%236366f1'/%3E%3Crect x='11' y='10' width='6' height='20' rx='1' fill='%236366f1'/%3E%3Crect x='20' y='4' width='6' height='26' rx='1' fill='%236366f1' opacity='0.8'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="~/css/dashboard-chart-transfer.css" />
+    <link rel="stylesheet" href="~/css/dashboard-chat-panel.css" />
+    <link rel="stylesheet" href="~/css/dashboard-shapes.css" />
+    <link rel="stylesheet" href="~/css/dashboard-filter-panel.css" />
+    <link rel="stylesheet" href="~/css/dashboard-group-layout.css" />
+    <link rel="stylesheet" href="~/css/workspace-roles.css" />
+    <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
 </head>
 <body class="dashboard-body">
 
@@ -35,9 +41,12 @@
             </button>
         </div>
         <div class="navbar-actions ms-auto">
-            <a href="/chat" class="btn btn-sm btn-outline-cp me-2">
+            <button type="button" class="btn btn-sm btn-outline-cp me-2" id="dcpToggleBtn" title="Open AI Report Assistant">
                 <i class="bi bi-chat-dots me-1"></i>Chat
-            </a>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-cp me-2" id="filter-panel-toggle" title="Toggle Filters">
+                <i class="bi bi-funnel me-1"></i>Filters
+            </button>
             <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPng()" title="Export PNG">
                 <i class="bi bi-image me-1"></i>PNG
             </button>
@@ -64,6 +73,31 @@
         </div>
     </nav>
 
+    <!-- Report Context Bar — Workspace + Datasource -->
+    <div class="report-topnav" id="reportTopnav" style="display:none">
+        <nav class="report-breadcrumb" aria-label="Report context">
+            <span class="report-crumb workspace" id="reportWsTag" style="display:none">
+                <i class="bi bi-folder-fill"></i><span id="reportWsName">—</span>
+            </span>
+            <i class="bi bi-chevron-right report-crumb-sep" id="reportDsSep" style="display:none"></i>
+            <span class="report-crumb datasource" id="reportDsTag" style="display:none">
+                <i class="bi bi-database-fill"></i><span id="reportDsName">—</span>
+            </span>
+            <i class="bi bi-chevron-right report-crumb-sep" id="reportAgentSep" style="display:none"></i>
+            <span class="report-crumb agent" id="reportAgentTag" style="display:none">
+                <i class="bi bi-robot"></i><span id="reportAgentName">—</span>
+            </span>
+        </nav>
+        <div class="report-topnav-actions">
+            <button class="btn btn-sm btn-outline-primary" id="viewReportBtn" title="View saved report" style="display:none;margin-right:6px">
+                <i class="bi bi-eye me-1"></i>View Report
+            </button>
+            <button class="btn btn-sm btn-outline-success" id="saveReportBtn" title="Save as Report">
+                <i class="bi bi-file-earmark-check me-1"></i>Save Report
+            </button>
+        </div>
+    </div>
+
     <div class="app-body">
         <!-- Left Panel: Chart Library -->
         <aside class="library-panel">
@@ -85,7 +119,34 @@
         <main class="canvas-panel">
             <div class="canvas-toolbar">
                 <span class="text-muted small">Drag from library or double-click to add charts</span>
+                <!-- Group Actions (visible when 2+ items selected) -->
+                <div class="group-actions hidden" id="group-actions">
+                    <button class="layout-btn" id="btn-group-items" title="Group (Ctrl+G)"><i class="bi bi-collection"></i></button>
+                    <button class="layout-btn" id="btn-ungroup-items" title="Ungroup (Ctrl+Shift+G)"><i class="bi bi-collection-fill"></i></button>
+                </div>
+                <!-- Layout Toolbar (visible when 2+ items selected) -->
+                <div class="layout-toolbar hidden" id="layout-toolbar">
+                    <button class="layout-btn" id="btn-align-left" title="Align Left"><i class="bi bi-align-start"></i></button>
+                    <button class="layout-btn" id="btn-align-center" title="Align Center"><i class="bi bi-align-center"></i></button>
+                    <button class="layout-btn" id="btn-align-right" title="Align Right"><i class="bi bi-align-end"></i></button>
+                    <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-align-top" title="Align Top"><i class="bi bi-align-top"></i></button>
+                    <button class="layout-btn" id="btn-align-middle" title="Align Middle"><i class="bi bi-align-middle"></i></button>
+                    <button class="layout-btn" id="btn-align-bottom" title="Align Bottom"><i class="bi bi-align-bottom"></i></button>
+                    <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-dist-h" title="Distribute Horizontal"><i class="bi bi-distribute-horizontal"></i></button>
+                    <button class="layout-btn" id="btn-dist-v" title="Distribute Vertical"><i class="bi bi-distribute-vertical"></i></button>
+                    <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-same-width" title="Same Width"><i class="bi bi-arrows"></i></button>
+                    <button class="layout-btn" id="btn-same-height" title="Same Height"><i class="bi bi-arrows-vertical"></i></button>
+                </div>
                 <div class="ms-auto d-flex gap-2 align-items-center">
+                    <button class="layout-btn" id="btn-snap-grid" title="Snap to Grid"><i class="bi bi-grid-3x3"></i></button>
+                    <button class="layout-btn" id="btn-auto-arrange" title="Auto Arrange"><i class="bi bi-grid"></i></button>
+                    <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-bring-forward" title="Bring Forward"><i class="bi bi-front"></i></button>
+                    <button class="layout-btn" id="btn-send-backward" title="Send Backward"><i class="bi bi-back"></i></button>
+                    <span class="layout-sep"></span>
                     <span class="small text-muted" id="chart-count-label"></span>
                 </div>
             </div>
@@ -103,223 +164,381 @@
             </div>
         </main>
 
-        <!-- Right Panel: Properties -->
+        <!-- Right Panel -->
         <aside class="properties-panel">
             <div class="panel-header">
                 <button id="toggle-properties-panel" class="panel-toggle-btn me-1" title="Collapse panel"><i class="bi bi-chevron-right"></i></button>
-                <h6 class="mb-0"><i class="bi bi-sliders me-2"></i>Properties</h6>
             </div>
-            <div id="properties-empty" class="empty-state-small">
-                <i class="bi bi-cursor-fill text-muted mb-2"></i>
-                <small class="text-muted">Select a chart to edit its properties</small>
+
+            <!-- Data Fields collapsible section -->
+            <div class="right-panel-section" id="data-fields-section">
+                <div class="right-panel-section-header" id="data-fields-toggle">
+                    <i class="bi bi-chevron-down right-panel-chevron"></i>
+                    <i class="bi bi-table me-1" style="color:var(--cp-primary)"></i>
+                    <span class="right-panel-section-label">Data Fields</span>
+                    <span class="right-panel-section-badge" id="data-fields-count"></span>
+                </div>
+                <div class="right-panel-section-body" id="data-fields-tab-content">
+                    <div id="data-fields-list" class="data-fields-scroll"></div>
+                </div>
             </div>
-            <div id="properties-form" style="display:none" class="properties-scroll">
-                <div class="p-3">
-                    <!-- Basic -->
-                    <div class="prop-section">
-                        <div class="prop-section-title">Basic</div>
-                        <div class="mb-2">
-                            <label class="form-label">Title</label>
-                            <input type="text" id="prop-title" class="form-control form-control-sm">
+
+            <!-- Properties collapsible section -->
+            <div class="right-panel-section" id="properties-section">
+                <div class="right-panel-section-header" id="properties-toggle">
+                    <i class="bi bi-chevron-down right-panel-chevron"></i>
+                    <i class="bi bi-gear me-1" style="color:var(--cp-primary)"></i>
+                    <span class="right-panel-section-label">Properties</span>
+                </div>
+                <div class="right-panel-section-body" id="properties-section-body">
+                    <!-- Canvas / Page Properties (always visible) -->
+                    <div class="canvas-props-section" id="canvasPropsSection">
+                        <div class="prop-section-title">Canvas Properties</div>
+                        <div class="canvas-props-row">
+                            <div class="flex-fill">
+                                <label class="form-label" style="font-size:0.72rem">Width (px)</label>
+                                <input type="number" id="canvas-prop-width" class="form-control form-control-sm" value="1200" min="600" max="3000" step="50">
+                            </div>
+                            <div class="flex-fill">
+                                <label class="form-label" style="font-size:0.72rem">Height (px)</label>
+                                <input type="number" id="canvas-prop-height" class="form-control form-control-sm" value="900" min="400" max="3000" step="50">
+                            </div>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label">Chart Type</label>
-                            <select id="prop-chart-type" class="form-select form-select-sm">
-                                <optgroup label="Basic">
-                                    <option value="bar">Bar Chart</option><option value="horizontalBar">Horizontal Bar</option>
-                                    <option value="stackedBar">Stacked Bar</option><option value="line">Line Chart</option>
-                                    <option value="area">Area Chart</option><option value="pie">Pie Chart</option>
-                                    <option value="donut">Donut Chart</option><option value="scatter">Scatter Plot</option>
-                                    <option value="bubble">Bubble Chart</option><option value="radar">Radar Chart</option>
-                                </optgroup>
-                                <optgroup label="Advanced">
-                                    <option value="mixedBarLine">Mixed Bar+Line</option><option value="groupedBar">Grouped Bar</option>
-                                    <option value="waterfall">Waterfall</option><option value="funnel">Funnel Chart</option>
-                                    <option value="gauge">Gauge Chart</option><option value="treemap">Treemap</option>
-                                    <option value="heatmap">Heatmap</option><option value="sankey">Sankey Diagram</option>
-                                    <option value="sunburst">Sunburst</option><option value="polarArea">Polar Area</option>
-                                </optgroup>
-                                <optgroup label="Statistical">
-                                    <option value="histogram">Histogram</option><option value="boxPlot">Box Plot</option>
-                                    <option value="violin">Violin Plot</option><option value="bellCurve">Bell Curve</option>
-                                    <option value="pareto">Pareto Chart</option><option value="controlChart">Control Chart</option>
-                                    <option value="regressionLine">Regression Line</option><option value="confidenceBand">Confidence Band</option>
-                                    <option value="errorBar">Error Bar</option><option value="stemLeaf">Stem and Leaf</option>
-                                </optgroup>
-                                <optgroup label="Time Series">
-                                    <option value="timeLine">Time Line</option><option value="candlestick">Candlestick</option>
-                                    <option value="ohlc">OHLC Chart</option><option value="rangeArea">Range Area</option>
-                                    <option value="stepLine">Step Line</option><option value="streamGraph">Stream Graph</option>
-                                    <option value="eventTimeline">Event Timeline</option><option value="gantt">Gantt Chart</option>
-                                    <option value="burnDown">Burn Down</option><option value="velocityChart">Velocity Chart</option>
-                                </optgroup>
-                                <optgroup label="Comparison">
-                                    <option value="bulletChart">Bullet Chart</option><option value="marimekko">Marimekko</option>
-                                    <option value="dotPlot">Dot Plot</option><option value="lollipop">Lollipop Chart</option>
-                                    <option value="dumbbell">Dumbbell Chart</option><option value="slope">Slope Chart</option>
-                                    <option value="divergingBar">Diverging Bar</option><option value="spanChart">Span Chart</option>
-                                    <option value="pairedBar">Paired Bar</option><option value="populationPyramid">Population Pyramid</option>
-                                </optgroup>
-                                <optgroup label="Geographic">
-                                    <option value="choropleth">Choropleth Map</option><option value="bubbleMap">Bubble Map</option>
-                                    <option value="heatMapGeo">Heat Map Geographic</option><option value="flowMap">Flow Map</option>
-                                    <option value="spikeMap">Spike Map</option>
-                                </optgroup>
-                                <optgroup label="Relationship">
-                                    <option value="networkGraph">Network Graph</option><option value="chordDiagram">Chord Diagram</option>
-                                    <option value="arcDiagram">Arc Diagram</option><option value="forceDirected">Force-Directed</option>
-                                    <option value="matrix">Matrix Chart</option>
-                                </optgroup>
-                                <optgroup label="Part-to-Whole">
-                                    <option value="stackedBar100">100% Stacked Bar</option><option value="stackedArea100">100% Stacked Area</option>
-                                    <option value="waffleChart">Waffle Chart</option><option value="pictograph">Pictograph</option>
-                                    <option value="nightingaleRose">Nightingale Rose</option>
-                                </optgroup>
-                                <optgroup label="KPI / Metrics">
-                                    <option value="kpiCard">KPI Card</option><option value="sparkline">Sparkline</option>
-                                    <option value="progressBar">Progress Bar</option><option value="radialProgress">Radial Progress</option>
-                                    <option value="metricTile">Metric Tile</option>
-                                </optgroup>
-                                <optgroup label="Data / Interactive">
-                                    <option value="table">Table Chart</option><option value="slicer">Slicer</option>
-                                </optgroup>
-                            </select>
+                            <label class="form-label" style="font-size:0.72rem">Background</label>
+                            <div class="d-flex gap-2">
+                                <input type="color" id="canvas-prop-bg" class="form-control form-control-color form-control-sm" value="#ffffff" style="width:40px;height:32px">
+                                <input type="text" id="canvas-prop-bg-text" class="form-control form-control-sm" value="#ffffff" style="flex:1">
+                            </div>
                         </div>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label">Width (cols)</label>
-                                <select id="prop-width" class="form-select form-select-sm">
-                                    <option value="2">2</option><option value="3">3</option><option value="4">4</option>
-                                    <option value="5">5</option><option value="6" selected>6</option>
-                                    <option value="8">8</option><option value="12">12</option>
+                    </div>
+                    <div id="properties-empty" class="empty-state-small">
+                        <i class="bi bi-cursor-fill text-muted mb-2"></i>
+                        <small class="text-muted">Select a chart to edit its properties</small>
+                    </div>
+                    <div id="properties-form" style="display:none">
+                        <div id="properties-tab-content" class="properties-scroll">
+                    <div class="p-3">
+                        <!-- Basic -->
+                        <div class="prop-section">
+                            <div class="prop-section-title">Basic</div>
+                            <div class="mb-2">
+                                <label class="form-label">Title</label>
+                                <input type="text" id="prop-title" class="form-control form-control-sm">
+                            </div>
+                            <div class="mb-2 chart-only-section">
+                                <label class="form-label">Chart Type</label>
+                                <select id="prop-chart-type" class="form-select form-select-sm">
+                                    <optgroup label="Basic">
+                                        <option value="bar">Bar Chart</option><option value="horizontalBar">Horizontal Bar</option>
+                                        <option value="stackedBar">Stacked Bar</option><option value="line">Line Chart</option>
+                                        <option value="area">Area Chart</option><option value="pie">Pie Chart</option>
+                                        <option value="donut">Donut Chart</option><option value="scatter">Scatter Plot</option>
+                                        <option value="bubble">Bubble Chart</option><option value="radar">Radar Chart</option>
+                                    </optgroup>
+                                    <optgroup label="Advanced">
+                                        <option value="mixedBarLine">Mixed Bar+Line</option><option value="groupedBar">Grouped Bar</option>
+                                        <option value="waterfall">Waterfall</option><option value="funnel">Funnel Chart</option>
+                                        <option value="gauge">Gauge Chart</option><option value="treemap">Treemap</option>
+                                        <option value="heatmap">Heatmap</option><option value="sankey">Sankey Diagram</option>
+                                        <option value="sunburst">Sunburst</option><option value="polarArea">Polar Area</option>
+                                    </optgroup>
+                                    <optgroup label="Statistical">
+                                        <option value="histogram">Histogram</option><option value="boxPlot">Box Plot</option>
+                                        <option value="violin">Violin Plot</option><option value="bellCurve">Bell Curve</option>
+                                        <option value="pareto">Pareto Chart</option><option value="controlChart">Control Chart</option>
+                                        <option value="regressionLine">Regression Line</option><option value="confidenceBand">Confidence Band</option>
+                                        <option value="errorBar">Error Bar</option><option value="stemLeaf">Stem and Leaf</option>
+                                    </optgroup>
+                                    <optgroup label="Time Series">
+                                        <option value="timeLine">Time Line</option><option value="candlestick">Candlestick</option>
+                                        <option value="ohlc">OHLC Chart</option><option value="rangeArea">Range Area</option>
+                                        <option value="stepLine">Step Line</option><option value="streamGraph">Stream Graph</option>
+                                        <option value="eventTimeline">Event Timeline</option><option value="gantt">Gantt Chart</option>
+                                        <option value="burnDown">Burn Down</option><option value="velocityChart">Velocity Chart</option>
+                                    </optgroup>
+                                    <optgroup label="Comparison">
+                                        <option value="bulletChart">Bullet Chart</option><option value="marimekko">Marimekko</option>
+                                        <option value="dotPlot">Dot Plot</option><option value="lollipop">Lollipop Chart</option>
+                                        <option value="dumbbell">Dumbbell Chart</option><option value="slope">Slope Chart</option>
+                                        <option value="divergingBar">Diverging Bar</option><option value="spanChart">Span Chart</option>
+                                        <option value="pairedBar">Paired Bar</option><option value="populationPyramid">Population Pyramid</option>
+                                    </optgroup>
+                                    <optgroup label="Geographic">
+                                        <option value="choropleth">Choropleth Map</option><option value="bubbleMap">Bubble Map</option>
+                                        <option value="heatMapGeo">Heat Map Geographic</option><option value="flowMap">Flow Map</option>
+                                        <option value="spikeMap">Spike Map</option>
+                                    </optgroup>
+                                    <optgroup label="Relationship">
+                                        <option value="networkGraph">Network Graph</option><option value="chordDiagram">Chord Diagram</option>
+                                        <option value="arcDiagram">Arc Diagram</option><option value="forceDirected">Force-Directed</option>
+                                        <option value="matrix">Matrix Chart</option>
+                                    </optgroup>
+                                    <optgroup label="Part-to-Whole">
+                                        <option value="stackedBar100">100% Stacked Bar</option><option value="stackedArea100">100% Stacked Area</option>
+                                        <option value="waffleChart">Waffle Chart</option><option value="pictograph">Pictograph</option>
+                                        <option value="nightingaleRose">Nightingale Rose</option>
+                                    </optgroup>
+                                    <optgroup label="KPI / Metrics">
+                                        <option value="kpiCard">KPI Card</option><option value="sparkline">Sparkline</option>
+                                        <option value="progressBar">Progress Bar</option><option value="radialProgress">Radial Progress</option>
+                                        <option value="metricTile">Metric Tile</option>
+                                    </optgroup>
+                                    <optgroup label="Data / Interactive">
+                                        <option value="table">Table Chart</option><option value="slicer">Slicer</option>
+                                    </optgroup>
                                 </select>
                             </div>
-                            <div class="col-6">
-                                <label class="form-label">Height (px)</label>
-                                <input type="number" id="prop-height" class="form-control form-control-sm" min="150" max="800" step="50">
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label">Width (cols)</label>
+                                    <select id="prop-width" class="form-select form-select-sm">
+                                        <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                                        <option value="5">5</option><option value="6" selected>6</option>
+                                        <option value="8">8</option><option value="12">12</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Height (px)</label>
+                                    <input type="number" id="prop-height" class="form-control form-control-sm" min="150" max="800" step="50">
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Data -->
-                    <div class="prop-section">
-                        <div class="prop-section-title">Data</div>
-                        <div class="mb-2">
-                            <label class="form-label">Dataset</label>
-                            <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
-                                <option value="sales">Sales</option>
-                                <option value="population">Population</option>
-                                <option value="weather">Weather</option>
-                                <option value="finance">Finance</option>
-                            </select>
+                        <!-- Data (chart-only) -->
+                        <div class="prop-section chart-only-section">
+                            <div class="prop-section-title">Data</div>
+                            <div class="mb-2">
+                                <label class="form-label">Dataset</label>
+                                <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
+                                    <option value="sales">Sales</option>
+                                    <option value="population">Population</option>
+                                    <option value="weather">Weather</option>
+                                    <option value="finance">Finance</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Label Field</label>
+                                <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Value Field</label>
+                                <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2" id="multi-value-fields-section">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <label class="form-label mb-0" style="font-size:0.72rem">Additional Value Fields</label>
+                                    <button type="button" id="add-value-field-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add another value field">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                                <div id="multi-value-fields-container"></div>
+                            </div>
+                            <div class="mb-2 chart-type-field" data-chart-types="mixedBarLine" style="display:none">
+                                <label class="form-label">Line Value Field</label>
+                                <select id="prop-line-value-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                                <label class="form-label">X Field</label>
+                                <select id="prop-x-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
+                                <label class="form-label">Y Field</label>
+                                <select id="prop-y-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2 chart-type-field" data-chart-types="bubble" style="display:none">
+                                <label class="form-label">R (Size) Field</label>
+                                <select id="prop-r-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2 chart-type-field" data-chart-types="stackedBar,groupedBar,stackedBar100,stackedArea100" style="display:none">
+                                <label class="form-label">Group By Field</label>
+                                <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
+                                <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Aggregation</label>
+                                <select id="prop-agg-function" class="form-select form-select-sm">
+                                    <option value="SUM">SUM</option><option value="AVG">AVG</option>
+                                    <option value="COUNT">COUNT</option><option value="MAX">MAX</option>
+                                    <option value="MIN">MIN</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Row Limit</label>
+                                <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="100" placeholder="100">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">WHERE Filter</label>
+                                <input type="text" id="prop-filter-where" class="form-control form-control-sm" placeholder="e.g. City = 'Seattle'">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Custom JSON Data</label>
+                                <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
+                            </div>
                         </div>
-                        <div class="mb-2">
-                            <label class="form-label">Label Field</label>
-                            <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Value Field</label>
-                            <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 chart-type-field" data-chart-types="mixedBarLine" style="display:none">
-                            <label class="form-label">Line Value Field</label>
-                            <select id="prop-line-value-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
-                            <label class="form-label">X Field</label>
-                            <select id="prop-x-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 chart-type-field" data-chart-types="scatter,bubble" style="display:none">
-                            <label class="form-label">Y Field</label>
-                            <select id="prop-y-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 chart-type-field" data-chart-types="bubble" style="display:none">
-                            <label class="form-label">R (Size) Field</label>
-                            <select id="prop-r-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 chart-type-field" data-chart-types="stackedBar,groupedBar,stackedBar100,stackedArea100" style="display:none">
-                            <label class="form-label">Group By Field</label>
-                            <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
-                        </div>
-                        <div class="mb-2 form-check">
-                            <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
-                            <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Aggregation</label>
-                            <select id="prop-agg-function" class="form-select form-select-sm">
-                                <option value="SUM">SUM</option><option value="AVG">AVG</option>
-                                <option value="COUNT">COUNT</option><option value="MAX">MAX</option>
-                                <option value="MIN">MIN</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Custom JSON Data</label>
-                            <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
-                        </div>
-                    </div>
 
-                    <!-- Style -->
-                    <div class="prop-section">
-                        <div class="prop-section-title">Style</div>
-                        <div class="mb-2">
-                            <label class="form-label">Primary Color</label>
-                            <input type="color" id="prop-color-palette" class="form-control form-control-sm">
-                        </div>
-                        <div class="mb-2 form-check">
-                            <input type="checkbox" id="prop-show-legend" class="form-check-input">
-                            <label class="form-check-label" for="prop-show-legend">Show Legend</label>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Legend Position</label>
-                            <select id="prop-legend-position" class="form-select form-select-sm">
-                                <option value="top">Top</option><option value="bottom">Bottom</option>
-                                <option value="left">Left</option><option value="right">Right</option>
-                            </select>
-                        </div>
-                        <div class="mb-2 form-check">
-                            <input type="checkbox" id="prop-fill-area" class="form-check-input">
-                            <label class="form-check-label" for="prop-fill-area">Fill Area (Line)</label>
-                        </div>
-                        <div class="mb-2 form-check">
-                            <input type="checkbox" id="prop-show-tooltips" class="form-check-input">
-                            <label class="form-check-label" for="prop-show-tooltips">Show Tooltips</label>
-                        </div>
-                        <div class="mb-2 form-check">
-                            <input type="checkbox" id="prop-animated" class="form-check-input">
-                            <label class="form-check-label" for="prop-animated">Animated</label>
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label">Title Font Size</label>
-                                <input type="number" id="prop-title-font-size" class="form-control form-control-sm" min="10" max="28">
+                        <!-- Style (chart-only) -->
+                        <div class="prop-section chart-only-section">
+                            <div class="prop-section-title">Style</div>
+                            <div class="mb-2">
+                                <label class="form-label">Primary Color</label>
+                                <input type="color" id="prop-color-palette" class="form-control form-control-sm">
                             </div>
-                            <div class="col-6">
-                                <label class="form-label">Border Radius</label>
-                                <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" id="prop-show-legend" class="form-check-input">
+                                <label class="form-check-label" for="prop-show-legend">Show Legend</label>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Legend Position</label>
+                                <select id="prop-legend-position" class="form-select form-select-sm">
+                                    <option value="top">Top</option><option value="bottom">Bottom</option>
+                                    <option value="left">Left</option><option value="right">Right</option>
+                                </select>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" id="prop-fill-area" class="form-check-input">
+                                <label class="form-check-label" for="prop-fill-area">Fill Area (Line)</label>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" id="prop-show-tooltips" class="form-check-input">
+                                <label class="form-check-label" for="prop-show-tooltips">Show Tooltips</label>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" id="prop-animated" class="form-check-input">
+                                <label class="form-check-label" for="prop-animated">Animated</label>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label">Title Font Size</label>
+                                    <input type="number" id="prop-title-font-size" class="form-control form-control-sm" min="10" max="28">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Border Radius</label>
+                                    <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Shape Properties (shown only for shapes) -->
+                        <div class="prop-section" id="shape-props-section" style="display:none">
+                            <div class="prop-section-title">Shape Style</div>
+                            <div class="mb-2">
+                                <label class="form-label">Fill Color</label>
+                                <input type="color" id="prop-shape-fill" class="form-control form-control-sm">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Stroke Color</label>
+                                <input type="color" id="prop-shape-stroke" class="form-control form-control-sm">
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label">Stroke Width</label>
+                                    <input type="number" id="prop-shape-stroke-width" class="form-control form-control-sm" min="0" max="20">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Corner Radius</label>
+                                    <input type="number" id="prop-shape-corner-radius" class="form-control form-control-sm" min="0" max="50">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Opacity</label>
+                                <input type="range" id="prop-shape-opacity" class="form-range" min="0" max="1" step="0.05">
+                            </div>
+                            <div class="shape-textbox-field">
+                                <div class="prop-section-title">Text</div>
+                                <div class="mb-2">
+                                    <label class="form-label">Text Content</label>
+                                    <textarea id="prop-shape-text" class="form-control form-control-sm" rows="2"></textarea>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label class="form-label">Font Size</label>
+                                        <input type="number" id="prop-shape-font-size" class="form-control form-control-sm" min="8" max="72">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label">Alignment</label>
+                                        <select id="prop-shape-text-align" class="form-select form-select-sm">
+                                            <option value="left">Left</option>
+                                            <option value="center">Center</option>
+                                            <option value="right">Right</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Font Color</label>
+                                    <input type="color" id="prop-shape-font-color" class="form-control form-control-sm">
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-            <!-- Data Fields sub-panel -->
-            <div class="data-fields-panel">
-                <div class="panel-header">
-                    <h6 class="mb-0"><i class="bi bi-table me-2"></i>Data Fields</h6>
-                </div>
-                <div id="data-fields-list" class="data-fields-scroll"></div>
-            </div>
+                </div><!-- /properties-tab-content -->
+            </div><!-- /properties-form -->
+                </div><!-- /properties-section-body -->
+            </div><!-- /properties-section -->
         </aside>
     </div>
+
+    <!-- Filter Panel (right flyout) -->
+    <div class="filter-overlay" id="filterOverlay"></div>
+    <aside class="filter-panel" id="filterPanel">
+        <div class="filter-panel-header">
+            <h6><i class="bi bi-funnel-fill me-2"></i>Filters</h6>
+            <button class="filter-close-btn" id="filter-close-btn" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="filter-tabs">
+            <button class="filter-tab-btn active" id="filter-tab-visual"><i class="bi bi-bar-chart me-1"></i>Per Visual</button>
+            <button class="filter-tab-btn" id="filter-tab-page"><i class="bi bi-file-earmark me-1"></i>Per Page</button>
+        </div>
+        <div class="filter-add-area">
+            <button class="btn btn-sm btn-primary w-100" id="add-filter-btn">
+                <i class="bi bi-plus-lg me-1"></i>Add Filter
+            </button>
+        </div>
+        <div class="filter-list-scroll" id="filter-list"></div>
+    </aside>
+
+    <!-- AI Report Assistant Panel -->
+    <div class="dcp-overlay" id="dcpOverlay"></div>
+    <aside class="dcp-panel" id="dcpPanel">
+        <div class="dcp-header">
+            <div class="dcp-header-title"><i class="bi bi-robot me-2"></i>AI Report Assistant</div>
+            <button class="dcp-close-btn" id="dcpCloseBtn" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="dcp-messages" id="dcpMessages">
+            <div class="dcp-welcome">
+                <i class="bi bi-robot dcp-welcome-icon"></i>
+                <p>Ask me to add charts, analyse data, or help design your report.</p>
+                <div class="dcp-chips">
+                    <button class="dcp-chip">Add a sales bar chart</button>
+                    <button class="dcp-chip">Show revenue by region</button>
+                    <button class="dcp-chip">Add a trend line chart</button>
+                    <button class="dcp-chip">Compare top products</button>
+                </div>
+            </div>
+        </div>
+        <div class="dcp-input-area">
+            <textarea class="dcp-input" id="dcpInput" rows="1" placeholder="Ask AI to help design your report…"></textarea>
+            <button class="dcp-send-btn" id="dcpSendBtn" title="Send"><i class="bi bi-send-fill"></i></button>
+        </div>
+    </aside>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="~/js/chartLibrary.js"></script>
 <script src="~/js/chartRenderer.js"></script>
+<script src="~/js/shapeManager.js"></script>
+<script src="~/js/groupManager.js"></script>
+<script src="~/js/layoutManager.js"></script>
 <script src="~/js/propertiesPanel.js"></script>
 <script src="~/js/canvasManager.js"></script>
+<script src="~/js/filterPanel.js"></script>
 <script src="~/js/exportManager.js"></script>
+<script src="~/js/dashboard-chart-transfer.js"></script>
+<script src="~/js/dashboard-chat-panel.js"></script>
 <script>
 (function() {
     const initialCharts = @Html.Raw(ViewBag.InitialCharts ?? "[]");
@@ -328,7 +547,55 @@
     const pages = @Html.Raw(ViewBag.Pages ?? "[]");
     const activePageIndex = @(ViewBag.ActivePageIndex ?? 0);
 
-    document.addEventListener('DOMContentLoaded', function() {
+    // Track existing report guid for save-upsert
+    window._currentReportGuid = @Html.Raw(ViewBag.ReportGuid != null ? Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.ReportGuid) : "null");
+
+    // Set datasource context from server so charts can query real data immediately
+    @if (ViewBag.DatasourceId != null)
+    {
+        <text>window.currentDatasourceId = @ViewBag.DatasourceId;</text>
+    }
+    @if (ViewBag.DatasourceType != null)
+    {
+        <text>window.currentDatasourceType = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.DatasourceType));</text>
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        // If editing an existing report, show View Report button
+        if (window._currentReportGuid) {
+            const viewBtn = document.getElementById('viewReportBtn');
+            if (viewBtn) {
+                viewBtn.style.display = '';
+                viewBtn.onclick = () => window.open('/report/view/' + window._currentReportGuid, '_blank');
+            }
+        }
+
+        // Pre-populate topnav from server-side workspace context so it's visible immediately
+        @if (ViewBag.WorkspaceGuid != null)
+        {
+            <text>
+        (function() {
+            const topnav = document.getElementById('reportTopnav');
+            if (topnav) topnav.style.display = '';
+            const wsTag = document.getElementById('reportWsTag');
+            const wsName = document.getElementById('reportWsName');
+            if (wsTag) wsTag.style.display = '';
+            if (wsName) wsName.textContent = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.WorkspaceName ?? ""));
+            @if (ViewBag.DatasourceName != null)
+            {
+                <text>
+            var dsTag = document.getElementById('reportDsTag');
+            var dsEl = document.getElementById('reportDsName');
+            var dsSep = document.getElementById('reportDsSep');
+            if (dsTag) dsTag.style.display = '';
+            if (dsEl) dsEl.textContent = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.DatasourceName ?? ""));
+            if (dsSep) dsSep.style.display = '';
+                </text>
+            }
+        })();
+            </text>
+        }
+
         document.getElementById('toggle-library-panel')?.addEventListener('click', function() {
             const panel = document.querySelector('.library-panel');
             panel.classList.toggle('collapsed');
@@ -342,12 +609,53 @@
             icon.className = panel.classList.contains('collapsed') ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
         });
 
+        // ── Pre-load real table names BEFORE chart init so charts use correct tables ──
+        if (window.currentDatasourceId) {
+            const realTables = await loadDatasourceTables(window.currentDatasourceId);
+            if (realTables && realTables.length > 0) {
+                const lowerTables = realTables.map(n => n.toLowerCase());
+                // Fix chart dataset names in all pages before init
+                const allPageCharts = (pages && pages.length > 0)
+                    ? pages.flatMap(p => p.charts || [])
+                    : (initialCharts || []);
+                allPageCharts.forEach(chart => {
+                    if (chart.datasetName && !lowerTables.includes(chart.datasetName.toLowerCase())) {
+                        chart.datasetName = realTables[0];
+                    }
+                    if (!chart.datasourceId) {
+                        chart.datasourceId = window.currentDatasourceId;
+                    }
+                });
+            }
+        }
+
+        // Inject shapes group into chart library
+        if (window.ShapeManager) {
+            chartLibraryData.unshift(ShapeManager.getLibraryGroup());
+        }
         chartLibrary.init(chartLibraryData);
         canvasManager.init(initialCharts, pages, activePageIndex);
+        // Initialize group and layout managers
+        if (window.groupManager) groupManager.init();
+        if (window.layoutManager) layoutManager.init();
+        // Initialize filter panel
+        if (window.filterPanel) filterPanel.init();
+        // Receive any chart pushed from the Chat page — must run after canvasManager.init()
+        if (window.dashboardChartTransfer) dashboardChartTransfer.receiveFromChat();
 
         // Populate dataset options safely (use DOM API to avoid XSS)
         const ds = document.getElementById('prop-dataset');
-        if (ds && datasets.length) {
+        if (window._realTableNames && window._realTableNames.length > 0) {
+            if (ds) {
+                ds.innerHTML = '';
+                window._realTableNames.forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    ds.appendChild(opt);
+                });
+            }
+        } else if (ds && datasets.length) {
             ds.innerHTML = '';
             datasets.forEach(d => {
                 const opt = document.createElement('option');
@@ -362,6 +670,247 @@
             if (el) el.textContent = `${canvasManager.charts.length} chart${canvasManager.charts.length !== 1 ? 's' : ''}`;
         }
         setInterval(updateCount, 500);
+
+        // ── Canvas Properties wiring ──────────────────────────
+        (function wireCanvasProps() {
+            const widthInput = document.getElementById('canvas-prop-width');
+            const heightInput = document.getElementById('canvas-prop-height');
+            const bgColor = document.getElementById('canvas-prop-bg');
+            const bgText = document.getElementById('canvas-prop-bg-text');
+            const canvas = document.getElementById('chart-canvas-drop');
+
+            function applyCanvasSize() {
+                if (!canvas) return;
+                const w = parseInt(widthInput?.value) || 1200;
+                const h = parseInt(heightInput?.value) || 900;
+                canvas.style.minWidth = w + 'px';
+                canvas.style.minHeight = h + 'px';
+                // Store on current page
+                const page = canvasManager.pages[canvasManager.activePageIndex];
+                if (page) { page.pageWidth = w; page.pageHeight = h; }
+            }
+            function applyCanvasBg() {
+                if (!canvas) return;
+                const c = bgColor?.value || '#ffffff';
+                canvas.style.background = c;
+                if (bgText) bgText.value = c;
+                const page = canvasManager.pages[canvasManager.activePageIndex];
+                if (page) page.background = c;
+            }
+            function syncFromPage() {
+                const page = canvasManager.pages[canvasManager.activePageIndex];
+                if (!page) return;
+                if (widthInput) widthInput.value = page.pageWidth || 1200;
+                if (heightInput) heightInput.value = page.pageHeight || 900;
+                if (bgColor) bgColor.value = page.background || '#ffffff';
+                if (bgText) bgText.value = page.background || '#ffffff';
+                applyCanvasSize();
+                applyCanvasBg();
+            }
+            if (widthInput) widthInput.addEventListener('change', applyCanvasSize);
+            if (heightInput) heightInput.addEventListener('change', applyCanvasSize);
+            if (bgColor) bgColor.addEventListener('input', applyCanvasBg);
+            if (bgText) bgText.addEventListener('change', function() {
+                if (bgColor) bgColor.value = this.value;
+                applyCanvasBg();
+            });
+            syncFromPage();
+        })();
+
+        // ── Report Topnav context ─────────────────────────────
+        (function wireReportTopnav() {
+            const params = new URLSearchParams(window.location.search);
+            const wsGuid = params.get('workspace') || params.get('ws');
+            const dsName = params.get('datasource') || params.get('ds');
+            const agentName = params.get('agent');
+
+            if (wsGuid) {
+                const topnav = document.getElementById('reportTopnav');
+                if (topnav) topnav.style.display = '';
+                const wsTag = document.getElementById('reportWsTag');
+                const wsName = document.getElementById('reportWsName');
+                if (wsTag && wsName) {
+                    wsName.textContent = wsGuid;
+                    wsTag.style.display = '';
+                    wsTag.title = 'Back to workspace';
+                    wsTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                    fetch('/api/workspaces/' + encodeURIComponent(wsGuid))
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => {
+                            if (data) {
+                                wsName.textContent = data.name || wsGuid;
+                                window._dashboardWsData = data;
+                                // Auto-populate datasource and agent from workspace data
+                                const dsList = data.datasources || [];
+                                const agentList = data.agents || [];
+                                if (dsList.length > 0) {
+                                    const dsEl = document.getElementById('reportDsName');
+                                    const dsTag = document.getElementById('reportDsTag');
+                                    const dsSep = document.getElementById('reportDsSep');
+                                    if (dsEl && dsTag) {
+                                        dsEl.textContent = dsList[0].name;
+                                        dsTag.style.display = '';
+                                        dsTag.title = 'Datasource: ' + dsList[0].name;
+                                                        dsTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                                    }
+                                    if (dsSep) dsSep.style.display = '';
+                                    // Set global datasource ID and type so chartRenderer + propertiesPanel use real data
+                                    window.currentDatasourceId = dsList[0].id;
+                                    if (dsList[0].type) window.currentDatasourceType = dsList[0].type;
+                                    // Populate dataset dropdown with real tables from datasource
+                                    loadDatasourceTables(dsList[0].id);
+                                    // Load schema fields into Data Fields panel
+                                    if (window.propertiesPanel) {
+                                        propertiesPanel.loadFields('');
+                                    }
+                                }
+                                if (agentList.length > 0) {
+                                    const agEl = document.getElementById('reportAgentName');
+                                    const agTag = document.getElementById('reportAgentTag');
+                                    const agSep = document.getElementById('reportAgentSep');
+                                    if (agEl && agTag) {
+                                        agEl.textContent = agentList[0].name;
+                                        agTag.style.display = '';
+                                        agTag.title = 'Agent: ' + agentList[0].name;
+                                                        agTag.addEventListener('click', () => { window.location.href = '/chat#ws=' + encodeURIComponent(wsGuid); });
+                                    }
+                                    if (agSep) agSep.style.display = '';
+                                }
+                            }
+                        }).catch(() => {});
+                }
+            }
+            if (dsName) {
+                const dsTag = document.getElementById('reportDsTag');
+                const dsEl = document.getElementById('reportDsName');
+                const dsSep = document.getElementById('reportDsSep');
+                if (dsTag && dsEl) { dsEl.textContent = dsName; dsTag.style.display = ''; }
+                if (dsSep) dsSep.style.display = '';
+            }
+            if (agentName) {
+                const agTag = document.getElementById('reportAgentTag');
+                const agEl = document.getElementById('reportAgentName');
+                const agSep = document.getElementById('reportAgentSep');
+                if (agTag && agEl) { agEl.textContent = agentName; agTag.style.display = ''; }
+                if (agSep) agSep.style.display = '';
+            }
+        })();
+
+        // ── Load real datasource tables into Dataset dropdown ─
+        async function loadDatasourceTables(dsId) {
+            try {
+                const resp = await fetch('/api/datasources/' + dsId + '/tables');
+                if (!resp.ok) return [];
+                const tables = await resp.json();
+                if (!tables || !tables.length) return [];
+                // API returns objects {name, type, rowCount} or strings
+                const tableNames = tables
+                    .map(t => typeof t === 'string' ? t : (t.name || t.Name || ''))
+                    .filter(n => n);
+                if (!tableNames.length) return [];
+                // Store globally for other components
+                window._realTableNames = tableNames;
+                const ds = document.getElementById('prop-dataset');
+                if (ds) {
+                    ds.innerHTML = '';
+                    tableNames.forEach(name => {
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        opt.textContent = name;
+                        ds.appendChild(opt);
+                    });
+                }
+                // Auto-rebind existing charts whose datasetName doesn't match any real table
+                if (canvasManager && canvasManager.charts && canvasManager.charts.length > 0) {
+                    const lowerNames = tableNames.map(n => n.toLowerCase());
+                    let needsRerender = false;
+                    canvasManager.charts.forEach(chart => {
+                        if (chart.datasetName && !lowerNames.includes(chart.datasetName.toLowerCase())) {
+                            chart.datasetName = tableNames[0];
+                            needsRerender = true;
+                        }
+                        if (!chart.datasourceId && window.currentDatasourceId) {
+                            chart.datasourceId = window.currentDatasourceId;
+                            needsRerender = true;
+                        }
+                    });
+                    if (needsRerender) canvasManager.renderAll();
+                }
+                return tableNames;
+            } catch(e) { console.warn('Could not load datasource tables:', e); return []; }
+        }
+
+        // ── Save Report button (upsert: update existing or create new) ─
+        document.getElementById('saveReportBtn')?.addEventListener('click', async function() {
+            const params = new URLSearchParams(window.location.search);
+            const wsGuid = params.get('workspace') || params.get('ws');
+            if (!wsGuid) { alert('Open this dashboard from a workspace to save reports.'); return; }
+
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
+            try {
+                // Save current page charts before serializing
+                canvasManager.pages[canvasManager.activePageIndex].charts = canvasManager.charts;
+                const chartIds = canvasManager.charts.map(c => c.id);
+                const canvasJson = JSON.stringify({
+                    pages: canvasManager.pages,
+                    activePageIndex: canvasManager.activePageIndex
+                });
+                const reportName = document.getElementById('canvas-name-display')?.textContent || 'Report';
+                const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                const wsData = window._dashboardWsData || {};
+                const existingGuid = window._currentReportGuid || null;
+
+                let resp;
+                if (existingGuid) {
+                    // Update existing report
+                    resp = await fetch('/api/reports/' + encodeURIComponent(existingGuid), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: reportName,
+                            chartIds: chartIds,
+                            canvasJson: canvasJson
+                        })
+                    });
+                } else {
+                    // Create new report
+                    resp = await fetch('/api/reports', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            workspaceGuid: wsGuid,
+                            name: reportName,
+                            chartIds: chartIds,
+                            canvasJson: canvasJson,
+                            datasourceId: (wsData.datasources || [])[0]?.id || null,
+                            agentId: (wsData.agents || [])[0]?.id || null,
+                            createdBy: user?.id || null
+                        })
+                    });
+                }
+                if (!resp.ok) throw new Error();
+                const report = await resp.json();
+                // Track the report guid for subsequent saves
+                window._currentReportGuid = report.guid;
+                // Show View Report button
+                const viewBtn = document.getElementById('viewReportBtn');
+                if (viewBtn) {
+                    viewBtn.style.display = '';
+                    viewBtn.onclick = () => window.open('/report/view/' + report.guid, '_blank');
+                }
+                btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Saved!';
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
+                    btn.disabled = false;
+                }, 1200);
+            } catch {
+                alert('Failed to save report.');
+                btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
+                btn.disabled = false;
+            }
+        });
     });
 })();
 

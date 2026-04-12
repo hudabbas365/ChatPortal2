@@ -34,8 +34,9 @@ class ChartRenderer {
     getColors(palette, count) {
         let colors;
         if (palette && palette.startsWith('#')) {
-            // Hex color provided — generate shades/variations from the primary color
-            colors = this._generateColorShades(palette, 8);
+            // Hex color provided — use it as the first color, then append distinct palette colors
+            const base = this.colorPalettes.default;
+            colors = [palette, ...base.filter(c => c !== palette)];
         } else {
             colors = this.colorPalettes[palette] || this.colorPalettes.default;
         }
@@ -88,7 +89,21 @@ class ChartRenderer {
         const wrap = canvasEl.parentElement;
         let data;
         try { data = await this.fetchData(chartDef); }
-        catch(e) { data = { labels: ['A','B','C','D','E'], values: [30,50,40,70,55] }; }
+        catch(e) { console.warn('Data fetch failed:', e); data = { labels: [], values: [] }; }
+
+        // Show empty-data overlay when no data is available
+        const existingEmpty = wrap.querySelector('.chart-no-data-overlay');
+        if (existingEmpty) existingEmpty.remove();
+        if ((!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
+            canvasEl.style.display = 'none';
+            const noData = document.createElement('div');
+            noData.className = 'chart-no-data-overlay';
+            noData.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:#94a3b8;font-size:0.82rem;';
+            noData.innerHTML = '<i class="bi bi-exclamation-circle" style="font-size:1.5rem"></i><span>No data available</span>';
+            wrap.appendChild(noData);
+            return;
+        }
+        canvasEl.style.display = '';
 
         if (this._customRenderTypes.has(chartDef.chartType)) {
             canvasEl.style.display = 'none';
@@ -151,27 +166,202 @@ class ChartRenderer {
             inst.update();
         };
         document.addEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
+
+        // Listen for filter-panel changes and apply client-side filtering
+        this._filterPanelListener = this._filterPanelListener || {};
+        if (this._filterPanelListener[chartDef.id]) {
+            document.removeEventListener('filters:change', this._filterPanelListener[chartDef.id]);
+        }
+        this._filterPanelListener[chartDef.id] = () => {
+            if (!window.filterPanel) return;
+            const filters = filterPanel.getFiltersForChart(chartDef.id);
+            const inst = this.instances[chartDef.id];
+            if (!inst) return;
+            let filtered;
+            if (filters.length > 0 && data.rawData) {
+                const fData = FilterPanel.filterData(data.rawData, filters);
+                const vField = chartDef.mapping?.valueField || 'value';
+                filtered = {
+                    labels: fData.map(r => String(r[labelField] ?? '')),
+                    values: fData.map(r => parseFloat(r[vField]) || 0)
+                };
+            } else {
+                filtered = data;
+            }
+            inst.data.labels = filtered.labels || data.labels;
+            inst.data.datasets[0].data = filtered.values || data.values;
+            inst.update();
+        };
+        document.addEventListener('filters:change', this._filterPanelListener[chartDef.id]);
+    }
+
+    _formatTableName(tableName) {
+        if (!tableName) return '[]';
+        // Defensive: extract string from object (e.g. {name:'TableName'} from API)
+        if (typeof tableName === 'object') {
+            tableName = tableName.name || tableName.Name || String(tableName);
+        }
+        tableName = String(tableName);
+        if (tableName.includes('.')) {
+            return tableName.split('.').map(part => `[${part}]`).join('.');
+        }
+        return `[${tableName}]`;
+    }
+
+    _buildLimitQuery(columns, tableName, limit = 100, whereClause = '') {
+        const dsType = (window.currentDatasourceType || '').toLowerCase();
+        const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
+        const cols = columns || '*';
+        const fmtTable = this._formatTableName(tableName);
+        const where = whereClause ? ` WHERE ${whereClause}` : '';
+        if (isSqlServer) {
+            return `SELECT TOP ${limit} ${cols} FROM ${fmtTable}${where}`;
+        }
+        return `SELECT ${cols} FROM ${fmtTable}${where} LIMIT ${limit}`;
     }
 
     async fetchData(chartDef) {
         if (chartDef.customJsonData) {
-            try { return JSON.parse(chartDef.customJsonData); } catch(e) {}
+            try {
+                const parsed = JSON.parse(chartDef.customJsonData);
+                // Only use customJsonData if it has real labels (not the old-bug "undefined" strings)
+                if (parsed &&
+                    Array.isArray(parsed.labels) && parsed.labels.length > 0 &&
+                    Array.isArray(parsed.values) && parsed.values.length > 0 &&
+                    parsed.labels.some(function (l) { return l !== '' && l !== 'undefined'; })) {
+                    return parsed;
+                }
+            } catch(e) {}
         }
         const mapping = chartDef.mapping || {};
         const agg = chartDef.aggregation || {};
-        const labelField = mapping.labelField || 'month';
-        const valueField = mapping.valueField || 'revenue';
+        const labelField = mapping.labelField || '';
+        const valueField = mapping.valueField || '';
 
-        if (agg.enabled && labelField && valueField) {
-            const resp = await fetch(`/api/data/${chartDef.datasetName}/aggregated?labelField=${labelField}&valueField=${valueField}&aggregation=${agg.function || 'SUM'}`);
-            return resp.json();
-        } else {
-            const resp = await fetch(`/api/data/${chartDef.datasetName}`);
-            const raw = await resp.json();
-            const labels = raw.map(r => r[labelField]);
-            const values = raw.map(r => parseFloat(r[valueField]) || 0);
-            return { labels, values };
+        // ── Real datasource path ──
+        const dsId = chartDef.datasourceId || window.currentDatasourceId || null;
+
+        // ── Table-based path (PRIMARY): always build query from table + current filterWhere/rowLimit ──
+        if (dsId && chartDef.datasetName) {
+            try {
+                let tableName = chartDef.datasetName;
+                if (typeof tableName === 'object') {
+                    tableName = tableName.name || tableName.Name || '';
+                }
+                tableName = String(tableName);
+                if (!tableName || tableName === '[object Object]') {
+                    throw new Error('Invalid table name');
+                }
+                const fmtTable = this._formatTableName(tableName);
+                const rowLimit = chartDef.rowLimit || 100;
+                const whereClause = chartDef.filterWhere || '';
+                const whereSQL = whereClause ? ` WHERE ${whereClause}` : '';
+                const mvFields = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                let selectedCols;
+                if (chartDef.chartType === 'table') {
+                    selectedCols = '*';
+                } else if (labelField && valueField) {
+                    const allCols = [`[${labelField}]`, `[${valueField}]`];
+                    mvFields.forEach(f => { if (f !== valueField) allCols.push(`[${f}]`); });
+                    selectedCols = allCols.join(', ');
+                } else {
+                    selectedCols = '*';
+                }
+                let query;
+                if (agg.enabled && labelField && valueField) {
+                    const dsType = (window.currentDatasourceType || '').toLowerCase();
+                    const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
+                    const aggCols = `[${labelField}], ${agg.function || 'SUM'}([${valueField}]) as [${valueField}]`;
+                    if (isSqlServer) {
+                        query = `SELECT TOP ${rowLimit} ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}]`;
+                    } else {
+                        query = `SELECT ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}] LIMIT ${rowLimit}`;
+                    }
+                } else {
+                    query = this._buildLimitQuery(selectedCols, tableName, rowLimit, whereClause);
+                }
+                const r = await fetch('/api/data/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query, datasourceId: dsId })
+                });
+                const result = await r.json();
+                if (result.success && result.data && result.data.length > 0) {
+                    const keys = Object.keys(result.data[0]);
+                    const resolvedLabel = (labelField && keys.find(k => k.toLowerCase() === labelField.toLowerCase())) || keys[0];
+                    const resolvedValue = (valueField && keys.find(k => k.toLowerCase() === valueField.toLowerCase())) ||
+                        keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
+                    const out = {
+                        labels: result.data.map(r => String(r[resolvedLabel] ?? '')),
+                        values: result.data.map(r => parseFloat(r[resolvedValue]) || 0),
+                        rawData: result.data
+                    };
+                    // Extract additional value fields for multi-series
+                    const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                    if (mvf.length > 0) {
+                        out.multiValues = mvf.map(f => {
+                            const rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
+                            return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
+                        });
+                    }
+                    return out;
+                }
+                // Query failed — retry with simple SELECT * preserving WHERE and LIMIT
+                if (!result.success) {
+                    const fallbackQuery = this._buildLimitQuery('*', tableName, rowLimit, whereClause);
+                    const r2 = await fetch('/api/data/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: fallbackQuery, datasourceId: dsId })
+                    });
+                    const result2 = await r2.json();
+                    if (result2.success && result2.data && result2.data.length > 0) {
+                        const keys2 = Object.keys(result2.data[0]);
+                        const autoLabel = keys2.find(k => typeof result2.data[0][k] === 'string') || keys2[0];
+                        const autoValue = keys2.find(k => typeof result2.data[0][k] === 'number') || keys2[1] || keys2[0];
+                        return {
+                            labels: result2.data.map(r => String(r[autoLabel] ?? '')),
+                            values: result2.data.map(r => parseFloat(r[autoValue]) || 0),
+                            rawData: result2.data
+                        };
+                    }
+                }
+            } catch(e) { console.warn('Datasource table fetch failed, falling back:', e); }
         }
+
+        // ── DataQuery fallback: use pre-built query when no table name is available ──
+        if (dsId && chartDef.dataQuery && !chartDef.dataQuery.includes('[object Object]')) {
+            try {
+                const r = await fetch('/api/data/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: chartDef.dataQuery, datasourceId: dsId })
+                });
+                const result = await r.json();
+                if (result.success && result.data && result.data.length > 0) {
+                    const keys = Object.keys(result.data[0]);
+                    const resolvedLabel = keys.find(k => k.toLowerCase() === labelField.toLowerCase()) || keys[0];
+                    const resolvedValue = keys.find(k => k.toLowerCase() === valueField.toLowerCase()) ||
+                        keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
+                    const out = {
+                        labels: result.data.map(r => String(r[resolvedLabel] ?? '')),
+                        values: result.data.map(r => parseFloat(r[resolvedValue]) || 0),
+                        rawData: result.data
+                    };
+                    const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                    if (mvf.length > 0) {
+                        out.multiValues = mvf.map(f => {
+                            const rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
+                            return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
+                        });
+                    }
+                    return out;
+                }
+            } catch(e) { console.warn('Datasource query fetch failed:', e); }
+        }
+
+        // No data available from any real datasource path
+        return { labels: [], values: [] };
     }
 
     _baseOptions(chartDef, extraScales) {
@@ -247,11 +437,14 @@ class ChartRenderer {
         // ---- Generic fallback ----
         const type = this.mapType(ct);
         const options = this._baseOptions(chartDef);
+        const isPerPoint = ['pie','doughnut','polarArea','bar'].includes(type);
+        const bgColorArr = isPerPoint ? colors.slice(0, values.length).map(c => c + 'CC') : colors[0] + 'CC';
+        const bdColorArr = isPerPoint ? colors.slice(0, values.length) : colors[0];
         let datasets = [{
-            label: chartDef.title || 'Data',
+            label: (chartDef.mapping?.valueField) || chartDef.title || 'Data',
             data: values,
-            backgroundColor: ['pie','doughnut','polarArea'].includes(type) ? colors : colors[0] + 'CC',
-            borderColor: ['pie','doughnut','polarArea'].includes(type) ? colors : colors[0],
+            backgroundColor: bgColorArr,
+            borderColor: bdColorArr,
             borderWidth: 2,
             fill: style.fillArea || false,
             tension: 0.4,
@@ -259,6 +452,24 @@ class ChartRenderer {
             pointRadius: 4,
             pointHoverRadius: 6
         }];
+        // Multi-series: add additional datasets from multiValueFields
+        if (data.multiValues && data.multiValues.length > 0 && !isPerPoint) {
+            data.multiValues.forEach((mv, i) => {
+                const ci = (i + 1) % colors.length;
+                datasets.push({
+                    label: mv.field || ('Series ' + (i + 2)),
+                    data: mv.values,
+                    backgroundColor: colors[ci] + 'CC',
+                    borderColor: colors[ci],
+                    borderWidth: 2,
+                    fill: style.fillArea || false,
+                    tension: 0.4,
+                    borderRadius: parseInt(style.borderRadius || '4'),
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                });
+            });
+        }
         if (type === 'bar' && ct === 'horizontalBar') options.indexAxis = 'y';
         if (type === 'bar' && ct === 'stackedBar') {
             options.scales.x.stacked = true;
@@ -1681,15 +1892,41 @@ class ChartRenderer {
 
     renderTableChart(chartDef, container, data, colors, h) {
         const MAX_ROWS = 50;
-        const labels = (data.labels || ['A','B','C','D','E']).slice(0, MAX_ROWS);
-        const values = (data.values || []).slice(0, MAX_ROWS);
+        const rawData = (data.rawData || []).slice(0, MAX_ROWS);
         const mapping = chartDef.mapping || {};
-        const labelField = mapping.labelField || 'Label';
-        const valueField = mapping.valueField || 'Value';
         const primaryColor = (chartDef.style && chartDef.style.colorPalette && chartDef.style.colorPalette.startsWith('#'))
             ? chartDef.style.colorPalette : colors[0];
 
         container.style.cssText = 'position:absolute;inset:0;overflow:auto;padding:8px;';
+
+        // Use all columns from rawData when available
+        if (rawData.length > 0) {
+            const columns = Object.keys(rawData[0]);
+            const headerCells = columns.map(col =>
+                `<th style="color:${this._esc(primaryColor)}">${this._esc(col)}</th>`
+            ).join('');
+            const bodyRows = rawData.map(row =>
+                '<tr>' + columns.map(col => {
+                    const val = row[col];
+                    const isNum = typeof val === 'number';
+                    return `<td${isNum ? ' class="text-end"' : ''}>${this._esc(String(val ?? ''))}</td>`;
+                }).join('') + '</tr>'
+            ).join('');
+            container.innerHTML = `
+                <table class="table table-sm table-striped mb-0" style="font-size:12px;">
+                    <thead style="position:sticky;top:0;background:#fff;">
+                        <tr>${headerCells}</tr>
+                    </thead>
+                    <tbody>${bodyRows}</tbody>
+                </table>`;
+            return;
+        }
+
+        // Fallback to label/value two-column view
+        const labels = (data.labels || []).slice(0, MAX_ROWS);
+        const values = (data.values || []).slice(0, MAX_ROWS);
+        const labelField = mapping.labelField || 'Label';
+        const valueField = mapping.valueField || 'Value';
         const rows = labels.map((lbl, i) =>
             `<tr><td>${this._esc(String(lbl))}</td><td class="text-end">${this._esc(String(values[i] ?? ''))}</td></tr>`
         ).join('');

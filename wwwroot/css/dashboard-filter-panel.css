@@ -1,0 +1,265 @@
+/* Dashboard Filter Panel — right-side flyout for per-visual / per-page filters */
+
+.filter-panel {
+    position: fixed;
+    top: 52px;
+    right: 0;
+    width: 340px;
+    height: calc(100vh - 52px);
+    background: var(--cp-surface);
+    border-left: 1px solid var(--cp-border);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.08);
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+}
+
+.filter-panel.open {
+    transform: translateX(0);
+}
+
+.filter-panel-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--cp-border);
+    background: linear-gradient(135deg, var(--cp-primary-light) 0%, var(--cp-surface) 100%);
+    font-size: 0.85rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.filter-panel-header h6 {
+    margin: 0;
+    flex: 1;
+    color: var(--cp-primary-dark);
+}
+
+.filter-close-btn {
+    background: none;
+    border: none;
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: var(--cp-transition);
+}
+
+.filter-close-btn:hover {
+    background: var(--cp-danger-light);
+    color: var(--cp-danger);
+}
+
+/* Filter tabs */
+.filter-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--cp-border);
+    flex-shrink: 0;
+}
+
+.filter-tab-btn {
+    flex: 1;
+    padding: 9px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-align: center;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.filter-tab-btn:hover {
+    color: var(--cp-primary);
+    background: var(--cp-primary-light);
+}
+
+.filter-tab-btn.active {
+    color: var(--cp-primary);
+    border-bottom-color: var(--cp-primary);
+    font-weight: 600;
+}
+
+/* Add filter area — placed ABOVE the filter list */
+.filter-add-area {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--cp-border);
+    flex-shrink: 0;
+    background: var(--cp-bg);
+}
+
+.filter-add-area .btn {
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 7px 12px;
+}
+
+/* Filter list */
+.filter-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 12px;
+}
+
+.filter-list-scroll::-webkit-scrollbar { width: 4px; }
+.filter-list-scroll::-webkit-scrollbar-thumb { background: var(--cp-border); border-radius: 2px; }
+
+.filter-item {
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    transition: var(--cp-transition);
+}
+
+.filter-item:hover {
+    border-color: var(--cp-primary);
+    box-shadow: 0 1px 6px rgba(91, 155, 213, 0.10);
+}
+
+.filter-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.filter-item-number {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--cp-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.filter-row .form-select,
+.filter-row .form-control {
+    font-size: 0.78rem;
+    border-radius: 6px;
+}
+
+.filter-row .form-select:focus,
+.filter-row .form-control:focus {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.15);
+}
+
+.filter-remove-btn {
+    color: var(--cp-text-muted);
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.filter-remove-btn:hover {
+    color: var(--cp-danger) !important;
+    background: var(--cp-danger-light);
+}
+
+/* Apply button per filter */
+.filter-item-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--cp-border);
+}
+
+.filter-apply-btn {
+    flex: 1;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 5px;
+    background: var(--cp-primary);
+    color: #fff;
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.filter-apply-btn:hover {
+    background: var(--cp-primary-dark);
+}
+
+.filter-clear-btn {
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 5px 10px;
+    border: 1px solid var(--cp-border);
+    border-radius: 5px;
+    background: var(--cp-surface);
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.filter-clear-btn:hover {
+    border-color: var(--cp-danger);
+    color: var(--cp-danger);
+    background: var(--cp-danger-light);
+}
+
+/* Filter footer (no longer used but kept for compat) */
+.filter-panel-footer {
+    padding: 8px 14px;
+    border-top: 1px solid var(--cp-border);
+    flex-shrink: 0;
+}
+
+.filter-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    gap: 10px;
+    color: var(--cp-text-muted);
+}
+
+.filter-empty i {
+    font-size: 2.2rem;
+    color: var(--cp-primary);
+    opacity: 0.4;
+}
+
+.filter-empty small {
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+/* Filter overlay for mobile (optional) */
+.filter-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.2);
+    z-index: 89;
+    display: none;
+}
+
+.filter-overlay.show {
+    display: block;
+}

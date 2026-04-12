@@ -2,8 +2,10 @@ using ChatPortal2.Models;
 using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
+using ChatPortal2.Data;
 
 namespace ChatPortal2.Controllers;
 
@@ -12,6 +14,7 @@ public class DashboardController : Controller
 {
     private readonly IChartService _chartService;
     private readonly IDataService _dataService;
+    private readonly AppDbContext _db;
     private const string SessionKey = "canvas_state";
 
     private static readonly JsonSerializerSettings CamelCaseSettings = new()
@@ -20,25 +23,81 @@ public class DashboardController : Controller
         ReferenceLoopHandling = ReferenceLoopHandling.Ignore
     };
 
-    public DashboardController(IChartService chartService, IDataService dataService)
+    public DashboardController(IChartService chartService, IDataService dataService, AppDbContext db)
     {
         _chartService = chartService;
         _dataService = dataService;
+        _db = db;
     }
 
     [HttpGet("/dashboard")]
-    public IActionResult Index()
+    public async Task<IActionResult> Index([FromQuery] string? report, [FromQuery] string? workspace)
     {
-        var canvasJson = HttpContext.Session.GetString(SessionKey);
         CanvasState canvas;
-        if (string.IsNullOrEmpty(canvasJson))
+
+        // If a report guid is provided, load that report's canvas for editing
+        if (!string.IsNullOrEmpty(report))
         {
-            canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
-            HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+            var rpt = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == report);
+            if (rpt != null && !string.IsNullOrEmpty(rpt.CanvasJson))
+            {
+                canvas = JsonConvert.DeserializeObject<CanvasState>(rpt.CanvasJson) ?? new CanvasState();
+                canvas.CanvasName = rpt.Name ?? canvas.CanvasName;
+                ViewBag.ReportGuid = rpt.Guid;
+                // Persist to session so chart operations work on this canvas
+                HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+            }
+            else
+            {
+                canvas = LoadOrCreateCanvas();
+            }
+        }
+        // If a workspace guid is provided, find the latest report in that workspace
+        else if (!string.IsNullOrEmpty(workspace))
+        {
+            var ws = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == workspace);
+            if (ws != null)
+            {
+                // Find the most recent report in this workspace
+                var latestReport = await _db.Reports
+                    .Where(r => r.WorkspaceId == ws.Id && !string.IsNullOrEmpty(r.CanvasJson))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (latestReport != null)
+                {
+                    canvas = JsonConvert.DeserializeObject<CanvasState>(latestReport.CanvasJson!) ?? new CanvasState();
+                    canvas.CanvasName = latestReport.Name ?? canvas.CanvasName;
+                    ViewBag.ReportGuid = latestReport.Guid;
+                    HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+                }
+                else
+                {
+                    canvas = LoadOrCreateCanvas();
+                }
+
+                // Resolve datasource context for the workspace so charts can query real data
+                var ds = await _db.Datasources
+                    .Where(d => d.WorkspaceId == ws.Id)
+                    .Select(d => new { d.Id, d.Name, d.Type })
+                    .FirstOrDefaultAsync();
+                if (ds != null)
+                {
+                    ViewBag.DatasourceId = ds.Id;
+                    ViewBag.DatasourceName = ds.Name;
+                    ViewBag.DatasourceType = ds.Type;
+                }
+                ViewBag.WorkspaceGuid = ws.Guid;
+                ViewBag.WorkspaceName = ws.Name;
+            }
+            else
+            {
+                canvas = LoadOrCreateCanvas();
+            }
         }
         else
         {
-            canvas = JsonConvert.DeserializeObject<CanvasState>(canvasJson) ?? new CanvasState();
+            canvas = LoadOrCreateCanvas();
         }
 
         ViewBag.InitialCharts = JsonConvert.SerializeObject(canvas.Charts, CamelCaseSettings);
@@ -50,5 +109,17 @@ public class DashboardController : Controller
         ViewBag.Datasets = JsonConvert.SerializeObject(_dataService.GetDatasets(), CamelCaseSettings);
 
         return View(canvas);
+    }
+
+    private CanvasState LoadOrCreateCanvas()
+    {
+        var canvasJson = HttpContext.Session.GetString(SessionKey);
+        if (string.IsNullOrEmpty(canvasJson))
+        {
+            var canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
+            HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+            return canvas;
+        }
+        return JsonConvert.DeserializeObject<CanvasState>(canvasJson) ?? new CanvasState();
     }
 }

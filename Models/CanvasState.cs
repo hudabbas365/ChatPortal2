@@ -27,4 +27,7 @@ public class ReportPage
 {
     public string Name { get; set; } = "Page 1";
     public List<ChartDefinition> Charts { get; set; } = new();
+    public int PageWidth { get; set; } = 1200;
+    public int PageHeight { get; set; } = 900;
+    public string Background { get; set; } = "#ffffff";
 }

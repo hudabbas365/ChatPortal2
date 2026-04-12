@@ -1,0 +1,172 @@
+/* ============================================================
+   Dashboard — Group & Layout Management Styles
+   ============================================================ */
+
+/* ── Multi-select highlight ────────────────────────────────── */
+.chart-card.multi-selected {
+    border-color: var(--cp-purple);
+    box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.25);
+}
+
+/* ── Marquee / rubber-band selection ───────────────────────── */
+.selection-marquee {
+    position: absolute;
+    border: 2px dashed var(--cp-purple);
+    background: rgba(155, 89, 182, 0.08);
+    pointer-events: none;
+    z-index: 99999;
+    border-radius: 3px;
+}
+
+/* ── Group outline ─────────────────────────────────────────── */
+.group-outline {
+    position: absolute;
+    border: 2px dashed var(--cp-primary);
+    border-radius: var(--cp-radius);
+    pointer-events: auto;
+    z-index: 0;
+    background: rgba(91, 155, 213, 0.04);
+    cursor: grab;
+    transition: background 0.2s, border-color 0.2s;
+    user-select: none;
+}
+.group-outline:hover {
+    background: rgba(91, 155, 213, 0.10);
+    border-color: var(--cp-primary-dark);
+}
+.group-outline.group-dragging {
+    cursor: grabbing;
+    border-style: solid;
+    background: rgba(91, 155, 213, 0.12);
+    box-shadow: 0 6px 20px rgba(91, 155, 213, 0.18);
+}
+.group-outline .group-label {
+    position: absolute;
+    top: -20px;
+    left: 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--cp-surface);
+    background: var(--cp-primary);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: none;
+    white-space: nowrap;
+    user-select: none;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    transition: var(--cp-transition);
+}
+.group-outline .group-label:hover {
+    background: var(--cp-primary-dark);
+}
+.group-outline .group-label i {
+    font-size: 0.65rem;
+    margin-right: 3px;
+}
+
+/* ── Layout Toolbar (inside canvas-toolbar) ────────────────── */
+.layout-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-left: 1px solid var(--cp-border);
+    padding-left: 8px;
+    margin-left: 4px;
+}
+.layout-toolbar.hidden {
+    display: none;
+}
+
+.layout-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    border-radius: 4px;
+    color: var(--cp-text-muted);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: var(--cp-transition);
+    position: relative;
+}
+.layout-btn:hover {
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+}
+.layout-btn:active {
+    background: var(--cp-primary);
+    color: #fff;
+}
+.layout-btn[disabled] {
+    opacity: 0.35;
+    pointer-events: none;
+}
+.layout-btn[title]::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    white-space: nowrap;
+    background: var(--cp-code-bg);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+.layout-btn:hover[title]::after {
+    opacity: 1;
+}
+
+.layout-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--cp-border);
+    margin: 0 3px;
+}
+
+/* Snap-to-grid toggle */
+.layout-btn.snap-active {
+    color: var(--cp-primary);
+    background: var(--cp-primary-light);
+}
+
+/* ── Alignment guide lines ─────────────────────────────────── */
+.snap-guide-line {
+    position: absolute;
+    background: var(--cp-primary);
+    opacity: 0.5;
+    z-index: 99998;
+    pointer-events: none;
+}
+.snap-guide-line.horizontal {
+    height: 1px;
+    left: 0;
+    right: 0;
+}
+.snap-guide-line.vertical {
+    width: 1px;
+    top: 0;
+    bottom: 0;
+}
+
+/* ── Group/Ungroup buttons in toolbar ──────────────────────── */
+.group-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-left: 1px solid var(--cp-border);
+    padding-left: 8px;
+    margin-left: 4px;
+}
+.group-actions.hidden {
+    display: none;
+}

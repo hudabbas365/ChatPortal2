@@ -61,22 +61,36 @@ public class ChartController : ControllerBase
     public IActionResult Update(string id, [FromBody] ChartDefinition chart)
     {
         var canvas = GetCanvas();
-        var idx = canvas.Charts.FindIndex(c => c.Id == id);
-        if (idx < 0) return NotFound();
-        chart.Id = id;
-        canvas.Charts[idx] = chart;
-        SaveCanvas(canvas);
-        return Ok(chart);
+        // Search all pages so the chart is found regardless of active page index
+        foreach (var page in canvas.Pages)
+        {
+            var idx = page.Charts.FindIndex(c => c.Id == id);
+            if (idx >= 0)
+            {
+                chart.Id = id;
+                page.Charts[idx] = chart;
+                SaveCanvas(canvas);
+                return Ok(chart);
+            }
+        }
+        return NotFound();
     }
 
     [HttpDelete("{id}")]
     public IActionResult Delete(string id)
     {
         var canvas = GetCanvas();
-        var removed = canvas.Charts.RemoveAll(c => c.Id == id);
-        if (removed == 0) return NotFound();
-        SaveCanvas(canvas);
-        return Ok(new { success = true });
+        // Search all pages so the chart is found regardless of active page index
+        foreach (var page in canvas.Pages)
+        {
+            var removed = page.Charts.RemoveAll(c => c.Id == id);
+            if (removed > 0)
+            {
+                SaveCanvas(canvas);
+                return Ok(new { success = true });
+            }
+        }
+        return NotFound();
     }
 
     [HttpPost("reorder")]
