@@ -5,57 +5,109 @@
 
 <!-- Hero Section -->
 <section class="cp-hero">
-    <div class="container">
-        <div class="row align-items-center min-vh-80">
+    <div class="container px-4 px-lg-5">
+        <div class="row align-items-center g-5">
+
+            <!-- Left column -->
             <div class="col-lg-6">
                 <div class="hero-badge mb-3">
-                    <i class="bi bi-stars me-2"></i>AI-Powered Analytics
+                    <i class="bi bi-stars me-2"></i>✦ Trusted by 1,200+ data teams
                 </div>
                 <h1 class="hero-title">
-                    Talk to Your Data,<br/>
-                    <span class="hero-highlight">Get Instant Insights</span>
+                    Turn Any Data Into<br/>
+                    <span class="hero-highlight">Decisions — Instantly</span>
                 </h1>
                 <p class="hero-subtitle">
-                    Connect your datasources, chat with AI agents, and visualize insights with 72+ chart types.
-                    No SQL required.
+                    ChatPortal2 connects to 70+ datasources, deploys custom AI Agents, and generates beautiful charts in seconds. No SQL. No dashboards. Just answers.
                 </p>
                 <div class="hero-actions">
-                    <a href="/auth/register" class="btn cp-btn-gradient btn-lg me-3">
+                    <a href="/auth/register" class="btn cp-btn-gradient btn-lg">
                         <i class="bi bi-rocket-takeoff me-2"></i>Start Free Trial
                     </a>
                     <a href="/chat" class="btn btn-outline-cp btn-lg">
-                        <i class="bi bi-chat-dots me-2"></i>Try Demo
+                        <i class="bi bi-play-circle me-2"></i>Watch 2-min Demo
                     </a>
                 </div>
-                <div class="hero-trust mt-4">
+                <!-- Stat row -->
+                <div class="hero-stats mb-3">
+                    <div class="hero-stat-item">
+                        <span class="stat-number">70+</span>
+                        <span class="stat-label">Datasources</span>
+                    </div>
+                    <div class="hero-stat-divider"></div>
+                    <div class="hero-stat-item">
+                        <span class="stat-number">72+</span>
+                        <span class="stat-label">Chart Types</span>
+                    </div>
+                    <div class="hero-stat-divider"></div>
+                    <div class="hero-stat-item">
+                        <span class="stat-number">10×</span>
+                        <span class="stat-label">Faster insights</span>
+                    </div>
+                </div>
+                <!-- Trust badges -->
+                <div class="hero-trust">
                     <span class="trust-item"><i class="bi bi-shield-check me-1"></i>GDPR Compliant</span>
                     <span class="trust-item"><i class="bi bi-clock me-1"></i>30-day Free Trial</span>
                     <span class="trust-item"><i class="bi bi-credit-card me-1"></i>No Credit Card</span>
+                    <span class="trust-item"><i class="bi bi-patch-check me-1"></i>SOC 2 Ready</span>
                 </div>
             </div>
+
+            <!-- Right column — AI Insights Panel -->
             <div class="col-lg-6">
-                <div class="hero-visual">
-                    <div class="hero-card glass-card">
-                        <div class="hero-chat-preview">
-                            <div class="chat-msg user-msg">
-                                <div class="msg-bubble">What were our top performing regions last quarter?</div>
-                            </div>
-                            <div class="chat-msg ai-msg">
-                                <div class="msg-bubble">
-                                    <i class="bi bi-robot me-2 text-primary"></i>
-                                    North region led with $145K revenue (+13.3%), followed by East at $101K (+9.7%).
-                                    Here's the breakdown chart:
-                                    <div class="mini-chart-preview mt-2">
-                                        <div class="mini-bar" style="width:85%;background:var(--cp-primary)">North 85%</div>
-                                        <div class="mini-bar" style="width:65%;background:var(--cp-accent)">East 65%</div>
-                                        <div class="mini-bar" style="width:55%;background:var(--cp-info)">South 55%</div>
-                                    </div>
-                                </div>
-                            </div>
+                <div class="hero-insights-panel">
+
+                    <!-- Ask Anything bar -->
+                    <div class="hero-ask-bar">
+                        <i class="bi bi-search text-muted me-2"></i>
+                        <span class="hero-ask-placeholder">Ask your data anything…</span>
+                        <button class="btn cp-btn-gradient hero-ask-send">Send</button>
+                    </div>
+                    <div class="hero-quick-chips">
+                        <button class="hero-chip"><i class="bi bi-graph-up me-1"></i>Top revenue this month</button>
+                        <button class="hero-chip"><i class="bi bi-person-x me-1"></i>Churn risk users</button>
+                    </div>
+
+                    <!-- Metrics grid (2×2) -->
+                    <div class="hero-metrics-grid">
+                        <div class="hero-metric-card glass-card">
+                            <i class="bi bi-graph-up-arrow metric-icon" style="color:var(--cp-primary)"></i>
+                            <div class="metric-value">$2.4M</div>
+                            <div class="metric-label">Total Revenue</div>
+                            <span class="metric-trend up"><i class="bi bi-arrow-up-short"></i>13.3% vs last qtr</span>
+                        </div>
+                        <div class="hero-metric-card glass-card">
+                            <i class="bi bi-people-fill metric-icon" style="color:var(--cp-accent)"></i>
+                            <div class="metric-value">18,420</div>
+                            <div class="metric-label">Active Users</div>
+                            <span class="metric-trend up"><i class="bi bi-arrow-up-short"></i>9.7% this month</span>
+                        </div>
+                        <div class="hero-metric-card glass-card">
+                            <i class="bi bi-lightning-charge-fill metric-icon" style="color:var(--cp-orange)"></i>
+                            <div class="metric-value">0.8s</div>
+                            <div class="metric-label">Avg Query Time</div>
+                            <span class="metric-trend down"><i class="bi bi-arrow-down-short"></i>62% faster</span>
+                        </div>
+                        <div class="hero-metric-card glass-card">
+                            <i class="bi bi-bar-chart-fill metric-icon" style="color:var(--cp-purple)"></i>
+                            <div class="metric-value">72</div>
+                            <div class="metric-label">Chart Types</div>
+                            <span class="metric-trend up"><i class="bi bi-plus"></i>Sankey · Treemap · +70</span>
                         </div>
                     </div>
+
+                    <!-- Live AI response strip -->
+                    <div class="hero-ai-strip">
+                        <div class="hero-ai-msg">
+                            🤖 <strong>AI Insight</strong>: <em>"North region leads $145K (+13%), East $101K (+9.7%). Recommend reallocating 15% budget from South → North for Q3 max ROI."</em>
+                        </div>
+                        <div class="hero-ai-footer">Generated in 0.4s · Powered by GPT-4</div>
+                    </div>
+
                 </div>
             </div>
+
         </div>
     </div>
 </section>
