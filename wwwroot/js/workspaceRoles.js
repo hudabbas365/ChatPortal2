@@ -35,8 +35,12 @@
 
         getRole() { return _currentRole; },
         isOwner() { return _isOwner; },
+        isAdmin() { return _currentRole === 'Admin' || _isOwner; },
+        isEditor() { return _currentRole === 'Editor'; },
+        isViewer() { return _currentRole === 'Viewer' && !_isOwner; },
         canEdit() { return _currentRole === 'Admin' || _currentRole === 'Editor' || _isOwner; },
         canAdmin() { return _currentRole === 'Admin' || _isOwner; },
+        canViewAgents() { return _currentRole === 'Admin' || _currentRole === 'Editor' || _isOwner; },
 
         // ── Apply role-based visibility ──────────────────────
         _applyRoleUI() {
@@ -48,16 +52,41 @@
                 roleBadge.style.display = '';
             }
 
+            var isAdminOrOwner = _currentRole === 'Admin' || _isOwner;
+            var isEditorPlus   = _currentRole === 'Admin' || _currentRole === 'Editor' || _isOwner;
+            var isViewerOnly   = _currentRole === 'Viewer' && !_isOwner;
+
             // Toggle edit controls based on role
             var editControls = document.querySelectorAll('[data-role-min="editor"]');
             editControls.forEach(function (el) {
-                el.style.display = (_currentRole === 'Admin' || _currentRole === 'Editor' || _isOwner) ? '' : 'none';
+                el.style.display = isEditorPlus ? '' : 'none';
             });
 
             var adminControls = document.querySelectorAll('[data-role-min="admin"]');
             adminControls.forEach(function (el) {
-                el.style.display = (_currentRole === 'Admin' || _isOwner) ? '' : 'none';
+                el.style.display = isAdminOrOwner ? '' : 'none';
             });
+
+            // CSS permission classes
+            document.querySelectorAll('.perm-admin-only').forEach(function (el) {
+                el.style.display = isAdminOrOwner ? '' : 'none';
+            });
+            document.querySelectorAll('.perm-editor-plus').forEach(function (el) {
+                el.style.display = isEditorPlus ? '' : 'none';
+            });
+            document.querySelectorAll('.perm-viewer-hidden').forEach(function (el) {
+                el.style.display = isViewerOnly ? 'none' : '';
+            });
+
+            // Hide AI Insights entirely for Viewers
+            if (isViewerOnly) {
+                document.querySelectorAll('#aiInsightsSection, .agent-panel, .btn-create-agent').forEach(function (el) {
+                    el.style.display = 'none';
+                });
+                document.body.classList.add('viewer-mode');
+            } else {
+                document.body.classList.remove('viewer-mode');
+            }
         },
 
         // ── Gear icons on workspace list items ──────────────

@@ -20,6 +20,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WorkspaceUser> WorkspaceUsers => Set<WorkspaceUser>();
     public DbSet<Dashboard> Dashboards => Set<Dashboard>();
     public DbSet<Report> Reports => Set<Report>();
+    public DbSet<TokenUsage> TokenUsages => Set<TokenUsage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -128,6 +129,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(r => r.AgentId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<TokenUsage>()
+            .HasOne(t => t.Organization)
+            .WithMany()
+            .HasForeignKey(t => t.OrganizationId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<Datasource>()
             .HasOne(d => d.Organization)

@@ -1,9 +1,12 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
+using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -11,8 +14,13 @@ namespace ChatPortal2.Controllers;
 public class ReportController : Controller
 {
     private readonly AppDbContext _db;
+    private readonly IWorkspacePermissionService _permissions;
 
-    public ReportController(AppDbContext db) => _db = db;
+    public ReportController(AppDbContext db, IWorkspacePermissionService permissions)
+    {
+        _db = db;
+        _permissions = permissions;
+    }
 
     [AllowAnonymous]
     [HttpGet("/report/view/{guid}")]
@@ -104,6 +112,10 @@ public class ReportController : Controller
         var ws = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == req.WorkspaceGuid);
         if (ws == null) return NotFound(new { error = "Workspace not found." });
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.CreatedBy ?? "";
+        if (!await _permissions.CanEditAsync(ws.Id, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to create reports." });
+
         var report = new Report
         {
             Name = req.Name ?? "Untitled Report",
@@ -126,8 +138,13 @@ public class ReportController : Controller
     [HttpPut("/api/reports/{guid}")]
     public async Task<IActionResult> Update(string guid, [FromBody] UpdateReportRequest req)
     {
-        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        var report = await _db.Reports.Include(r => r.Workspace).FirstOrDefaultAsync(r => r.Guid == guid);
         if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var wsId = report.WorkspaceId;
+        if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to update reports." });
 
         if (req.Name != null) report.Name = req.Name;
         if (req.ChartIds != null) report.ChartIds = JsonConvert.SerializeObject(req.ChartIds);
@@ -144,6 +161,10 @@ public class ReportController : Controller
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
         if (report == null) return NotFound();
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to publish reports." });
+
         report.Status = "Published";
         await _db.SaveChangesAsync();
         return Ok(new { report.Guid, report.Status });
@@ -154,6 +175,10 @@ public class ReportController : Controller
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
         if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanDeleteAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "Only Admins can delete reports." });
 
         _db.Reports.Remove(report);
         await _db.SaveChangesAsync();

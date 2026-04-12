@@ -1,5 +1,6 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
+using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -12,11 +13,17 @@ public class OrgAdminController : Controller
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IEmailService _emailService;
+    private readonly ITokenBudgetService _tokenBudget;
+    private readonly IConfiguration _config;
 
-    public OrgAdminController(AppDbContext db, UserManager<ApplicationUser> userManager)
+    public OrgAdminController(AppDbContext db, UserManager<ApplicationUser> userManager, IEmailService emailService, ITokenBudgetService tokenBudget, IConfiguration config)
     {
         _db = db;
         _userManager = userManager;
+        _emailService = emailService;
+        _tokenBudget = tokenBudget;
+        _config = config;
     }
 
     [HttpGet("/org/settings")]
@@ -117,6 +124,110 @@ public class OrgAdminController : Controller
         await _userManager.UpdateAsync(user);
         return Ok(new { success = true });
     }
+
+    [HttpPost("/api/org/users/create")]
+    public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
+    {
+        if (string.IsNullOrEmpty(req.Username))
+            return BadRequest(new { error = "Username is required." });
+        if (string.IsNullOrEmpty(req.Password))
+            return BadRequest(new { error = "Password is required." });
+
+        var existing = await _userManager.FindByNameAsync(req.Username);
+        if (existing != null)
+            return BadRequest(new { error = $"Username '{req.Username}' is already taken." });
+
+        var user = new ApplicationUser
+        {
+            UserName = req.Username,
+            Email = req.Email ?? "",
+            FullName = req.FullName ?? req.Username,
+            Role = req.Role ?? "User",
+            OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null,
+            Status = "Active"
+        };
+
+        var result = await _userManager.CreateAsync(user, req.Password);
+        if (!result.Succeeded)
+            return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        _db.SubscriptionPlans.Add(new SubscriptionPlan { UserId = user.Id, Plan = PlanType.Free });
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "user_created",
+            Description = $"User '{req.Username}' created with role {req.Role}.",
+            UserId = req.CreatedBy ?? "",
+            OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null
+        });
+
+        var loginUrl = _config["App:BaseUrl"] ?? "https://localhost:5001";
+        var emailSent = false;
+        if (!string.IsNullOrEmpty(req.Email))
+        {
+            emailSent = await _emailService.SendCredentialsEmailAsync(req.Email, user.FullName ?? req.Username, req.Username, req.Password, loginUrl + "/auth/login");
+        }
+
+        if (!emailSent)
+        {
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "credentials_email_skipped",
+                Description = $"Credentials email skipped for user '{req.Username}' (SMTP not configured or no email provided).",
+                UserId = req.CreatedBy ?? "",
+                OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null
+            });
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, userId = user.Id, username = user.UserName, email = user.Email, credentialsSent = emailSent });
+    }
+
+    [HttpPost("/api/org/users/{id}/reset-password")]
+    public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordRequest req)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null) return NotFound(new { error = "User not found." });
+
+        var newPassword = req.NewPassword;
+        if (string.IsNullOrEmpty(newPassword))
+        {
+            var randomBytes = new byte[16];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
+            newPassword = "P!" + Convert.ToBase64String(randomBytes).Replace("+", "a").Replace("/", "b").Replace("=", "C")[..14];
+        }
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+        if (!result.Succeeded)
+            return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "password_reset",
+            Description = $"Password reset for user '{user.UserName}' by {req.ResetBy ?? "admin"}.",
+            UserId = req.ResetBy ?? "",
+            OrganizationId = user.OrganizationId
+        });
+
+        var loginUrl = _config["App:BaseUrl"] ?? "https://localhost:5001";
+        var emailSent = false;
+        if (!string.IsNullOrEmpty(user.Email))
+        {
+            emailSent = await _emailService.SendPasswordResetEmailAsync(user.Email, user.FullName ?? user.UserName ?? "", newPassword, loginUrl + "/auth/login");
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, message = "Password reset successfully.", emailSent });
+    }
+
+    [HttpGet("/api/org/token-usage")]
+    public async Task<IActionResult> GetTokenUsage([FromQuery] int organizationId)
+    {
+        var status = await _tokenBudget.GetStatusAsync(organizationId);
+        return Ok(status);
+    }
 }
 
 public class InviteUserRequest
@@ -130,5 +241,22 @@ public class InviteUserRequest
 public class UpdateRoleRequest
 {
     public string? Role { get; set; }
+}
+
+public class CreateUserRequest
+{
+    public string? FullName { get; set; }
+    public string? Email { get; set; }
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+    public string? Role { get; set; }
+    public int OrganizationId { get; set; }
+    public string? CreatedBy { get; set; }
+}
+
+public class ResetPasswordRequest
+{
+    public string? NewPassword { get; set; }
+    public string? ResetBy { get; set; }
 }
 

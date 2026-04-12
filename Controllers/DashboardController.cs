@@ -1,11 +1,13 @@
 using ChatPortal2.Models;
 using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using ChatPortal2.Data;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -15,6 +17,7 @@ public class DashboardController : Controller
     private readonly IChartService _chartService;
     private readonly IDataService _dataService;
     private readonly AppDbContext _db;
+    private readonly IWorkspacePermissionService _permissions;
     private const string SessionKey = "canvas_state";
 
     private static readonly JsonSerializerSettings CamelCaseSettings = new()
@@ -23,11 +26,12 @@ public class DashboardController : Controller
         ReferenceLoopHandling = ReferenceLoopHandling.Ignore
     };
 
-    public DashboardController(IChartService chartService, IDataService dataService, AppDbContext db)
+    public DashboardController(IChartService chartService, IDataService dataService, AppDbContext db, IWorkspacePermissionService permissions)
     {
         _chartService = chartService;
         _dataService = dataService;
         _db = db;
+        _permissions = permissions;
     }
 
     [HttpGet("/dashboard")]
@@ -144,4 +148,27 @@ public class DashboardController : Controller
         }
         return JsonConvert.DeserializeObject<CanvasState>(canvasJson) ?? new CanvasState();
     }
+
+    [HttpPost("/api/dashboard/check-permission")]
+    public async Task<IActionResult> CheckPermission([FromBody] DashboardPermissionRequest req)
+    {
+        if (string.IsNullOrEmpty(req.WorkspaceGuid))
+            return BadRequest(new { error = "workspaceGuid is required." });
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var role = await _permissions.GetRoleByGuidAsync(req.WorkspaceGuid, userId);
+
+        return Ok(new
+        {
+            role,
+            canEdit = role == "Admin" || role == "Editor",
+            canDelete = role == "Admin",
+            canView = true
+        });
+    }
+}
+
+public class DashboardPermissionRequest
+{
+    public string? WorkspaceGuid { get; set; }
 }

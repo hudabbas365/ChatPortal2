@@ -14,6 +14,7 @@
         <ul class="nav nav-tabs cp-tabs mb-4" id="settingsTabs">
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-org">Organization</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-users">Users</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-ws-members">Workspace Members</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-datasources">Datasources</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-agents">Agents</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing">Billing</a></li>
@@ -42,13 +43,24 @@
             </div>
             <div class="tab-pane fade" id="tab-users">
                 <div class="glass-card p-4">
+                    <!-- Token Usage Widget -->
+                    <div class="token-budget-card mb-4" id="tokenUsageCard">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <strong><i class="bi bi-cpu me-2"></i>AI Token Usage (This Month)</strong>
+                            <span class="small text-muted" id="tokenUsageText">Loading...</span>
+                        </div>
+                        <div class="token-budget-bar-wrap">
+                            <div class="token-budget-bar-fill" id="tokenUsageBar" style="width:0%"></div>
+                        </div>
+                        <div class="token-budget-label" id="tokenUsageLabel">&nbsp;</div>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h4>User Management</h4>
                             <p class="text-muted mb-0">Manage your organization's users, roles, and permissions.</p>
                         </div>
-                        <button class="btn cp-btn-gradient" id="inviteUserBtn">
-                            <i class="bi bi-person-plus me-1"></i>Invite User
+                        <button class="btn cp-btn-gradient" id="createUserBtn">
+                            <i class="bi bi-person-plus me-1"></i>Create User
                         </button>
                     </div>
                     <div class="table-responsive">
@@ -57,6 +69,13 @@
                             <tbody id="usersTableBody"><tr><td colspan="5" class="text-center text-muted py-3">No users yet</td></tr></tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tab-ws-members">
+                <div class="glass-card p-4">
+                    <h4>Workspace Members</h4>
+                    <p class="text-muted">Manage workspace membership and roles for your organisation's workspaces.</p>
+                    <div id="wsMemberWorkspaceList"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div></div>
                 </div>
             </div>
             <div class="tab-pane fade" id="tab-datasources">
@@ -146,34 +165,117 @@
     </div>
 </div>
 
-<!-- Invite User Modal -->
-<div class="modal fade" id="inviteUserModal" tabindex="-1" aria-labelledby="inviteUserModalLabel" aria-hidden="true">
+<!-- Create User Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-labelledby="createUserModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="inviteUserModalLabel"><i class="bi bi-person-plus me-2"></i>Invite User</h5>
+                <h5 class="modal-title" id="createUserModalLabel"><i class="bi bi-person-plus me-2"></i>Create User</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div id="inviteUserAlert" class="alert d-none"></div>
+                <div id="createUserAlert" class="alert d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label-cp">Full Name</label>
+                    <input type="text" class="form-control cp-input" id="createFullName" placeholder="Jane Doe" />
+                </div>
                 <div class="mb-3">
                     <label class="form-label-cp">Email Address</label>
-                    <input type="email" class="form-control cp-input" id="inviteEmail" placeholder="user@example.com" />
+                    <input type="email" class="form-control cp-input" id="createEmail" placeholder="user@example.com" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label-cp">Username</label>
+                    <input type="text" class="form-control cp-input" id="createUsername" placeholder="janedoe" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label-cp">Password</label>
+                    <div class="password-toggle-wrap">
+                        <input type="password" class="form-control cp-input" id="createPassword" placeholder="Min 6 characters" />
+                        <button type="button" class="password-toggle-btn" id="toggleCreatePassword" tabindex="-1">
+                            <i class="bi bi-eye" id="toggleCreatePasswordIcon"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label-cp">Role</label>
-                    <select class="form-select cp-input" id="inviteRole">
-                        <option value="User">Viewer</option>
-                        <option value="Contributor">Contributor</option>
-                        <option value="OrgAdmin">Admin</option>
+                    <select class="form-select cp-input" id="createRole">
+                        <option value="User">User</option>
+                        <option value="OrgAdmin">OrgAdmin</option>
                     </select>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn cp-btn-gradient" id="sendInviteBtn">
-                    <i class="bi bi-send me-1"></i>Send Invite
+                <button type="button" class="btn cp-btn-gradient" id="submitCreateUserBtn">
+                    <i class="bi bi-person-check me-1"></i>Create User
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-labelledby="resetPasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resetPasswordModalLabel"><i class="bi bi-key me-2"></i>Reset Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="resetPasswordAlert" class="alert d-none"></div>
+                <input type="hidden" id="resetUserId" />
+                <p class="text-muted small">Leave the password field empty to auto-generate a secure password.</p>
+                <div class="mb-3">
+                    <label class="form-label-cp">New Password (optional)</label>
+                    <div class="password-toggle-wrap">
+                        <input type="password" class="form-control cp-input" id="resetNewPassword" placeholder="Leave blank to auto-generate" />
+                        <button type="button" class="password-toggle-btn" id="toggleResetPassword" tabindex="-1">
+                            <i class="bi bi-eye" id="toggleResetPasswordIcon"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="submitResetPasswordBtn">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Reset Password
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Workspace Members Modal -->
+<div class="modal fade" id="wsMembersModal" tabindex="-1" aria-labelledby="wsMemberModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="wsMemberModalLabel"><i class="bi bi-people me-2"></i>Workspace Members</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="addMemberAlert" class="alert d-none mb-3"></div>
+                <div class="d-flex gap-2 mb-3">
+                    <input type="email" class="form-control cp-input" id="addMemberEmail" placeholder="user@example.com" />
+                    <select class="form-select cp-input" id="addMemberRole" style="width:auto;min-width:110px">
+                        <option value="Viewer">Viewer</option>
+                        <option value="Editor">Editor</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                    <button class="btn cp-btn-gradient text-nowrap" onclick="orgAdminWM.addMember()">
+                        <i class="bi bi-person-plus me-1"></i>Add
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table cp-table">
+                        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+                        <tbody id="wsMembersTableBody"><tr><td colspan="4" class="text-center text-muted py-3">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -348,6 +450,7 @@
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary" onclick="changeRole('${u.id}','${u.role}')"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-outline-info" title="Reset Password" onclick="openResetPassword('${u.id}')"><i class="bi bi-key"></i></button>
                                 <button class="btn btn-outline-warning" onclick="suspendUser('${u.id}')"><i class="bi bi-pause-circle"></i></button>
                                 <button class="btn btn-outline-danger" onclick="removeUser('${u.id}')"><i class="bi bi-trash"></i></button>
                             </div>
@@ -371,28 +474,92 @@
         if (!confirm('Remove this user from the organization?')) return;
         fetch(`/api/org/users/${uid}`, { method: 'DELETE' }).then(() => loadUsers());
     };
+    window.openResetPassword = function(uid) {
+        document.getElementById('resetUserId').value = uid;
+        document.getElementById('resetNewPassword').value = '';
+        document.getElementById('resetPasswordAlert').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
+    };
 
-    // Invite User
-    document.getElementById('inviteUserBtn')?.addEventListener('click', function() {
-        new bootstrap.Modal(document.getElementById('inviteUserModal')).show();
+    // Create User
+    document.getElementById('createUserBtn')?.addEventListener('click', function() {
+        document.getElementById('createUserAlert').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('createUserModal')).show();
     });
-    document.getElementById('sendInviteBtn')?.addEventListener('click', function() {
-        const email = document.getElementById('inviteEmail').value.trim();
-        const role = document.getElementById('inviteRole').value;
-        if (!email) { document.getElementById('inviteUserAlert').className = 'alert alert-danger'; document.getElementById('inviteUserAlert').textContent = 'Email required.'; return; }
-        fetch('/api/org/users/invite', {
+    document.getElementById('submitCreateUserBtn')?.addEventListener('click', function() {
+        const fullName  = document.getElementById('createFullName').value.trim();
+        const email     = document.getElementById('createEmail').value.trim();
+        const username  = document.getElementById('createUsername').value.trim();
+        const password  = document.getElementById('createPassword').value;
+        const role      = document.getElementById('createRole').value;
+        const alertEl   = document.getElementById('createUserAlert');
+        if (!username) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Username is required.'; alertEl.classList.remove('d-none'); return; }
+        if (!password) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Password is required.'; alertEl.classList.remove('d-none'); return; }
+        fetch('/api/org/users/create', {
             method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ email, role, organizationId: orgId, invitedBy: userId })
+            body: JSON.stringify({ fullName, email, username, password, role, organizationId: orgId, createdBy: userId })
         }).then(r => r.json()).then(d => {
             if (d.error) {
-                document.getElementById('inviteUserAlert').className = 'alert alert-danger';
-                document.getElementById('inviteUserAlert').textContent = d.error;
+                alertEl.className = 'alert alert-danger'; alertEl.textContent = d.error; alertEl.classList.remove('d-none');
             } else {
-                bootstrap.Modal.getInstance(document.getElementById('inviteUserModal')).hide();
+                const msg = d.credentialsSent ? 'User created and credentials sent by email.' : 'User created. (Email not sent — SMTP not configured.)';
+                bootstrap.Modal.getInstance(document.getElementById('createUserModal')).hide();
                 loadUsers();
+                setTimeout(() => alert(msg), 300);
             }
-        });
+        }).catch(() => { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Request failed.'; alertEl.classList.remove('d-none'); });
     });
+
+    // Password toggle for create user modal
+    document.getElementById('toggleCreatePassword')?.addEventListener('click', function() {
+        const input = document.getElementById('createPassword');
+        const icon  = document.getElementById('toggleCreatePasswordIcon');
+        if (input.type === 'password') { input.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+        else { input.type = 'password'; icon.className = 'bi bi-eye'; }
+    });
+    document.getElementById('toggleResetPassword')?.addEventListener('click', function() {
+        const input = document.getElementById('resetNewPassword');
+        const icon  = document.getElementById('toggleResetPasswordIcon');
+        if (input.type === 'password') { input.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+        else { input.type = 'password'; icon.className = 'bi bi-eye'; }
+    });
+
+    // Reset Password
+    document.getElementById('submitResetPasswordBtn')?.addEventListener('click', function() {
+        const uid      = document.getElementById('resetUserId').value;
+        const newPwd   = document.getElementById('resetNewPassword').value || null;
+        const alertEl  = document.getElementById('resetPasswordAlert');
+        fetch(`/api/org/users/${uid}/reset-password`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ newPassword: newPwd, resetBy: userId })
+        }).then(r => r.json()).then(d => {
+            if (d.error) {
+                alertEl.className = 'alert alert-danger'; alertEl.textContent = d.error; alertEl.classList.remove('d-none');
+            } else {
+                bootstrap.Modal.getInstance(document.getElementById('resetPasswordModal')).hide();
+                const msg = d.emailSent ? 'Password reset and new password sent by email.' : 'Password reset. (Email not sent — SMTP not configured.)';
+                setTimeout(() => alert(msg), 300);
+            }
+        }).catch(() => { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Request failed.'; alertEl.classList.remove('d-none'); });
+    });
+
+    // Token Usage
+    function loadTokenUsage() {
+        if (!orgId) return;
+        fetch(`/api/org/token-usage?organizationId=${orgId}`)
+            .then(r => r.json())
+            .then(data => {
+                const used      = data.used || 0;
+                const budget    = data.budget || 2000000;
+                const pct       = Math.min(100, Math.round((used / budget) * 100));
+                const bar       = document.getElementById('tokenUsageBar');
+                const text      = document.getElementById('tokenUsageText');
+                const label     = document.getElementById('tokenUsageLabel');
+                if (bar)   { bar.style.width = pct + '%'; bar.className = 'token-budget-bar-fill' + (pct >= 100 ? ' exceeded' : pct >= 80 ? ' warning' : ''); }
+                if (text)  text.textContent = pct + '% used';
+                if (label) label.textContent = `${used.toLocaleString()} / ${budget.toLocaleString()} tokens`;
+            }).catch(() => {});
+    }
 
     // Tab activation
     document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
@@ -400,7 +567,8 @@
             const target = e.target.getAttribute('href');
             if (target === '#tab-billing') loadBilling();
             else if (target === '#tab-activity') loadActivity();
-            else if (target === '#tab-users') loadUsers();
+            else if (target === '#tab-users') { loadUsers(); loadTokenUsage(); }
+            else if (target === '#tab-ws-members') orgAdminWM.init(orgId);
         });
     });
 
@@ -420,7 +588,9 @@
 
     // Initial loads
     loadUsers();
+    loadTokenUsage();
     loadBilling();
 })();
 </script>
+<script src="~/js/orgAdminWorkspaceMembers.js"></script>
 }
