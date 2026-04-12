@@ -819,6 +819,61 @@
 .wf-lineage-unbound .wf-lineage-targets::before { background: var(--cp-danger); }
 .wf-lineage-unbound .wf-lineage-targets > .wf-lineage-node::before { background: var(--cp-danger); }
 
+/* ── Report connector arrows ─────────────────────────────────── */
+.wf-report-node-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.wf-report-arrows {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+.wf-report-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+.wf-report-arrow-label {
+    font-size: 0.6rem;
+    color: var(--cp-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+.wf-report-arrow-line {
+    width: 2px;
+    height: 24px;
+    border-radius: 1px;
+    position: relative;
+}
+.wf-report-arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+}
+.wf-report-arrow.from-agent .wf-report-arrow-line {
+    background: var(--cp-purple, #9B59B6);
+}
+.wf-report-arrow.from-agent .wf-report-arrow-line::after {
+    border-top: 5px solid var(--cp-purple, #9B59B6);
+}
+.wf-report-arrow.from-dashboard .wf-report-arrow-line {
+    background: #2e7d32;
+}
+.wf-report-arrow.from-dashboard .wf-report-arrow-line::after {
+    border-top: 5px solid #2e7d32;
+}
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .wf-home-panel { padding: 16px; }

@@ -209,11 +209,14 @@
 
     <div class="rv-share-overlay" id="rvShareOverlay" onclick="if(event.target===this)closeShareModal()">
         <div class="rv-share-box">
-            <h5><i class="bi bi-share me-2"></i>Share Report</h5>
-            <p class="rv-share-note">Anyone with this link can view the report — no login required.</p>
-            <div class="rv-share-url">
-                <input type="text" id="rvShareUrl" readonly />
-                <button onclick="copyShareUrl()"><i class="bi bi-clipboard me-1"></i>Copy</button>
+            <h5><i class="bi bi-people me-2"></i>Share Internally</h5>
+            <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
+                This report is shared with all members of <strong id="rvShareWsName">this workspace</strong>.
+                Public sharing via URL is not permitted.
+            </p>
+            <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
+                <i class="bi bi-shield-lock-fill me-1"></i>
+                Only workspace members can access this report. No public link is available.
             </div>
             <button class="rv-share-close" onclick="closeShareModal()">Close</button>
         </div>
@@ -564,23 +567,12 @@
     }
     // Share modal
     function openShareModal() {
-        const url = window.location.origin + '/report/view/' + @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportGuid ?? ""));
-        document.getElementById('rvShareUrl').value = url;
+        const wsNameEl = document.getElementById('rvShareWsName');
+        if (wsNameEl && '@workspaceName' !== '') wsNameEl.textContent = '@workspaceName';
         document.getElementById('rvShareOverlay').classList.add('active');
     }
     function closeShareModal() {
         document.getElementById('rvShareOverlay').classList.remove('active');
-    }
-    function copyShareUrl() {
-        const input = document.getElementById('rvShareUrl');
-        navigator.clipboard.writeText(input.value).then(() => {
-            const btn = input.nextElementSibling;
-            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
-            setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 1500);
-        }).catch(() => {
-            input.select();
-            document.execCommand('copy');
-        });
     }
     </script>
 </body>

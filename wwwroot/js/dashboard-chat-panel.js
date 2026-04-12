@@ -33,9 +33,10 @@
         const params = new URLSearchParams(window.location.search);
         const wsGuid = params.get('workspace') || params.get('ws') || '';
         if (wsGuid) return wsGuid;
-        // Fallback: check cached workspace data
-        if (window._dashboardWsData && window._dashboardWsData.id) return window._dashboardWsData.id;
-        return 0;
+        // Fallback: check cached workspace data or global context
+        if (window._dashboardWsData && window._dashboardWsData.guid) return window._dashboardWsData.guid;
+        if (window.currentWorkspaceGuid) return window.currentWorkspaceGuid;
+        return null; // never return 0
     }
 
     // ── Open / close / toggle ─────────────────────────────────────────
@@ -304,6 +305,13 @@
     // ── Send message to AI via SSE stream ─────────────────────────────
     async function sendMessage(text) {
         if (!text.trim() || _isStreaming) return;
+
+        const wsId = _getWorkspaceId();
+        if (wsId === null) {
+            _toast('No workspace connected. Please open the dashboard from a workspace.', 'warn');
+            return;
+        }
+
         _isStreaming = true;
 
         const sendBtn = document.getElementById('dcpSendBtn');
@@ -325,7 +333,7 @@
                 },
                 body: JSON.stringify({
                     message    : text,
-                    workspaceId: _getWorkspaceId(),
+                    workspaceId: wsId,
                     userId     : user?.id || ''
                 })
             });

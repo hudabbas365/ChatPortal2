@@ -41,11 +41,23 @@
                     html += '<div class="wf-lineage-sub-targets">';
                     agentReports.forEach(rpt => {
                         html += `
-                        <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
-                            <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
-                            <div class="wf-lineage-info">
-                                <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
-                                <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')} · via ${this._esc(a.name)}</div>
+                        <div class="wf-report-node-wrap">
+                            <div class="wf-report-arrows">
+                                <div class="wf-report-arrow from-agent">
+                                    <span class="wf-report-arrow-label">Agent</span>
+                                    <div class="wf-report-arrow-line"></div>
+                                </div>
+                                <div class="wf-report-arrow from-dashboard">
+                                    <span class="wf-report-arrow-label">Dashboard</span>
+                                    <div class="wf-report-arrow-line"></div>
+                                </div>
+                            </div>
+                            <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
+                                <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
+                                <div class="wf-lineage-info">
+                                    <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
+                                    <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')} · via ${this._esc(a.name)}</div>
+                                </div>
                             </div>
                         </div>`;
                     });
@@ -66,14 +78,27 @@
             </div>`;
             // Reports not linked to a specific agent (orphaned or datasource-only)
             const agentLinkedIds = new Set(reports.filter(rpt => rpt.agentId && boundAgents.some(a => a.id === rpt.agentId)).map(rpt => rpt.guid));
+            const hasAgents = boundAgents.length > 0;
             reports.filter(rpt => rpt.datasourceId === ds.id && !agentLinkedIds.has(rpt.guid)).forEach(rpt => {
                 html += `
                 <div class="wf-lineage-agent-group">
-                    <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
-                        <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
-                        <div class="wf-lineage-info">
-                            <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
-                            <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')}</div>
+                    <div class="wf-report-node-wrap">
+                        <div class="wf-report-arrows">
+                            ${hasAgents ? `<div class="wf-report-arrow from-agent">
+                                <span class="wf-report-arrow-label">Agent</span>
+                                <div class="wf-report-arrow-line"></div>
+                            </div>` : ''}
+                            <div class="wf-report-arrow from-dashboard">
+                                <span class="wf-report-arrow-label">Dashboard</span>
+                                <div class="wf-report-arrow-line"></div>
+                            </div>
+                        </div>
+                        <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
+                            <div class="wf-lineage-icon" style="background:rgba(25,135,84,0.12);color:#198754"><i class="bi bi-file-earmark-bar-graph"></i></div>
+                            <div class="wf-lineage-info">
+                                <div class="wf-lineage-name">${this._esc(rpt.name)}</div>
+                                <div class="wf-lineage-type">${this._esc(rpt.status || 'Draft')}</div>
+                            </div>
                         </div>
                     </div>
                 </div>`;

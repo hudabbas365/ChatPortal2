@@ -38,7 +38,9 @@ public class DashboardController : Controller
         // If a report guid is provided, load that report's canvas for editing
         if (!string.IsNullOrEmpty(report))
         {
-            var rpt = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == report);
+            var rpt = await _db.Reports
+                .Include(r => r.Datasource)
+                .FirstOrDefaultAsync(r => r.Guid == report);
             if (rpt != null && !string.IsNullOrEmpty(rpt.CanvasJson))
             {
                 canvas = JsonConvert.DeserializeObject<CanvasState>(rpt.CanvasJson) ?? new CanvasState();
@@ -46,6 +48,26 @@ public class DashboardController : Controller
                 ViewBag.ReportGuid = rpt.Guid;
                 // Persist to session so chart operations work on this canvas
                 HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+                // Load datasource from the linked report
+                if (rpt.Datasource != null)
+                {
+                    ViewBag.DatasourceId = rpt.Datasource.Id;
+                    ViewBag.DatasourceName = rpt.Datasource.Name;
+                    ViewBag.DatasourceType = rpt.Datasource.Type;
+                }
+                else if (rpt.DatasourceId.HasValue)
+                {
+                    var ds = await _db.Datasources
+                        .Where(d => d.Id == rpt.DatasourceId.Value)
+                        .Select(d => new { d.Id, d.Name, d.Type })
+                        .FirstOrDefaultAsync();
+                    if (ds != null)
+                    {
+                        ViewBag.DatasourceId = ds.Id;
+                        ViewBag.DatasourceName = ds.Name;
+                        ViewBag.DatasourceType = ds.Type;
+                    }
+                }
             }
             else
             {
@@ -106,7 +128,7 @@ public class DashboardController : Controller
         ViewBag.CanvasName = canvas.CanvasName;
         ViewBag.ChartLibrary = JsonConvert.SerializeObject(_chartService.GetGroupedCharts()
             .Select(g => new { group = g.Key, charts = g.ToList() }), CamelCaseSettings);
-        ViewBag.Datasets = JsonConvert.SerializeObject(_dataService.GetDatasets(), CamelCaseSettings);
+        ViewBag.Datasets = "[]";
 
         return View(canvas);
     }

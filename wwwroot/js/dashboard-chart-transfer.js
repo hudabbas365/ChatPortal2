@@ -51,27 +51,31 @@
         localStorage.removeItem(PENDING_KEY);
         var pending;
         try { pending = JSON.parse(raw); } catch (e) { return; }
-        if (!pending || !Array.isArray(pending.labels) || !Array.isArray(pending.values)) return;
+        if (!pending) return;
 
-        var lf = pending.labelField || 'label';
-        var vf = pending.valueField || 'value';
-        // fetchData returns customJsonData directly; buildConfig reads data.labels / data.values
-        var customData = { labels: pending.labels, values: pending.values };
-
-        canvasManager.addChart({
-            chartType     : pending.chartType  || 'bar',
-            title         : pending.title      || 'Chat Chart',
-            customJsonData: JSON.stringify(customData),
+        var chartDef = {
+            chartType   : pending.chartType || 'bar',
+            title       : pending.title     || 'Chat Chart',
+            datasourceId: pending.datasourceId || window.currentDatasourceId || null,
+            dataQuery   : pending.dataQuery  || null,   // live SQL — preferred
             mapping: {
-                labelField  : lf,
-                valueField  : vf,
-                groupByField: '',
-                xField      : '',
-                yField      : '',
-                rField      : '',
-                multiValueFields: []
+                labelField      : pending.labelField || 'label',
+                valueField      : pending.valueField  || 'value',
+                groupByField    : '',
+                xField          : '',
+                yField          : '',
+                rField          : '',
+                multiValueFields: pending.multiValueFields || []
             }
-        }).then(function (chart) {
+        };
+
+        // Only attach static snapshot if there is NO live query and NO datasource
+        if (!chartDef.dataQuery && !chartDef.datasourceId &&
+            Array.isArray(pending.labels) && Array.isArray(pending.values)) {
+            chartDef.customJsonData = JSON.stringify({ labels: pending.labels, values: pending.values });
+        }
+
+        canvasManager.addChart(chartDef).then(function (chart) {
             showToast('"' + (chart.title || 'Chart') + '" added to dashboard', 'success');
         }).catch(function () {
             showToast('Chart added to dashboard', 'success');
