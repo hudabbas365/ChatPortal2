@@ -878,6 +878,107 @@
     border-top: 5px solid #2e7d32;
 }
 
+/* ── Report binding wrap: Agent + Dashboard mini nodes above report ── */
+.wf-report-binding-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+}
+.wf-report-binders {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 12px;
+    padding: 0 8px;
+    margin-bottom: 0;
+}
+.wf-report-binder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    flex: 1;
+}
+.wf-report-binder .wf-report-arrow-line {
+    width: 2px;
+    height: 28px;
+    border-radius: 1px;
+    position: relative;
+}
+.wf-report-binder .wf-report-arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+}
+.wf-report-binder.from-agent .wf-report-arrow-line {
+    background: var(--cp-purple, #9B59B6);
+}
+.wf-report-binder.from-agent .wf-report-arrow-line::after {
+    border-top: 5px solid var(--cp-purple, #9B59B6);
+}
+.wf-report-binder.from-dashboard .wf-report-arrow-line {
+    background: #2e7d32;
+}
+.wf-report-binder.from-dashboard .wf-report-arrow-line::after {
+    border-top: 5px solid #2e7d32;
+}
+.wf-report-binder .wf-report-arrow-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+}
+.wf-report-binder.from-agent .wf-report-arrow-label {
+    color: var(--cp-purple, #9B59B6);
+}
+.wf-report-binder.from-dashboard .wf-report-arrow-label {
+    color: #2e7d32;
+}
+
+/* Mini compact variant of lineage node used inside binders */
+.wf-lineage-node.mini {
+    padding: 8px 12px;
+    min-width: 0;
+    border-radius: 9px;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.wf-lineage-node.mini .wf-lineage-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    font-size: 0.85rem;
+}
+.wf-lineage-node.mini .wf-lineage-name {
+    font-size: 0.75rem;
+}
+.wf-lineage-node.mini .wf-lineage-type {
+    font-size: 0.63rem;
+}
+
+/* Connector line from sub-targets branch to binding-wrap */
+.wf-lineage-sub-targets > .wf-report-binding-wrap {
+    position: relative;
+}
+.wf-lineage-sub-targets > .wf-report-binding-wrap::before {
+    content: '';
+    position: absolute;
+    left: -22px;
+    top: 32px;
+    width: 22px;
+    height: 2px;
+    background: rgba(25, 135, 84, 0.35);
+    z-index: 0;
+}
+.wf-lineage-sub-targets:has(> :only-child) > .wf-report-binding-wrap::before { display: none; }
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .wf-home-panel { padding: 16px; }

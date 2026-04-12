@@ -41,15 +41,29 @@
                     html += '<div class="wf-lineage-sub-targets">';
                     agentReports.forEach(rpt => {
                         html += `
-                        <div class="wf-report-node-wrap">
-                            <div class="wf-report-arrows">
-                                <div class="wf-report-arrow from-agent">
-                                    <span class="wf-report-arrow-label">Agent</span>
+                        <div class="wf-report-binding-wrap">
+                            <div class="wf-report-binders">
+                                <div class="wf-report-binder from-agent">
+                                    <div class="wf-lineage-node agent mini">
+                                        <div class="wf-lineage-icon"><i class="bi bi-robot"></i></div>
+                                        <div class="wf-lineage-info">
+                                            <div class="wf-lineage-name">${this._esc(a.name)}</div>
+                                            <div class="wf-lineage-type">AI Agent</div>
+                                        </div>
+                                    </div>
                                     <div class="wf-report-arrow-line"></div>
+                                    <span class="wf-report-arrow-label">AGENT</span>
                                 </div>
-                                <div class="wf-report-arrow from-dashboard">
-                                    <span class="wf-report-arrow-label">Dashboard</span>
+                                <div class="wf-report-binder from-dashboard">
+                                    <div class="wf-lineage-node dashboard mini" data-action="dashboard" data-ws-id="${wsData.guid}">
+                                        <div class="wf-lineage-icon"><i class="bi bi-bar-chart-fill"></i></div>
+                                        <div class="wf-lineage-info">
+                                            <div class="wf-lineage-name">Dashboard</div>
+                                            <div class="wf-lineage-type">Visual Designer</div>
+                                        </div>
+                                    </div>
                                     <div class="wf-report-arrow-line"></div>
+                                    <span class="wf-report-arrow-label">DASHBOARD</span>
                                 </div>
                             </div>
                             <div class="wf-lineage-node report" data-action="report-view" data-report-guid="${rpt.guid}" data-ws-id="${wsData.guid}" style="border-color:rgba(25,135,84,0.3)">
@@ -65,17 +79,20 @@
                 }
                 html += '</div>';
             });
-            // Dashboard node — always rendered as a target with proper branch lines
-            html += `
-            <div class="wf-lineage-agent-group">
-                <div class="wf-lineage-node dashboard" data-action="dashboard" data-ws-id="${wsData.guid}">
-                    <div class="wf-lineage-icon"><i class="bi bi-bar-chart-fill"></i></div>
-                    <div class="wf-lineage-info">
-                        <div class="wf-lineage-name">Dashboard</div>
-                        <div class="wf-lineage-type">Visual Designer</div>
+            // Dashboard node — rendered as a standalone target only when no reports are bound to agents yet
+            const hasAnyAgentReports = boundAgents.some(a => reports.some(rpt => rpt.agentId === a.id));
+            if (!hasAnyAgentReports) {
+                html += `
+                <div class="wf-lineage-agent-group">
+                    <div class="wf-lineage-node dashboard" data-action="dashboard" data-ws-id="${wsData.guid}">
+                        <div class="wf-lineage-icon"><i class="bi bi-bar-chart-fill"></i></div>
+                        <div class="wf-lineage-info">
+                            <div class="wf-lineage-name">Dashboard</div>
+                            <div class="wf-lineage-type">Visual Designer</div>
+                        </div>
                     </div>
-                </div>
-            </div>`;
+                </div>`;
+            }
             // Reports not linked to a specific agent (orphaned or datasource-only)
             const agentLinkedIds = new Set(reports.filter(rpt => rpt.agentId && boundAgents.some(a => a.id === rpt.agentId)).map(rpt => rpt.guid));
             const hasAgents = boundAgents.length > 0;
