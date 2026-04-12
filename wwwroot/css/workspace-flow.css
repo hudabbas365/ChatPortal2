@@ -530,454 +530,142 @@
     flex-wrap: wrap;
 }
 
-/* ── Lineage / flow view ───────────────────────────────────── */
+/* ── Flow diagram (horizontal flowchart redesign) ──────────── */
 .wf-lineage-container {
-    padding: 12px 0;
-}
-.wf-lineage-row {
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    margin-bottom: 20px;
-    background: linear-gradient(135deg, var(--cp-primary-light) 0%, rgba(255,255,255,0.6) 100%);
-    border: 1px solid var(--cp-border);
-    border-radius: 16px;
-    padding: 22px 24px;
-    position: relative;
-    overflow: hidden;
-}
-.wf-lineage-row::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: radial-gradient(circle, var(--cp-border) 1px, transparent 1px);
-    background-size: 24px 24px;
-    opacity: 0.25;
-    pointer-events: none;
+    padding: 16px 0;
 }
 
-/* ── Nodes ─────────────────────────────────────────── */
-.wf-lineage-node {
-    background: var(--cp-surface);
-    border: 1px solid var(--cp-border);
-    border-radius: 12px;
-    padding: 14px 18px;
+.wf-flow-diagram {
     display: flex;
     align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
-    min-width: 200px;
-    flex-shrink: 0;
+    gap: 0;
+    margin-bottom: 24px;
+    background: #fff;
+    border: 1.5px solid #ccc;
+    border-radius: 6px;
+    padding: 24px 28px;
     position: relative;
-    box-shadow: var(--cp-shadow-sm);
-    z-index: 1;
+    overflow: visible;
 }
-.wf-lineage-node:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(91, 155, 213, 0.16);
-}
-.wf-lineage-node.datasource   { border-left: 3px solid var(--cp-primary); align-self: center; }
-.wf-lineage-node.datasource:hover { border-color: var(--cp-primary); }
-.wf-lineage-node.agent        { border-left: 3px solid var(--cp-purple, #9B59B6); }
-.wf-lineage-node.agent:hover  { border-color: var(--cp-purple, #9B59B6); }
-.wf-lineage-node.dashboard    { border-left: 3px solid #2e7d32; }
-.wf-lineage-node.dashboard:hover { border-color: #2e7d32; }
-.wf-lineage-node.unbound-source { border-left: 3px dashed var(--cp-danger); align-self: center; opacity: 0.85; }
 
-/* ── Icons ─────────────────────────────────────────── */
-.wf-lineage-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
+/* Columns */
+.wf-flow-col {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
+}
+.wf-flow-col-source {
     flex-shrink: 0;
 }
-.wf-lineage-node.datasource .wf-lineage-icon {
-    background: linear-gradient(135deg, var(--cp-primary-light), #d0e6fa);
-    color: var(--cp-primary);
+.wf-flow-col-middle {
+    flex: 1;
+    align-items: stretch;
 }
-.wf-lineage-node.agent .wf-lineage-icon {
-    background: linear-gradient(135deg, var(--cp-purple-light, #f3e8ff), #e4d1f9);
-    color: var(--cp-purple, #7c3aed);
-}
-.wf-lineage-node.dashboard .wf-lineage-icon {
-    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-    color: #2e7d32;
-}
-.wf-lineage-node.unbound-source .wf-lineage-icon {
-    background: var(--cp-danger-light);
-    color: var(--cp-danger);
+.wf-flow-col-report {
+    flex-shrink: 0;
 }
 
-/* ── Text ──────────────────────────────────────────── */
-.wf-lineage-info {
-    min-width: 0;
-    flex: 1;
+/* Nodes: plain rectangular boxes */
+.wf-flow-node {
+    background: #fff;
+    border: 2px solid #333;
+    border-radius: 3px;
+    padding: 14px 20px;
+    min-width: 140px;
+    cursor: pointer;
+    transition: box-shadow 0.18s ease;
+    position: relative;
+    z-index: 1;
 }
-.wf-lineage-name {
+.wf-flow-node:hover {
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+}
+.wf-flow-label {
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
+    color: #1a1a1a;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--cp-text);
 }
-.wf-lineage-type {
-    font-size: 0.73rem;
-    color: var(--cp-text-muted);
-    margin-top: 2px;
+.wf-flow-sublabel {
+    font-size: 0.72rem;
+    color: #555;
+    margin-top: 3px;
 }
 
-/* ── Status badges ─────────────────────────────────── */
-.wf-lineage-badge {
-    font-size: 0.62rem;
-    font-weight: 600;
-    padding: 3px 9px;
-    border-radius: 20px;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
+/* Horizontal connector lines */
+.wf-flow-h-line {
+    height: 2px;
+    background: #333;
     flex-shrink: 0;
-    letter-spacing: 0.02em;
-}
-.wf-lineage-badge.connected {
-    background: var(--cp-success-light);
-    color: var(--cp-success);
-}
-.wf-lineage-badge.unbound {
-    background: var(--cp-danger-light);
-    color: var(--cp-danger);
-}
-
-/* ── Connector trunk ───────────────────────────────── */
-.wf-lineage-connector {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    min-width: 64px;
-    position: relative;
-    z-index: 1;
     align-self: center;
 }
-.wf-lineage-connector::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 4px;
-    right: 6px;
-    height: 2px;
-    background: linear-gradient(to right, var(--cp-primary), var(--cp-primary-dark));
-    border-radius: 2px;
-    transform: translateY(-50%);
+.wf-flow-h-line-out {
+    width: 32px;
 }
-.wf-lineage-connector::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    right: 0;
-    transform: translateY(-50%);
-    width: 0;
-    height: 0;
-    border: 5px solid transparent;
-    border-left: 7px solid var(--cp-primary-dark);
-}
-.wf-connector-pulse {
-    width: 8px;
-    height: 8px;
-    background: var(--cp-primary);
-    border-radius: 50%;
-    position: relative;
-    z-index: 2;
-    animation: wfConnectorPulse 2s ease-in-out infinite;
-    box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.2);
-}
-@keyframes wfConnectorPulse {
-    0%, 100% { opacity: 0.5; transform: scale(1); box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.15); }
-    50%      { opacity: 1;   transform: scale(1.3); box-shadow: 0 0 0 5px rgba(91, 155, 213, 0.25); }
+.wf-flow-h-line-in {
+    width: 32px;
 }
 
-/* ── Target column with branch lines ───────────────── */
-.wf-lineage-targets {
+/* Branch wrap: holds the two rows (agent top, dashboard bottom) */
+.wf-flow-branch-wrap {
     display: flex;
     flex-direction: column;
-    gap: 12px;
     position: relative;
-    padding-left: 24px;
+    gap: 16px;
 }
-.wf-lineage-targets::before {
-    content: '';
+
+/* Each branch row: h-line | node | h-line */
+.wf-flow-branch-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+/* Vertical spine on left (connects datasource line to both branches) */
+.wf-flow-v-spine-left {
     position: absolute;
     left: 0;
-    top: 26px;
-    bottom: 26px;
     width: 2px;
-    background: linear-gradient(to bottom, var(--cp-primary), var(--cp-primary-dark));
-    border-radius: 2px;
-    opacity: 0.35;
-    z-index: 1;
+    background: #333;
 }
-.wf-lineage-targets:has(> :only-child)::before { display: none; }
-.wf-lineage-targets:has(> :only-child) { padding-left: 0; }
-.wf-lineage-targets > .wf-lineage-node::before {
-    content: '';
-    position: absolute;
-    left: -24px;
-    top: 50%;
-    width: 24px;
-    height: 2px;
-    background: var(--cp-primary);
-    opacity: 0.35;
-    transform: translateY(-50%);
-    z-index: 0;
-}
-.wf-lineage-targets:has(> :only-child) > .wf-lineage-node::before { display: none; }
 
-/* ── Agent group with nested report arrows ─────────── */
-.wf-lineage-agent-group {
-    position: relative;
-}
-.wf-lineage-targets > .wf-lineage-agent-group::before {
-    content: '';
+/* Vertical spine on right (connects both branch lines to report) */
+.wf-flow-v-spine-right {
     position: absolute;
-    left: -24px;
-    top: 26px;
-    width: 24px;
-    height: 2px;
-    background: var(--cp-primary);
-    opacity: 0.35;
-    z-index: 0;
+    right: 0;
+    width: 2px;
+    background: #333;
 }
-.wf-lineage-targets:has(> :only-child) > .wf-lineage-agent-group::before { display: none; }
 
-/* Sub-targets: reports nested under an agent */
-.wf-lineage-sub-targets {
+/* Single-agent: no branch split needed (hide spines) */
+.wf-flow-branch-wrap.single-branch .wf-flow-v-spine-left,
+.wf-flow-branch-wrap.single-branch .wf-flow-v-spine-right {
+    display: none;
+}
+
+/* ── Unbound agents row (below main diagram) ────────── */
+.wf-flow-unbound-row {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    padding-left: 32px;
-    position: relative;
-    margin-top: 8px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1.5px dashed #aaa;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    background: #fafafa;
 }
-.wf-lineage-sub-targets::before {
-    content: '';
-    position: absolute;
-    left: 10px;
-    top: 0;
-    bottom: 20px;
-    width: 2px;
-    background: rgba(25, 135, 84, 0.35);
-    border-radius: 2px;
-}
-.wf-lineage-sub-targets:has(> :only-child)::before { display: none; }
-.wf-lineage-sub-targets:has(> :only-child) { padding-left: 16px; }
-.wf-lineage-sub-targets > .wf-lineage-node {
-    position: relative;
-}
-.wf-lineage-sub-targets > .wf-lineage-node::before {
-    content: '';
-    position: absolute;
-    left: -22px;
-    top: 50%;
-    width: 22px;
-    height: 2px;
-    background: rgba(25, 135, 84, 0.35);
-    transform: translateY(-50%);
-    z-index: 0;
-}
-.wf-lineage-sub-targets:has(> :only-child) > .wf-lineage-node::before { display: none; }
-/* Small vertical connector from agent down to sub-targets */
-.wf-lineage-agent-group > .wf-lineage-node.agent + .wf-lineage-sub-targets::after {
-    content: '';
-    position: absolute;
-    left: 10px;
-    top: -8px;
-    width: 2px;
-    height: 8px;
-    background: rgba(25, 135, 84, 0.35);
-    border-radius: 2px;
+.wf-flow-unbound-label {
+    font-size: 0.75rem;
+    color: #888;
+    font-style: italic;
 }
 
 /* ── Legacy compat ─────────────────────────────────── */
 .wf-ds-connected { color: #16a34a; font-weight: 600; }
 .wf-ds-unbound   { color: var(--cp-danger, #dc3545); font-weight: 500; }
-
-/* ── Unbound row ───────────────────────────────────── */
-.wf-lineage-unbound {
-    border-style: dashed;
-    background: linear-gradient(135deg, var(--cp-danger-light) 0%, rgba(255,255,255,0.5) 100%);
-}
-.wf-lineage-unbound::after { opacity: 0.12; }
-.wf-lineage-unbound .wf-lineage-connector::before { background: var(--cp-danger); opacity: 0.35; }
-.wf-lineage-unbound .wf-lineage-connector::after  { border-left-color: var(--cp-danger); opacity: 0.5; }
-.wf-lineage-unbound .wf-connector-pulse { background: var(--cp-danger); box-shadow: 0 0 0 2px rgba(220,53,69,0.2); }
-.wf-lineage-unbound .wf-lineage-targets::before { background: var(--cp-danger); }
-.wf-lineage-unbound .wf-lineage-targets > .wf-lineage-node::before { background: var(--cp-danger); }
-
-/* ── Report connector arrows ─────────────────────────────────── */
-.wf-report-node-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-}
-.wf-report-arrows {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-    justify-content: space-around;
-    margin-bottom: 0;
-    padding: 0 24px;
-}
-.wf-report-arrow {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    flex: 1;
-}
-.wf-report-arrow-label {
-    font-size: 0.6rem;
-    color: var(--cp-text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 2px;
-}
-.wf-report-arrow-line {
-    width: 2px;
-    height: 32px;
-    border-radius: 1px;
-    position: relative;
-}
-.wf-report-arrow-line::after {
-    content: '';
-    position: absolute;
-    bottom: -5px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-}
-.wf-report-arrow.from-agent .wf-report-arrow-line {
-    background: var(--cp-purple, #9B59B6);
-}
-.wf-report-arrow.from-agent .wf-report-arrow-line::after {
-    border-top: 5px solid var(--cp-purple, #9B59B6);
-}
-.wf-report-arrow.from-dashboard .wf-report-arrow-line {
-    background: #2e7d32;
-}
-.wf-report-arrow.from-dashboard .wf-report-arrow-line::after {
-    border-top: 5px solid #2e7d32;
-}
-
-/* ── Report binding wrap: Agent + Dashboard mini nodes above report ── */
-.wf-report-binding-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-}
-.wf-report-binders {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-around;
-    gap: 12px;
-    padding: 0 8px;
-    margin-bottom: 0;
-}
-.wf-report-binder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    flex: 1;
-}
-.wf-report-binder .wf-report-arrow-line {
-    width: 2px;
-    height: 28px;
-    border-radius: 1px;
-    position: relative;
-}
-.wf-report-binder .wf-report-arrow-line::after {
-    content: '';
-    position: absolute;
-    bottom: -5px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-}
-.wf-report-binder.from-agent .wf-report-arrow-line {
-    background: var(--cp-purple, #9B59B6);
-}
-.wf-report-binder.from-agent .wf-report-arrow-line::after {
-    border-top: 5px solid var(--cp-purple, #9B59B6);
-}
-.wf-report-binder.from-dashboard .wf-report-arrow-line {
-    background: #2e7d32;
-}
-.wf-report-binder.from-dashboard .wf-report-arrow-line::after {
-    border-top: 5px solid #2e7d32;
-}
-.wf-report-binder .wf-report-arrow-label {
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 4px;
-}
-.wf-report-binder.from-agent .wf-report-arrow-label {
-    color: var(--cp-purple, #9B59B6);
-}
-.wf-report-binder.from-dashboard .wf-report-arrow-label {
-    color: #2e7d32;
-}
-
-/* Mini compact variant of lineage node used inside binders */
-.wf-lineage-node.mini {
-    padding: 8px 12px;
-    min-width: 0;
-    border-radius: 9px;
-    gap: 8px;
-    width: 100%;
-    box-sizing: border-box;
-}
-.wf-lineage-node.mini .wf-lineage-icon {
-    width: 30px;
-    height: 30px;
-    border-radius: 7px;
-    font-size: 0.85rem;
-}
-.wf-lineage-node.mini .wf-lineage-name {
-    font-size: 0.75rem;
-}
-.wf-lineage-node.mini .wf-lineage-type {
-    font-size: 0.63rem;
-}
-
-/* Connector line from sub-targets branch to binding-wrap */
-.wf-lineage-sub-targets > .wf-report-binding-wrap {
-    position: relative;
-}
-.wf-lineage-sub-targets > .wf-report-binding-wrap::before {
-    content: '';
-    position: absolute;
-    left: -22px;
-    top: 32px;
-    width: 22px;
-    height: 2px;
-    background: rgba(25, 135, 84, 0.35);
-    z-index: 0;
-}
-.wf-lineage-sub-targets:has(> :only-child) > .wf-report-binding-wrap::before { display: none; }
 
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 768px) {
