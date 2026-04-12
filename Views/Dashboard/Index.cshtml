@@ -309,12 +309,9 @@
                         <div class="prop-section chart-only-section">
                             <div class="prop-section-title">Data</div>
                             <div class="mb-2">
-                                <label class="form-label">Dataset</label>
+                                <label class="form-label">Table</label>
                                 <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
-                                    <option value="sales">Sales</option>
-                                    <option value="population">Population</option>
-                                    <option value="weather">Weather</option>
-                                    <option value="finance">Finance</option>
+                                    <option value="">-- Select table --</option>
                                 </select>
                             </div>
                             <div class="mb-2">
@@ -370,9 +367,26 @@
                                 <label class="form-label">Row Limit</label>
                                 <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="100" placeholder="100">
                             </div>
+                            <div class="mb-2" style="display:none">
+                                <input type="hidden" id="prop-filter-where" />
+                            </div>
                             <div class="mb-2">
-                                <label class="form-label">WHERE Filter</label>
-                                <input type="text" id="prop-filter-where" class="form-control form-control-sm" placeholder="e.g. City = 'Seattle'">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <label class="form-label mb-0">WHERE Conditions</label>
+                                    <button type="button" id="pp-add-condition-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add condition row">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                                <div id="pp-conditions"></div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <label class="form-label mb-0">SQL Query</label>
+                                    <button type="button" id="pp-ai-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-purple,#9B59B6)" title="Generate SQL using AI">
+                                        <i class="bi bi-stars me-1"></i>AI Generate
+                                    </button>
+                                </div>
+                                <textarea id="pp-sql-area" class="form-control form-control-sm font-monospace" rows="4" placeholder="SELECT ..."></textarea>
                             </div>
                             <div class="mb-2">
                                 <label class="form-label">Custom JSON Data</label>

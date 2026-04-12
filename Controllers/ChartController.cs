@@ -97,12 +97,15 @@ public class ChartController : ControllerBase
     public IActionResult Reorder([FromBody] List<string> ids)
     {
         var canvas = GetCanvas();
+        var page = canvas.Pages.ElementAtOrDefault(canvas.ActivePageIndex);
+        if (page == null) return BadRequest("No active page");
+
         var reordered = ids
-            .Select(id => canvas.Charts.FirstOrDefault(c => c.Id == id))
+            .Select(id => page.Charts.FirstOrDefault(c => c.Id == id))
             .Where(c => c != null)
             .Cast<ChartDefinition>()
             .ToList();
-        canvas.Charts = reordered;
+        page.Charts = reordered;
         SaveCanvas(canvas);
         return Ok(new { success = true });
     }

@@ -59,6 +59,8 @@ class PropertiesPanel {
                         name: t.name || '',
                         columns: (t.columns || []).map(c => ({ name: c.name, dataType: c.dataType || '', isPrimaryKey: c.isPrimaryKey || false }))
                     }));
+                    // Populate the dataset/table select from real schema tables
+                    this._populateDatasetSelect(tables.map(t => t.name || ''), datasetName);
                     // Flatten all column names for field selects
                     this.fields = [];
                     this._schemaColumns = [];
@@ -94,19 +96,32 @@ class PropertiesPanel {
                 }
             } catch(e) {}
         }
-        try {
-            const resp = await fetch(`/api/data/${datasetName}/fields`);
-            this.fields = await resp.json();
-            this._schemaColumns = this.fields.map(f => ({ name: f, dataType: '', table: '', isPrimaryKey: false }));
-            this._schemaTables = null;
-            this.updateFieldSelects(datasetName);
-            this.renderDataFields();
-        } catch(e) {
-            this.fields = [];
-            this._schemaColumns = [];
-            this._schemaTables = null;
+        // No datasource — leave fields empty (no sample data fallback)
+        this.fields = [];
+        this._schemaColumns = [];
+        this._schemaTables = null;
+        this.updateFieldSelects(datasetName);
+        this.renderDataFields();
+    }
+
+    /** Populate the prop-dataset select with real table names from the datasource schema. */
+    _populateDatasetSelect(tableNames, currentValue) {
+        const sel = document.getElementById('prop-dataset');
+        if (!sel) return;
+        const existingValue = currentValue || sel.value || '';
+        sel.innerHTML = '<option value="">-- Select table --</option>' +
+            tableNames.map(n => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(n) : n}">${typeof escapeHtml === 'function' ? escapeHtml(n) : n}</option>`).join('');
+        // Restore previously selected value if it exists in the new list
+        if (existingValue && tableNames.includes(existingValue)) {
+            sel.value = existingValue;
+        } else if (existingValue) {
+            // Try case-insensitive match
+            const lower = existingValue.toLowerCase();
+            const match = tableNames.find(n => n.toLowerCase() === lower);
+            if (match) sel.value = match;
         }
     }
+
 
     updateFieldSelects(filterTable) {
         let fieldList = this.fields;
@@ -145,7 +160,11 @@ class PropertiesPanel {
         this.setVal('prop-agg-enabled', c.aggregation?.enabled || false, 'checkbox');
         this.setVal('prop-agg-function', c.aggregation?.function || 'SUM');
         this.setVal('prop-row-limit', c.rowLimit || 100);
-        this.setVal('prop-filter-where', c.filterWhere || '');
+        // Populate condition builder from filterWhere
+        this._populateConditions(c.filterWhere || '');
+        // Show existing dataQuery in SQL area
+        const sqlArea = document.getElementById('pp-sql-area');
+        if (sqlArea) sqlArea.value = c.dataQuery || '';
         this.setVal('prop-color-palette', this._resolveColorHex(c.style?.colorPalette));
         this.setVal('prop-show-legend', c.style?.showLegend !== false, 'checkbox');
         this.setVal('prop-legend-position', c.style?.legendPosition || 'top');
@@ -243,8 +262,9 @@ class PropertiesPanel {
                 function: this.getVal('prop-agg-function'),
             },
             rowLimit: parseInt(this.getVal('prop-row-limit')) || 100,
-            filterWhere: this.getVal('prop-filter-where') || '',
-            dataQuery: '', // Clear cached query so it rebuilds from current mappings, WHERE filter, etc.
+            filterWhere: this._collectConditionsSQL(),
+            // Use SQL from the sql area if provided; otherwise clear so it rebuilds from mappings
+            dataQuery: (document.getElementById('pp-sql-area')?.value.trim()) || '',
             style: {
                 ...this.currentChart.style,
                 colorPalette: this.getVal('prop-color-palette'),
@@ -356,6 +376,8 @@ class PropertiesPanel {
         this._autoApplyInputHandler = (e) => {
             const el = e.target;
             if (!el.matches('input[type="text"], input[type="number"], textarea')) return;
+            // Skip the SQL area — user edits it manually; apply only on explicit action
+            if (el.id === 'pp-sql-area') return;
             applyDebounced();
         };
 
@@ -371,6 +393,12 @@ class PropertiesPanel {
             this._chartTypeChangeHandler = () => this.updateTypeSpecificFields(chartTypeEl.value);
             chartTypeEl.addEventListener('change', this._chartTypeChangeHandler);
         }
+
+        // Wire "Add condition" button
+        this._wireConditionBuilder();
+
+        // Wire AI Generate SQL button
+        this._wireAISqlBtn();
     }
 
     updateTypeSpecificFields(chartType) {
@@ -605,6 +633,257 @@ class PropertiesPanel {
         }
     }
 
+    // ── Condition Builder ────────────────────────────────────────────
+
+    /** Add a condition row to the condition builder. */
+    _addConditionRow(field, op, val) {
+        const container = document.getElementById('pp-conditions');
+        if (!container) return;
+        const fieldList = this.fields.length > 0 ? this.fields : [];
+        const fieldOpts = '<option value="">-- field --</option>' +
+            fieldList.map(f => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(f) : f}">${typeof escapeHtml === 'function' ? escapeHtml(f) : f}</option>`).join('');
+        const ops = ['=','!=','>','<','>=','<=','LIKE','IN','IS NULL','IS NOT NULL'];
+        const opOpts = ops.map(o => `<option value="${o}"${o === (op || '=') ? ' selected' : ''}>${o}</option>`).join('');
+
+        const row = document.createElement('div');
+        row.className = 'pp-condition-row d-flex gap-1 align-items-center mb-1';
+
+        const fieldSel = document.createElement('select');
+        fieldSel.className = 'pp-cond-field form-select form-select-sm';
+        fieldSel.style.fontSize = '0.72rem';
+        fieldSel.innerHTML = fieldOpts;
+        if (field) fieldSel.value = field;
+
+        const opSel = document.createElement('select');
+        opSel.className = 'pp-cond-op form-select form-select-sm';
+        opSel.style.cssText = 'font-size:0.72rem;max-width:80px;';
+        opSel.innerHTML = opOpts;
+
+        const valInput = document.createElement('input');
+        valInput.type = 'text';
+        valInput.className = 'pp-cond-val form-control form-control-sm';
+        valInput.style.fontSize = '0.72rem';
+        valInput.placeholder = 'value';
+        valInput.value = val || '';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-xs';
+        removeBtn.style.cssText = 'font-size:0.68rem;padding:1px 4px;border:1px solid #e2e8f0;border-radius:4px;color:#ef4444;background:#fff;flex-shrink:0;';
+        removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+        removeBtn.addEventListener('click', () => { row.remove(); this.apply(); });
+
+        // Hide value input for IS NULL / IS NOT NULL
+        const toggleValInput = () => {
+            const noVal = ['IS NULL', 'IS NOT NULL'].includes(opSel.value);
+            valInput.style.display = noVal ? 'none' : '';
+        };
+        opSel.addEventListener('change', toggleValInput);
+        toggleValInput();
+
+        // Apply on change
+        [fieldSel, opSel].forEach(el => el.addEventListener('change', () => this.apply()));
+        valInput.addEventListener('input', () => {
+            clearTimeout(this._condDebounce);
+            this._condDebounce = setTimeout(() => this.apply(), 400);
+        });
+
+        row.appendChild(fieldSel);
+        row.appendChild(opSel);
+        row.appendChild(valInput);
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+    }
+
+    /** Wire the "Add condition" button. */
+    _wireConditionBuilder() {
+        const btn = document.getElementById('pp-add-condition-btn');
+        if (!btn) return;
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', () => this._addConditionRow('', '=', ''));
+    }
+
+    /** Build WHERE clause string from the condition rows. */
+    _collectConditionsSQL() {
+        const container = document.getElementById('pp-conditions');
+        if (!container) return '';
+        // Allowed operators to prevent injection via operator field
+        const allowedOps = new Set(['=','!=','>','<','>=','<=','LIKE','IN','IS NULL','IS NOT NULL']);
+        const parts = [];
+        container.querySelectorAll('.pp-condition-row').forEach(row => {
+            const field = row.querySelector('.pp-cond-field')?.value || '';
+            const op    = row.querySelector('.pp-cond-op')?.value || '=';
+            const val   = row.querySelector('.pp-cond-val')?.value || '';
+            if (!field) return;
+            // Only use fields that are actually in the schema to prevent injection
+            const knownField = this.fields.includes(field)
+                ? field
+                : (this.fields.find(f => f.toLowerCase() === field.toLowerCase()) || null);
+            if (!knownField) return;
+            // Only allow known operators
+            const safeOp = allowedOps.has(op.toUpperCase()) ? op.toUpperCase() : '=';
+            const quotedField = '[' + knownField.replace(/\]/g, ']]') + ']';
+            if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') {
+                parts.push(`${quotedField} ${safeOp}`);
+            } else if (safeOp === 'IN') {
+                // val should be comma-separated; each entry is quoted if not numeric
+                const inParts = val.split(',').map(v => {
+                    const trimmed = v.trim();
+                    const isNum = !isNaN(parseFloat(trimmed)) && isFinite(trimmed) && trimmed !== '';
+                    return isNum ? trimmed : `'${trimmed.replace(/'/g, "''")}'`;
+                });
+                parts.push(`${quotedField} IN (${inParts.join(', ')})`);
+            } else if (safeOp === 'LIKE') {
+                parts.push(`${quotedField} LIKE '${val.replace(/'/g, "''")}'`);
+            } else {
+                const isNum = !isNaN(parseFloat(val)) && isFinite(val) && val !== '';
+                const quotedVal = isNum ? val : `'${val.replace(/'/g, "''")}'`;
+                parts.push(`${quotedField} ${safeOp} ${quotedVal}`);
+            }
+        });
+        return parts.join(' AND ');
+    }
+
+    /** Populate condition builder from an existing filterWhere string. */
+    _populateConditions(filterWhere) {
+        const container = document.getElementById('pp-conditions');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!filterWhere) return;
+        // Try to parse simple conditions of the form: [field] op value AND ...
+        const condRegex = /\[([^\]]+)\]\s*(IS NULL|IS NOT NULL|LIKE|IN|>=|<=|!=|=|>|<)\s*(?:'([^']*)'|(\S+))?/gi;
+        let match;
+        let hasMatch = false;
+        while ((match = condRegex.exec(filterWhere)) !== null) {
+            hasMatch = true;
+            const field = match[1];
+            const op = match[2].toUpperCase();
+            const val = match[3] !== undefined ? match[3] : (match[4] || '');
+            this._addConditionRow(field, op, val);
+        }
+        // Fallback: if parsing failed, show as a single raw condition in a text input
+        if (!hasMatch && filterWhere.trim()) {
+            const row = document.createElement('div');
+            row.className = 'd-flex gap-1 align-items-center mb-1';
+            const raw = document.createElement('input');
+            raw.type = 'text';
+            raw.className = 'form-control form-control-sm pp-cond-raw';
+            raw.style.fontSize = '0.72rem';
+            raw.placeholder = 'Raw WHERE clause';
+            raw.value = filterWhere;
+            raw.addEventListener('input', () => {
+                clearTimeout(this._condDebounce);
+                this._condDebounce = setTimeout(() => this.apply(), 400);
+            });
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-xs';
+            removeBtn.style.cssText = 'font-size:0.68rem;padding:1px 4px;border:1px solid #e2e8f0;border-radius:4px;color:#ef4444;background:#fff;flex-shrink:0;';
+            removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+            removeBtn.addEventListener('click', () => { row.remove(); this.apply(); });
+            row.appendChild(raw);
+            row.appendChild(removeBtn);
+            container.appendChild(row);
+        }
+    }
+
+    // ── AI Generate SQL ──────────────────────────────────────────────
+
+    /** Wire the AI Generate SQL button. */
+    _wireAISqlBtn() {
+        const btn = document.getElementById('pp-ai-sql-btn');
+        if (!btn) return;
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', () => this._aiGenerateSQL());
+    }
+
+    /** Call the AI to generate a SQL statement from current field selections. */
+    async _aiGenerateSQL() {
+        const btn = document.getElementById('pp-ai-sql-btn');
+        const sqlArea = document.getElementById('pp-sql-area');
+        if (!sqlArea) return;
+
+        const tableName = this.getVal('prop-dataset') || '';
+        const labelField = this.getVal('prop-label-field') || '';
+        const valueField = this.getVal('prop-value-field') || '';
+        const aggEnabled = this.getVal('prop-agg-enabled', 'checkbox');
+        const aggFn = this.getVal('prop-agg-function') || 'SUM';
+        const rowLimit = this.getVal('prop-row-limit') || '100';
+        const whereClause = this._collectConditionsSQL();
+        const mvFields = this._collectMultiValueFields();
+
+        const dsId = this.currentChart?.datasourceId || window.currentDatasourceId || null;
+
+        // Build a prompt describing what SQL to generate
+        let prompt = `Generate a SQL SELECT statement for table [${tableName}].`;
+        if (labelField) prompt += ` Label/group by [${labelField}].`;
+        if (valueField) {
+            if (aggEnabled) {
+                prompt += ` Apply ${aggFn}([${valueField}]) as the value.`;
+            } else {
+                prompt += ` Select [${valueField}] as the value.`;
+            }
+        }
+        if (mvFields.length > 0) {
+            prompt += ` Also include these value fields: ${mvFields.map(f => `[${f}]`).join(', ')}.`;
+        }
+        if (whereClause) prompt += ` Add WHERE clause: ${whereClause}.`;
+        prompt += ` Limit to ${rowLimit} rows. Return only the SQL statement, no explanation.`;
+
+        // Show spinner on button
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+        sqlArea.value = '-- Generating SQL...';
+
+        try {
+            const token = localStorage.getItem('cp_token') || '';
+            const response = await fetch('/api/chat/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    message: prompt,
+                    workspaceId: (new URLSearchParams(window.location.search)).get('workspace') || window.currentWorkspaceGuid || null,
+                    datasourceId: dsId,
+                    userId: (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || ''
+                })
+            });
+
+            if (!response.ok) throw new Error('AI request failed');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const raw = decoder.decode(value);
+                for (const line of raw.split('\n')) {
+                    if (!line.startsWith('data: ')) continue;
+                    const data = line.slice(6);
+                    if (data === '[DONE]') break;
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.text) fullText += parsed.text;
+                    } catch {}
+                }
+            }
+
+            // Extract SQL from response (strip markdown code fences if present)
+            const sqlMatch = fullText.match(/```(?:sql)?\s*([\s\S]*?)```/i);
+            const sql = (sqlMatch ? sqlMatch[1] : fullText).trim();
+            sqlArea.value = sql || fullText.trim();
+        } catch (e) {
+            sqlArea.value = '-- AI generation failed. Please type SQL manually.';
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-stars me-1"></i>AI Generate'; }
+        }
+    }
+
     // Shape property methods
     showShapeProps(show) {
         const shapeSection = document.getElementById('shape-props-section');
@@ -682,7 +961,6 @@ class PropertiesPanel {
         form.addEventListener('change', this._shapeApplyHandler);
         form.addEventListener('input', this._shapeInputHandler);
     }
-}
 
     /** Render the additional value field selects from an array of field names. */
     _renderMultiValueFields(fields) {

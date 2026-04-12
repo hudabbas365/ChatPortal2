@@ -732,9 +732,14 @@
             const values     = data.map(r => parseFloat(r[valueField]) || 0);
             const title      = (jsonObj.prompt || 'Chat Chart').substring(0, 50);
 
+            // Prefer live datasource + query over static snapshot
+            const datasourceId = window.currentDatasourceId || null;
+            const dataQuery    = jsonObj.sql || jsonObj.query || null;
+
             try {
                 localStorage.setItem('cp_pending_chart', JSON.stringify({
-                    chartType, labels, values, labelField, valueField, title
+                    chartType, labels, values, labelField, valueField, title,
+                    datasourceId, dataQuery
                 }));
             } catch (_) {}
 
