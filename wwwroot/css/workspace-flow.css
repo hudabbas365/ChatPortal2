@@ -759,6 +759,7 @@
 .wf-lineage-sub-targets {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 8px;
     padding-left: 32px;
     position: relative;
@@ -823,20 +824,23 @@
 .wf-report-node-wrap {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
+    width: 100%;
 }
 .wf-report-arrows {
     display: flex;
     gap: 16px;
-    align-items: flex-end;
-    justify-content: center;
-    margin-bottom: 4px;
+    align-items: flex-start;
+    justify-content: space-around;
+    margin-bottom: 0;
+    padding: 0 24px;
 }
 .wf-report-arrow {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0;
+    flex: 1;
 }
 .wf-report-arrow-label {
     font-size: 0.6rem;
@@ -848,7 +852,7 @@
 }
 .wf-report-arrow-line {
     width: 2px;
-    height: 24px;
+    height: 32px;
     border-radius: 1px;
     position: relative;
 }
