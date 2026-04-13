@@ -1,0 +1,32 @@
+@model List<ChatPortal2.Models.SeoEntry>
+@{
+    ViewData["Title"] = "SEO Management";
+    ViewData["ActivePage"] = "seo";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<h2 class="fw-bold mb-4"><i class="bi bi-search me-2 text-primary"></i>SEO Management</h2>
+
+<div class="sa-card">
+    <table class="sa-table">
+        <thead>
+            <tr>
+                <th>Page URL</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Last Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in Model)
+            {
+                <tr>
+                    <td><code>@entry.PageUrl</code></td>
+                    <td>@entry.Title</td>
+                    <td class="text-muted" style="font-size:0.8rem">@(entry.MetaDescription?.Length > 80 ? entry.MetaDescription[..80] + "…" : entry.MetaDescription)</td>
+                    <td class="text-muted">@entry.LastModified.ToString("MMM d, yyyy")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
