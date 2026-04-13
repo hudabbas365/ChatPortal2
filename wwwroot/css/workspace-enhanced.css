@@ -485,3 +485,18 @@
         display: inline-flex !important;
     }
 }
+
+/* ── Viewer-mode safety net — hide mutation & insight controls ── */
+body.viewer-mode #newArtifactInsightsBtn,
+body.viewer-mode .wfe-insights-del,
+body.viewer-mode .wfe-artifact-del,
+body.viewer-mode .wfe-header-actions,
+body.viewer-mode .wfe-ws-actions,
+body.viewer-mode .wf-flow-node.wf-flow-datasource,
+body.viewer-mode .wf-flow-node.wf-flow-agent,
+body.viewer-mode .wf-flow-h-line,
+body.viewer-mode #aiInsightsSection,
+body.viewer-mode .agent-panel,
+body.viewer-mode .btn-create-agent {
+    display: none !important;
+}

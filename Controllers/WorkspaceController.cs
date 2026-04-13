@@ -1,9 +1,11 @@
 using ChatPortal2.Data;
 using ChatPortal2.Models;
+using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -12,19 +14,33 @@ public class WorkspaceController : Controller
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IWorkspacePermissionService _permissions;
 
-    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager)
+    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager, IWorkspacePermissionService permissions)
     {
         _db = db;
         _userManager = userManager;
+        _permissions = permissions;
     }
 
     [HttpGet("/api/workspaces")]
     public async Task<IActionResult> GetAll([FromQuery] int organizationId)
     {
-        var workspaces = await _db.Workspaces
-            .Where(w => w.OrganizationId == organizationId)
-            .ToListAsync();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+
+        var query = _db.Workspaces.Where(w => w.OrganizationId == organizationId);
+
+        // Non-OrgAdmin users only see workspaces they own or are a member of
+        if (!isOrgLevel)
+        {
+            query = query.Where(w =>
+                w.OwnerId == userId ||
+                _db.WorkspaceUsers.Any(wu => wu.WorkspaceId == w.Id && wu.UserId == userId));
+        }
+
+        var workspaces = await query.ToListAsync();
         return Ok(workspaces.Select(w => new
         {
             w.Id,
@@ -52,6 +68,19 @@ public class WorkspaceController : Controller
         }
 
         if (workspace == null) return NotFound();
+
+        // Access check: user must be owner, explicit member, or OrgAdmin/SuperAdmin
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+
+        if (!isOrgLevel && workspace.OwnerId != userId)
+        {
+            var hasAccess = await _db.WorkspaceUsers
+                .AnyAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == userId);
+            if (!hasAccess)
+                return StatusCode(403, new { error = "You do not have access to this workspace." });
+        }
 
         var agents = await _db.Agents
             .Include(a => a.Datasource)
@@ -191,6 +220,10 @@ public class WorkspaceController : Controller
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
         if (workspace == null) return NotFound();
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanEditAsync(workspace.Id, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to update workspaces." });
+
         if (req.Name != null)
         {
             var trimmed = req.Name.Trim();
@@ -204,7 +237,12 @@ public class WorkspaceController : Controller
         }
         if (req.Description != null) workspace.Description = req.Description;
         if (req.LogoUrl != null) workspace.LogoUrl = req.LogoUrl;
-        if (req.OwnerId != null) workspace.OwnerId = req.OwnerId;
+        if (req.OwnerId != null)
+        {
+            if (!await _permissions.CanDeleteAsync(workspace.Id, userId))
+                return StatusCode(403, new { error = "Only Admins can transfer workspace ownership." });
+            workspace.OwnerId = req.OwnerId;
+        }
 
         await _db.SaveChangesAsync();
 
@@ -225,6 +263,10 @@ public class WorkspaceController : Controller
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
         if (workspace == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanDeleteAsync(workspace.Id, userId))
+            return StatusCode(403, new { error = "Only Admins can delete workspaces." });
 
         // Explicitly remove child entities to avoid FK constraint failures
         var datasources = await _db.Datasources.Where(d => d.WorkspaceId == workspace.Id).ToListAsync();
@@ -250,6 +292,10 @@ public class WorkspaceController : Controller
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == wsGuid);
         if (workspace == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanDeleteAsync(workspace.Id, userId))
+            return StatusCode(403, new { error = "Only Admins can delete AI Insights." });
 
         // Find the datasource
         Datasource? ds = null;
@@ -310,6 +356,14 @@ public class WorkspaceController : Controller
             workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Id == intId);
         if (workspace == null) return NotFound();
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanViewAsync(workspace.Id, userId))
+        {
+            var appUser = await _db.Users.FindAsync(userId);
+            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                return StatusCode(403, new { error = "You do not have access to this workspace." });
+        }
+
         var members = await _db.WorkspaceUsers
             .Where(wu => wu.WorkspaceId == workspace.Id)
             .Include(wu => wu.User)
@@ -334,6 +388,11 @@ public class WorkspaceController : Controller
             workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Id == intId);
         if (workspace == null) return NotFound(new { error = "Workspace not found." });
 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var role = await _permissions.GetRoleAsync(workspace.Id, userId);
+        if (role != "Admin")
+            return StatusCode(403, new { error = "Only Admins can manage workspace members." });
+
         var targetUser = await _userManager.FindByEmailAsync(req.Email ?? "");
         if (targetUser == null)
             return BadRequest(new { error = $"No user found with email '{req.Email}'." });
@@ -343,11 +402,16 @@ public class WorkspaceController : Controller
         if (already)
             return BadRequest(new { error = "This user already has access to the workspace." });
 
+        var allowedRoles = new[] { "Admin", "Editor", "Viewer" };
+        var assignRole = req.Role ?? "Viewer";
+        if (!allowedRoles.Contains(assignRole))
+            return BadRequest(new { error = $"Invalid role '{assignRole}'. Allowed: Admin, Editor, Viewer." });
+
         var entry = new WorkspaceUser
         {
             WorkspaceId = workspace.Id,
             UserId      = targetUser.Id,
-            Role        = req.Role ?? "Viewer"
+            Role        = assignRole
         };
         _db.WorkspaceUsers.Add(entry);
         await _db.SaveChangesAsync();
@@ -371,6 +435,11 @@ public class WorkspaceController : Controller
             workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Id == intId);
         if (workspace == null) return NotFound();
 
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var currentRole = await _permissions.GetRoleAsync(workspace.Id, currentUserId);
+        if (currentRole != "Admin")
+            return StatusCode(403, new { error = "Only Admins can manage workspace members." });
+
         var entry = await _db.WorkspaceUsers
             .FirstOrDefaultAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == userId);
         if (entry == null) return NotFound(new { error = "Member not found." });
@@ -388,11 +457,21 @@ public class WorkspaceController : Controller
             workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Id == intId2);
         if (workspace == null) return NotFound();
 
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var currentRole = await _permissions.GetRoleAsync(workspace.Id, currentUserId);
+        if (currentRole != "Admin")
+            return StatusCode(403, new { error = "Only Admins can manage workspace members." });
+
         var entry = await _db.WorkspaceUsers
             .FirstOrDefaultAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == userId);
         if (entry == null) return NotFound(new { error = "Member not found." });
 
-        entry.Role = req.Role ?? entry.Role;
+        var allowedRoles = new[] { "Admin", "Editor", "Viewer" };
+        var newRole = req.Role ?? entry.Role;
+        if (!allowedRoles.Contains(newRole))
+            return BadRequest(new { error = $"Invalid role '{newRole}'. Allowed: Admin, Editor, Viewer." });
+
+        entry.Role = newRole;
         await _db.SaveChangesAsync();
         return Ok(new { entry.UserId, entry.Role });
     }
@@ -406,14 +485,24 @@ public class WorkspaceController : Controller
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
+        var isOrgAdmin = user.Role == "OrgAdmin" || user.Role == "SuperAdmin";
+
         // Owner gets Admin
         if (workspace.OwnerId == user.Id)
-            return Ok(new { role = "Admin", isOwner = true });
+            return Ok(new { role = "Admin", isOwner = true, isOrgAdmin });
 
         var wu = await _db.WorkspaceUsers
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspace.Id && w.UserId == user.Id);
 
-        return Ok(new { role = wu?.Role ?? "Viewer", isOwner = false });
+        // OrgAdmin/SuperAdmin can access any workspace in their org
+        if (wu == null && isOrgAdmin)
+            return Ok(new { role = "Admin", isOwner = false, isOrgAdmin });
+
+        // No membership = no access
+        if (wu == null)
+            return StatusCode(403, new { error = "You do not have access to this workspace." });
+
+        return Ok(new { role = wu.Role, isOwner = false, isOrgAdmin });
     }
 
     [HttpGet("/api/workspaces/{guid}/org-users")]
@@ -421,6 +510,17 @@ public class WorkspaceController : Controller
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
         if (workspace == null) return NotFound();
+
+        // Only OrgAdmin/SuperAdmin or workspace Admin can list org users for the picker
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+        if (!isOrgLevel)
+        {
+            var role = await _permissions.GetRoleAsync(workspace.Id, userId);
+            if (role != "Admin")
+                return StatusCode(403, new { error = "Only Admins can manage workspace members." });
+        }
 
         var existingUserIds = await _db.WorkspaceUsers
             .Where(wu => wu.WorkspaceId == workspace.Id)

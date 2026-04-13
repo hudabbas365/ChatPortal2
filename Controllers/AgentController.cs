@@ -68,6 +68,18 @@ public class AgentController : ControllerBase
         var query = _db.Agents.AsQueryable();
         if (organizationId.HasValue)
             query = query.Where(a => a.OrganizationId == organizationId.Value);
+
+        // Non-OrgAdmin users only see agents from workspaces they own or are a member of
+        var appUser = await _db.Users.FindAsync(userId);
+        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+        if (!isOrgLevel)
+        {
+            query = query.Where(a =>
+                !a.WorkspaceId.HasValue ||
+                _db.Workspaces.Any(w => w.Id == a.WorkspaceId && w.OwnerId == userId) ||
+                _db.WorkspaceUsers.Any(wu => wu.WorkspaceId == a.WorkspaceId && wu.UserId == userId));
+        }
+
         var agents = await query.ToListAsync();
         return Ok(agents);
     }

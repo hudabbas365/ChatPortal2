@@ -18,14 +18,16 @@ public class ChatController : Controller
     private readonly JwtService _jwtService;
     private readonly IQueryExecutionService _queryService;
     private readonly ITokenBudgetService _tokenBudget;
+    private readonly IWorkspacePermissionService _permissions;
 
-    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService, ITokenBudgetService tokenBudget)
+    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService, ITokenBudgetService tokenBudget, IWorkspacePermissionService permissions)
     {
         _db = db;
         _cohereService = cohereService;
         _jwtService = jwtService;
         _queryService = queryService;
         _tokenBudget = tokenBudget;
+        _permissions = permissions;
     }
 
     [HttpGet("/chat")]
@@ -51,8 +53,21 @@ public class ChatController : Controller
 
         var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
 
-        // Check token budget for the organization
+        // Workspace permission check
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        if (wsId > 0 && !await _permissions.CanViewAsync(wsId, userId))
+        {
+            var appUser = await _db.Users.FindAsync(userId);
+            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            {
+                await Response.WriteAsync("data: {\"text\":\"Access denied — you do not have access to this workspace.\"}\n\n");
+                await Response.WriteAsync("data: [DONE]\n\n");
+                await Response.Body.FlushAsync();
+                return;
+            }
+        }
+
+        // Check token budget for the organization
         int? orgId = null;
         if (!string.IsNullOrEmpty(userId))
         {
@@ -186,13 +201,12 @@ Always be concise and actionable.";
         }
     }
 
-    [AllowAnonymous]
     [HttpPost("/api/data/execute")]
     public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteQueryRequest req)
     {
         var query = (req.Query ?? "").Trim();
 
-        // Server-side read-only guard � block all write operations
+        // Server-side read-only guard — block all write operations
         var normalized = System.Text.RegularExpressions.Regex.Replace(
             query.ToUpperInvariant(), @"\s+", " ").Trim();
         var writeOps = new[] { "INSERT","UPDATE","DELETE","DROP","CREATE","ALTER",
@@ -216,6 +230,19 @@ Always be concise and actionable.";
         if (req.DatasourceId.HasValue && req.DatasourceId.Value > 0)
         {
             var ds = await _db.Datasources.FindAsync(req.DatasourceId.Value);
+
+            // Permission check: verify user has access to the datasource's workspace
+            if (ds != null && ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+            {
+                var execUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+                if (!string.IsNullOrEmpty(execUserId) && !await _permissions.CanViewAsync(ds.WorkspaceId.Value, execUserId))
+                {
+                    var appUser = await _db.Users.FindAsync(execUserId);
+                    if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                        return StatusCode(403, new { success = false, error = "You do not have access to this datasource." });
+                }
+            }
+
             if (ds != null && !string.IsNullOrWhiteSpace(ds.ConnectionString))
             {
                 var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
@@ -237,6 +264,18 @@ Always be concise and actionable.";
     public async Task<IActionResult> PinResult([FromBody] PinRequest req)
     {
         var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
+
+        if (wsId > 0)
+        {
+            var pinUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(wsId, pinUserId))
+            {
+                var appUser = await _db.Users.FindAsync(pinUserId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this workspace." });
+            }
+        }
+
         var pinned = new PinnedResult
         {
             DatasetName = req.DatasetName ?? "pinned",
@@ -253,6 +292,14 @@ Always be concise and actionable.";
     [HttpGet("/api/chat/history/{workspaceId}")]
     public async Task<IActionResult> GetHistory(int workspaceId)
     {
+        var histUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanViewAsync(workspaceId, histUserId))
+        {
+            var appUser = await _db.Users.FindAsync(histUserId);
+            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                return StatusCode(403, new { error = "You do not have access to this workspace." });
+        }
+
         var msgs = await _db.ChatMessages
             .Where(m => m.WorkspaceId == workspaceId)
             .OrderBy(m => m.CreatedAt)
@@ -266,6 +313,39 @@ Always be concise and actionable.";
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
+
+        // Workspace permission check
+        var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        if (wsId > 0 && !await _permissions.CanViewAsync(wsId, userId))
+        {
+            var appUser = await _db.Users.FindAsync(userId);
+            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            {
+                await Response.WriteAsync("data: {\"text\":\"Access denied — you do not have access to this workspace.\"}\n\n");
+                await Response.WriteAsync("data: [DONE]\n\n");
+                await Response.Body.FlushAsync();
+                return;
+            }
+        }
+
+        // Check token budget for the organization
+        int? orgId = null;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            orgId = await _db.Users.Where(u => u.Id == userId).Select(u => u.OrganizationId).FirstOrDefaultAsync();
+        }
+        if (orgId.HasValue && orgId.Value > 0)
+        {
+            if (!await _tokenBudget.HasBudgetAsync(orgId.Value))
+            {
+                var errData = $"data: {Newtonsoft.Json.JsonConvert.SerializeObject(new { text = "Monthly AI token budget exceeded. Contact your organisation admin." })}\n\n";
+                await Response.WriteAsync(errData);
+                await Response.WriteAsync("data: [DONE]\n\n");
+                await Response.Body.FlushAsync();
+                return;
+            }
+        }
 
         var fullResponse = new StringBuilder();
         await foreach (var chunk in _cohereService.AnalyzeImageStreamAsync(
@@ -284,7 +364,6 @@ Always be concise and actionable.";
         // Persist to chat history
         if (!string.IsNullOrEmpty(req.UserId))
         {
-            var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
             if (wsId > 0)
             {
                 _db.ChatMessages.Add(new ChatMessage

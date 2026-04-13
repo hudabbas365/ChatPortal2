@@ -58,4 +58,12 @@ public class HomeController : Controller
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error() => View();
+
+    [Route("/access-denied")]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public IActionResult AccessDenied([FromQuery] int? statusCode)
+    {
+        ViewData["StatusCode"] = statusCode ?? 401;
+        return View();
+    }
 }

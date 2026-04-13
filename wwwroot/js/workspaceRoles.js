@@ -10,6 +10,7 @@
 
     var _currentRole = null;
     var _isOwner = false;
+    var _isOrgAdmin = false;
 
     var WR = {
         init() {
@@ -19,22 +20,31 @@
 
         // ── Fetch current user's role for active workspace ──
         async loadMyRole(wsGuid) {
-            _currentRole = 'Viewer';
+            _currentRole = null;
             _isOwner = false;
+            _isOrgAdmin = false;
             try {
                 var r = await fetch('/api/workspaces/' + encodeURIComponent(wsGuid) + '/myrole');
+                if (r.status === 403) {
+                    // User has no access to this workspace
+                    _currentRole = null;
+                    this._applyRoleUI();
+                    return { role: null, isOwner: false, isOrgAdmin: false, noAccess: true };
+                }
                 if (r.ok) {
                     var data = await r.json();
                     _currentRole = data.role || 'Viewer';
                     _isOwner = !!data.isOwner;
+                    _isOrgAdmin = !!data.isOrgAdmin;
                 }
             } catch (e) { /* fallback */ }
             this._applyRoleUI();
-            return { role: _currentRole, isOwner: _isOwner };
+            return { role: _currentRole, isOwner: _isOwner, isOrgAdmin: _isOrgAdmin };
         },
 
         getRole() { return _currentRole; },
         isOwner() { return _isOwner; },
+        isOrgAdmin() { return _isOrgAdmin; },
         isAdmin() { return _currentRole === 'Admin' || _isOwner; },
         isEditor() { return _currentRole === 'Editor'; },
         isViewer() { return _currentRole === 'Viewer' && !_isOwner; },
@@ -47,14 +57,15 @@
             // Show/hide role badge in subnav
             var roleBadge = document.getElementById('chatSubnavRole');
             if (roleBadge) {
-                roleBadge.textContent = _currentRole;
-                roleBadge.className = 'chat-subnav-role ' + (_currentRole || 'viewer').toLowerCase();
+                roleBadge.textContent = _currentRole || 'No Access';
+                roleBadge.className = 'chat-subnav-role ' + (_currentRole || 'noaccess').toLowerCase();
                 roleBadge.style.display = '';
             }
 
+            var hasAccess      = _currentRole !== null;
             var isAdminOrOwner = _currentRole === 'Admin' || _isOwner;
             var isEditorPlus   = _currentRole === 'Admin' || _currentRole === 'Editor' || _isOwner;
-            var isViewerOnly   = _currentRole === 'Viewer' && !_isOwner;
+            var isRestricted   = !hasAccess || (_currentRole === 'Viewer' && !_isOwner);
 
             // Toggle edit controls based on role
             var editControls = document.querySelectorAll('[data-role-min="editor"]');
@@ -75,12 +86,19 @@
                 el.style.display = isEditorPlus ? '' : 'none';
             });
             document.querySelectorAll('.perm-viewer-hidden').forEach(function (el) {
-                el.style.display = isViewerOnly ? 'none' : '';
+                el.style.display = isRestricted ? 'none' : '';
             });
 
-            // Hide AI Insights entirely for Viewers
-            if (isViewerOnly) {
-                document.querySelectorAll('#aiInsightsSection, .agent-panel, .btn-create-agent').forEach(function (el) {
+            // Hide AI Insights and all mutation controls for Viewers and no-access users
+            if (isRestricted) {
+                document.querySelectorAll(
+                    '#aiInsightsSection, .agent-panel, .btn-create-agent, ' +
+                    '#newArtifactInsightsBtn, ' +
+                    '.wfe-insights-del, .wfe-artifact-del, ' +
+                    '.wfe-header-actions, .wfe-ws-actions, ' +
+                    '.wf-flow-node.wf-flow-datasource, .wf-flow-node.wf-flow-agent, ' +
+                    '.wf-flow-h-line'
+                ).forEach(function (el) {
                     el.style.display = 'none';
                 });
                 document.body.classList.add('viewer-mode');
@@ -89,44 +107,26 @@
             }
         },
 
-        // ── Gear icons on workspace list items ──────────────
+        // ── Gear icons on workspace list items (OrgAdmin only) ──
         _wireGearIcons() {
-            // Use mutation observer to attach gear icons as workspace items are added
             var list = document.getElementById('workspaceList');
             if (!list) return;
 
-            var obs = new MutationObserver(function () {
-                list.querySelectorAll('.panel-list-item:not([data-gear-wired])').forEach(function (item) {
-                    item.dataset.gearWired = '1';
-                    var wsId = item.dataset.workspaceId;
-                    if (!wsId || wsId === '0') return;
+            function _isUserOrgAdmin() {
+                try {
+                    var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                    return u && (u.role === 'OrgAdmin' || u.role === 'SuperAdmin');
+                } catch (e) { return false; }
+            }
 
-                    // Make item flex for gear positioning
-                    item.style.display = 'flex';
-                    item.style.alignItems = 'center';
-
-                    var gear = document.createElement('button');
-                    gear.className = 'wf-ws-gear-btn';
-                    gear.title = 'Workspace Settings';
-                    gear.innerHTML = '<i class="bi bi-gear-fill"></i>';
-                    gear.addEventListener('click', function (e) {
-                        e.stopPropagation();
-                        if (window.workspaceSettings) {
-                            window.workspaceSettings.open(wsId);
-                        }
-                    });
-                    item.appendChild(gear);
-                });
-            });
-            obs.observe(list, { childList: true, subtree: true });
-
-            // Wire existing items
-            list.querySelectorAll('.panel-list-item').forEach(function (item) {
+            function _attachGear(item) {
                 var wsId = item.dataset.workspaceId;
-                if (!wsId || wsId === '0' || item.dataset.gearWired) return;
+                if (!wsId || wsId === '0') return;
                 item.dataset.gearWired = '1';
                 item.style.display = 'flex';
                 item.style.alignItems = 'center';
+
+                if (!_isUserOrgAdmin()) return;
 
                 var gear = document.createElement('button');
                 gear.className = 'wf-ws-gear-btn';
@@ -139,6 +139,17 @@
                     }
                 });
                 item.appendChild(gear);
+            }
+
+            var obs = new MutationObserver(function () {
+                list.querySelectorAll('.panel-list-item:not([data-gear-wired])').forEach(_attachGear);
+            });
+            obs.observe(list, { childList: true, subtree: true });
+
+            // Wire existing items
+            list.querySelectorAll('.panel-list-item').forEach(function (item) {
+                if (item.dataset.gearWired) return;
+                _attachGear(item);
             });
         },
 

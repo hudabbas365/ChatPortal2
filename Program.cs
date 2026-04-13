@@ -61,6 +61,14 @@ builder.Services.AddAuthentication(options =>
                 context.Response.Redirect("/auth/login");
             }
             return Task.CompletedTask;
+        },
+        OnForbidden = context =>
+        {
+            if (!context.Response.HasStarted && context.Request.Headers["Accept"].ToString().Contains("text/html"))
+            {
+                context.Response.Redirect("/access-denied?statusCode=403");
+            }
+            return Task.CompletedTask;
         }
     };
 });
@@ -82,7 +90,13 @@ builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 
 // Session support
 builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession();
+builder.Services.AddSession(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+});
 
 // MVC with views + Newtonsoft.Json
 builder.Services.AddControllersWithViews()
@@ -412,6 +426,25 @@ app.UseRouting();
 app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Redirect 401/403 to the Access Denied page for browser requests
+app.UseStatusCodePages(async context =>
+{
+    var response = context.HttpContext.Response;
+    var request = context.HttpContext.Request;
+    if (response.StatusCode is 401 or 403)
+    {
+        var accept = request.Headers.Accept.ToString();
+        var isApi = request.Path.StartsWithSegments("/api")
+                    || accept.Contains("application/json")
+                    || request.Headers.ContainsKey("X-Requested-With");
+        if (!isApi)
+        {
+            response.Redirect($"/access-denied?statusCode={response.StatusCode}");
+        }
+    }
+});
+
 app.MapDefaultControllerRoute();
 
 app.Run();

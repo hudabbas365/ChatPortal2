@@ -38,6 +38,7 @@ public class DashboardController : Controller
     public async Task<IActionResult> Index([FromQuery] string? report, [FromQuery] string? workspace)
     {
         CanvasState canvas;
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
         // If a report guid is provided, load that report's canvas for editing
         if (!string.IsNullOrEmpty(report))
@@ -47,6 +48,14 @@ public class DashboardController : Controller
                 .FirstOrDefaultAsync(r => r.Guid == report);
             if (rpt != null && !string.IsNullOrEmpty(rpt.CanvasJson))
             {
+                // Permission check: verify user can access the report's workspace
+                if (rpt.WorkspaceId > 0 && !await _permissions.CanViewAsync(rpt.WorkspaceId, currentUserId))
+                {
+                    var appUser = await _db.Users.FindAsync(currentUserId);
+                    if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                        return Redirect("/access-denied?statusCode=403");
+                }
+
                 canvas = JsonConvert.DeserializeObject<CanvasState>(rpt.CanvasJson) ?? new CanvasState();
                 canvas.CanvasName = rpt.Name ?? canvas.CanvasName;
                 ViewBag.ReportGuid = rpt.Guid;
@@ -84,6 +93,14 @@ public class DashboardController : Controller
             var ws = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == workspace);
             if (ws != null)
             {
+                // Permission check: verify user can access this workspace
+                if (!await _permissions.CanViewAsync(ws.Id, currentUserId))
+                {
+                    var appUser = await _db.Users.FindAsync(currentUserId);
+                    if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                        return Redirect("/access-denied?statusCode=403");
+                }
+
                 // Find the most recent report in this workspace
                 var latestReport = await _db.Reports
                     .Where(r => r.WorkspaceId == ws.Id && !string.IsNullOrEmpty(r.CanvasJson))
@@ -163,7 +180,7 @@ public class DashboardController : Controller
             role,
             canEdit = role == "Admin" || role == "Editor",
             canDelete = role == "Admin",
-            canView = true
+            canView = role != null
         });
     }
 }

@@ -1,6 +1,10 @@
+using ChatPortal2.Data;
+using ChatPortal2.Models;
 using ChatPortal2.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -8,11 +12,21 @@ public class SeoController : Controller
 {
     private readonly ISeoService _seoService;
     private readonly IConfiguration _config;
+    private readonly AppDbContext _db;
 
-    public SeoController(ISeoService seoService, IConfiguration config)
+    public SeoController(ISeoService seoService, IConfiguration config, AppDbContext db)
     {
         _seoService = seoService;
         _config = config;
+        _db = db;
+    }
+
+    private async Task<bool> IsAdminCallerAsync()
+    {
+        var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (string.IsNullOrEmpty(callerId)) return false;
+        var caller = await _db.Users.FindAsync(callerId);
+        return caller?.Role == "SuperAdmin" || caller?.Role == "OrgAdmin";
     }
 
     // PUBLIC ENDPOINTS
@@ -53,6 +67,7 @@ public class SeoController : Controller
     [HttpPost("/api/seo")]
     public async Task<IActionResult> Create([FromBody] ChatPortal2.Models.SeoEntry entry)
     {
+        if (!await IsAdminCallerAsync()) return Forbid();
         entry.Id = 0;
         var result = await _seoService.CreateOrUpdateAsync(entry);
         return Ok(result);
@@ -62,6 +77,7 @@ public class SeoController : Controller
     [HttpPut("/api/seo/{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ChatPortal2.Models.SeoEntry entry)
     {
+        if (!await IsAdminCallerAsync()) return Forbid();
         entry.Id = id;
         var result = await _seoService.CreateOrUpdateAsync(entry);
         return Ok(result);
@@ -71,6 +87,7 @@ public class SeoController : Controller
     [HttpDelete("/api/seo/{id}")]
     public async Task<IActionResult> Delete(int id)
     {
+        if (!await IsAdminCallerAsync()) return Forbid();
         await _seoService.DeleteAsync(id);
         return Ok(new { success = true });
     }
@@ -79,6 +96,7 @@ public class SeoController : Controller
     [HttpPost("/api/seo/seed")]
     public async Task<IActionResult> Seed()
     {
+        if (!await IsAdminCallerAsync()) return Forbid();
         await _seoService.SeedDefaultEntriesAsync();
         return Ok(new { success = true });
     }

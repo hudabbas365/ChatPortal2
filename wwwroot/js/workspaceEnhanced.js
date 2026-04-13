@@ -58,24 +58,30 @@
 
         _enhanceWorkspaceItem(guid) {
             if (!guid || guid === '0') return;
+            var WR = window.workspaceRoles;
+            if (!WR || !WR.canEdit()) return;
             var item = document.querySelector('#workspaceList .panel-list-item[data-workspace-id="' + guid + '"]');
             if (!item || item.querySelector('.wfe-ws-actions')) return;
 
+            var isAdmin = WR.canAdmin();
             var actions = document.createElement('span');
             actions.className = 'wfe-ws-actions';
             actions.innerHTML =
                 '<button class="wfe-ws-btn wfe-ws-edit" title="Rename"><i class="bi bi-pencil"></i></button>' +
-                '<button class="wfe-ws-btn wfe-ws-del" title="Delete"><i class="bi bi-trash3"></i></button>';
+                (isAdmin ? '<button class="wfe-ws-btn wfe-ws-del" title="Delete"><i class="bi bi-trash3"></i></button>' : '');
             item.appendChild(actions);
 
             actions.querySelector('.wfe-ws-edit').addEventListener('click', function (e) {
                 e.stopPropagation();
                 WFE._renameWorkspace(guid, item);
             });
-            actions.querySelector('.wfe-ws-del').addEventListener('click', function (e) {
-                e.stopPropagation();
-                WFE._deleteWorkspace(guid, item);
-            });
+            var delBtn = actions.querySelector('.wfe-ws-del');
+            if (delBtn) {
+                delBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    WFE._deleteWorkspace(guid, item);
+                });
+            }
         },
 
         _renameWorkspace(guid, item) {
@@ -160,6 +166,8 @@
            Feature 1 — Delete AI Insights (cascade: datasource + agents + reports)
            ═══════════════════════════════════════════════════ */
         _injectArtifactDeleteBtns(data) {
+            var WR = window.workspaceRoles;
+            if (!WR || !WR.canAdmin()) return;
             var self = this;
             // Single cascade delete button on each lineage row (datasource group)
             document.querySelectorAll('.wf-flow-diagram').forEach(function (row) {
@@ -197,6 +205,8 @@
         },
 
         _appendDeleteBtn(el, type, guid, wsData) {
+            var WR = window.workspaceRoles;
+            if (!WR || !WR.canAdmin()) return;
             if (el.querySelector('.wfe-artifact-del')) return;
             var self = this;
             var btn = document.createElement('button');
@@ -260,15 +270,18 @@
            Feature 6 part 2 — Edit / delete in home header
            ═══════════════════════════════════════════════════ */
         _injectHomeHeaderActions(data) {
+            var WR = window.workspaceRoles;
+            if (!WR || !WR.canEdit()) return;
             var meta = document.querySelector('.wf-home-header .wf-home-meta');
             if (!meta || meta.querySelector('.wfe-header-actions')) return;
             var self = this;
+            var isAdmin = WR.canAdmin();
 
             var wrap = document.createElement('div');
             wrap.className = 'wfe-header-actions';
             wrap.innerHTML =
                 '<button class="wfe-hdr-btn" title="Rename workspace"><i class="bi bi-pencil"></i></button>' +
-                '<button class="wfe-hdr-btn wfe-hdr-del" title="Delete workspace"><i class="bi bi-trash3"></i></button>';
+                (isAdmin ? '<button class="wfe-hdr-btn wfe-hdr-del" title="Delete workspace"><i class="bi bi-trash3"></i></button>' : '');
             meta.appendChild(wrap);
 
             // Rename via contentEditable
@@ -324,10 +337,13 @@
             });
 
             // Delete workspace from home header
-            wrap.querySelector('.wfe-hdr-del').addEventListener('click', function () {
-                var item = document.querySelector('#workspaceList .panel-list-item[data-workspace-id="' + data.guid + '"]');
-                self._deleteWorkspace(data.guid, item);
-            });
+            var delBtn = wrap.querySelector('.wfe-hdr-del');
+            if (delBtn) {
+                delBtn.addEventListener('click', function () {
+                    var item = document.querySelector('#workspaceList .panel-list-item[data-workspace-id="' + data.guid + '"]');
+                    self._deleteWorkspace(data.guid, item);
+                });
+            }
         },
 
         /* ═══════════════════════════════════════════════════

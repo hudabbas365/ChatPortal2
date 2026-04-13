@@ -634,7 +634,7 @@
                         <option value="bar" ${suggestedChart==='bar'?'selected':''}>Bar</option>
                         <option value="line" ${suggestedChart==='line'?'selected':''}>Line</option>
                         <option value="pie" ${suggestedChart==='pie'?'selected':''}>Pie</option>
-                        <option value="doughnut" ${suggestedChart==='donut'?'selected':''}>Donut</option>
+                        <option value="doughnut" ${suggestedChart==='donut'||suggestedChart==='doughnut'?'selected':''}>Donut</option>
                     </select>
                     <label class="form-label mb-0 small">Label:</label>
                     <select class="form-select form-select-sm dr-label-sel" style="width:auto">
@@ -717,7 +717,7 @@
                         labels,
                         datasets: [{ label: valueField, data: values, backgroundColor: ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548'] }]
                     },
-                    options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: chartType === 'pie' || chartType === 'donut' } } }
+                    options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: chartType === 'pie' || chartType === 'doughnut' || chartType === 'donut' } } }
                 });
             }
         }
@@ -1173,6 +1173,12 @@
             const wsName = item.textContent.trim();
             currentWorkspaceId = wsId;
             currentChatId = null;
+
+            // Clear agent/datasource context from previous workspace
+            window.currentAgentGuid = null;
+            window.currentDatasourceId = null;
+            window.currentDatasourceName = null;
+            window.currentDatasourceType = null;
 
             // Update topbar + subnav title (only for named workspaces)
             if (wsId) {

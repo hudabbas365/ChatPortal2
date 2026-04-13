@@ -198,6 +198,15 @@ class WorkspaceSettings {
     // ── Public open / close ──────────────────────────────────────
 
     async open(workspaceId) {
+        // Only OrgAdmin / SuperAdmin can access settings
+        try {
+            var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
+            if (!u || (u.role !== 'OrgAdmin' && u.role !== 'SuperAdmin')) {
+                console.warn('Settings access denied — OrgAdmin required.');
+                return;
+            }
+        } catch (e) { return; }
+
         this._workspaceId = workspaceId;
         this._activeTab = 'general';
         this._switchTab('general');

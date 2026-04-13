@@ -33,6 +33,22 @@ public class ReportController : Controller
             .FirstOrDefaultAsync(r => r.Guid == guid);
         if (report == null) return NotFound();
 
+        // Anonymous users can only view published reports
+        if (User.Identity?.IsAuthenticated != true && report.Status != "Published")
+            return Redirect("/access-denied?statusCode=401");
+
+        // Authenticated users must have workspace access (or report must be Published)
+        if (User.Identity?.IsAuthenticated == true && report.Status != "Published" && report.WorkspaceId > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return Redirect("/access-denied?statusCode=403");
+            }
+        }
+
         ViewBag.ReportGuid = report.Guid;
         ViewBag.ReportName = report.Name;
         ViewBag.CanvasJson = report.CanvasJson;
@@ -51,6 +67,14 @@ public class ReportController : Controller
     {
         var ws = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == workspaceGuid);
         if (ws == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (!await _permissions.CanViewAsync(ws.Id, userId))
+        {
+            var appUser = await _db.Users.FindAsync(userId);
+            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                return StatusCode(403, new { error = "You do not have access to this workspace." });
+        }
 
         var reports = await _db.Reports
             .Where(r => r.WorkspaceId == ws.Id)
@@ -83,6 +107,17 @@ public class ReportController : Controller
             .Include(r => r.Workspace)
             .FirstOrDefaultAsync(r => r.Guid == guid);
         if (report == null) return NotFound();
+
+        if (report.WorkspaceId > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this report." });
+            }
+        }
 
         return Ok(new
         {

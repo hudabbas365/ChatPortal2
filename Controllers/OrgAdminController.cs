@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ChatPortal2.Controllers;
 
@@ -26,12 +27,28 @@ public class OrgAdminController : Controller
         _config = config;
     }
 
+    private async Task<ApplicationUser?> GetCallerAsync()
+    {
+        var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        return string.IsNullOrEmpty(callerId) ? null : await _db.Users.FindAsync(callerId);
+    }
+
+    private bool IsOrgAdminOf(ApplicationUser caller, int organizationId)
+    {
+        if (caller.Role == "SuperAdmin") return true;
+        return caller.Role == "OrgAdmin" && caller.OrganizationId == organizationId;
+    }
+
     [HttpGet("/org/settings")]
     public IActionResult Settings() => View();
 
     [HttpGet("/api/org/users")]
     public async Task<IActionResult> GetUsers([FromQuery] int organizationId)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null || !IsOrgAdminOf(caller, organizationId))
+            return StatusCode(403, new { error = "You do not have permission to view this organization's users." });
+
         var users = await _db.Users
             .Where(u => u.OrganizationId == organizationId)
             .Select(u => new { u.Id, u.FullName, u.Email, u.Role, u.Status, u.CreatedAt })
@@ -42,6 +59,10 @@ public class OrgAdminController : Controller
     [HttpPost("/api/org/users/invite")]
     public async Task<IActionResult> InviteUser([FromBody] InviteUserRequest req)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null || !IsOrgAdminOf(caller, req.OrganizationId))
+            return StatusCode(403, new { error = "You do not have permission to invite users to this organization." });
+
         if (string.IsNullOrEmpty(req.Email))
             return BadRequest(new { error = "Email is required." });
 
@@ -98,8 +119,19 @@ public class OrgAdminController : Controller
     [HttpPut("/api/org/users/{id}/role")]
     public async Task<IActionResult> UpdateRole(string id, [FromBody] UpdateRoleRequest req)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound();
+
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to change this user's role." });
+
+        // Prevent escalation to SuperAdmin by non-SuperAdmin
+        if (req.Role == "SuperAdmin" && caller.Role != "SuperAdmin")
+            return StatusCode(403, new { error = "Only a SuperAdmin can assign the SuperAdmin role." });
+
         user.Role = req.Role ?? user.Role;
         await _userManager.UpdateAsync(user);
         return Ok(new { success = true });
@@ -108,8 +140,15 @@ public class OrgAdminController : Controller
     [HttpPut("/api/org/users/{id}/suspend")]
     public async Task<IActionResult> SuspendUser(string id)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound();
+
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to suspend this user." });
+
         await _userManager.SetLockoutEnabledAsync(user, true);
         await _userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
         return Ok(new { success = true });
@@ -118,8 +157,15 @@ public class OrgAdminController : Controller
     [HttpDelete("/api/org/users/{id}")]
     public async Task<IActionResult> RemoveUser(string id)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound();
+
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to remove this user." });
+
         user.OrganizationId = null;
         await _userManager.UpdateAsync(user);
         return Ok(new { success = true });
@@ -128,6 +174,14 @@ public class OrgAdminController : Controller
     [HttpPost("/api/org/users/create")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null || (req.OrganizationId > 0 && !IsOrgAdminOf(caller, req.OrganizationId)))
+            return StatusCode(403, new { error = "You do not have permission to create users in this organization." });
+
+        // Prevent creating users with SuperAdmin role by non-SuperAdmin
+        if (req.Role == "SuperAdmin" && caller?.Role != "SuperAdmin")
+            return StatusCode(403, new { error = "Only a SuperAdmin can create SuperAdmin users." });
+
         if (string.IsNullOrEmpty(req.Username))
             return BadRequest(new { error = "Username is required." });
         if (string.IsNullOrEmpty(req.Password))
@@ -186,8 +240,14 @@ public class OrgAdminController : Controller
     [HttpPost("/api/org/users/{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordRequest req)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { error = "User not found." });
+
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to reset this user's password." });
 
         var newPassword = req.NewPassword;
         if (string.IsNullOrEmpty(newPassword))
@@ -225,6 +285,10 @@ public class OrgAdminController : Controller
     [HttpGet("/api/org/token-usage")]
     public async Task<IActionResult> GetTokenUsage([FromQuery] int organizationId)
     {
+        var caller = await GetCallerAsync();
+        if (caller == null || !IsOrgAdminOf(caller, organizationId))
+            return StatusCode(403, new { error = "You do not have permission to view this organization's token usage." });
+
         var status = await _tokenBudget.GetStatusAsync(organizationId);
         return Ok(status);
     }

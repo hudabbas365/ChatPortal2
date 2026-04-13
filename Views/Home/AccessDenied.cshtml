@@ -1,0 +1,75 @@
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Access Denied";
+    var code = (int)(ViewData["StatusCode"] ?? 401);
+    var isUnauthorized = code == 401;
+}
+
+<section class="ad-page">
+    <div class="ad-container">
+        <!-- Animated Shield Icon -->
+        <div class="ad-icon-wrap">
+            <div class="ad-icon-ring"></div>
+            <div class="ad-icon-ring ad-icon-ring--delay"></div>
+            <div class="ad-icon-circle">
+                <i class="bi @(isUnauthorized ? "bi-shield-lock" : "bi-shield-x")"></i>
+            </div>
+        </div>
+
+        <!-- Error Code -->
+        <div class="ad-code">@code</div>
+
+        <!-- Title & Message -->
+        <h1 class="ad-title">
+            @(isUnauthorized ? "Authentication Required" : "Access Denied")
+        </h1>
+        <p class="ad-message">
+            @if (isUnauthorized)
+            {
+                <span>You need to sign in to access this resource. Please log in with valid credentials and try again.</span>
+            }
+            else
+            {
+                <span>You do not have permission to access this resource. If you believe this is a mistake, contact your workspace administrator.</span>
+            }
+        </p>
+
+        <!-- Info Card -->
+        <div class="ad-info-card">
+            <div class="ad-info-row">
+                <i class="bi bi-clock-history"></i>
+                <span>@DateTime.UtcNow.ToString("dd MMM yyyy, HH:mm") UTC</span>
+            </div>
+            <div class="ad-info-row">
+                <i class="bi bi-person-badge"></i>
+                <span>@(User.Identity?.IsAuthenticated == true ? User.Identity.Name ?? "Authenticated User" : "Unauthenticated")</span>
+            </div>
+            <div class="ad-info-row">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>Error @code — @(isUnauthorized ? "Unauthorized" : "Forbidden")</span>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="ad-actions">
+            <button class="ad-btn ad-btn--primary" onclick="history.back()">
+                <i class="bi bi-arrow-left-circle me-2"></i>Go Back
+            </button>
+            <a href="/" class="ad-btn ad-btn--outline">
+                <i class="bi bi-house me-2"></i>Home
+            </a>
+            @if (isUnauthorized)
+            {
+                <a href="/auth/login" class="ad-btn ad-btn--accent">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+                </a>
+            }
+        </div>
+
+        <!-- Decorative Particles -->
+        <div class="ad-particles" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+        </div>
+    </div>
+</section>

@@ -82,9 +82,21 @@ public class DatasourceController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int organizationId)
     {
-        var datasources = await _db.Datasources
-            .Where(d => d.OrganizationId == organizationId)
-            .ToListAsync();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+
+        var query = _db.Datasources.Where(d => d.OrganizationId == organizationId);
+
+        if (!isOrgLevel)
+        {
+            query = query.Where(d =>
+                !d.WorkspaceId.HasValue ||
+                _db.Workspaces.Any(w => w.Id == d.WorkspaceId && w.OwnerId == userId) ||
+                _db.WorkspaceUsers.Any(wu => wu.WorkspaceId == d.WorkspaceId && wu.UserId == userId));
+        }
+
+        var datasources = await query.ToListAsync();
         return Ok(datasources);
     }
 
@@ -132,6 +144,17 @@ public class DatasourceController : ControllerBase
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
 
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
         {
             try
@@ -177,6 +200,17 @@ public class DatasourceController : ControllerBase
     {
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
+
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
         {
@@ -241,6 +275,17 @@ public class DatasourceController : ControllerBase
     {
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
+
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
 
         List<object>? schema = null;
 

@@ -1880,7 +1880,7 @@ class ChartRenderer {
             confidenceBand: 'line', timeLine: 'line', rangeArea: 'line',
             slope: 'line', sparkline: 'line', stackedArea100: 'line',
             pie: 'pie', sunburst: 'pie', chordDiagram: 'pie',
-            donut: 'doughnut', gauge: 'doughnut', radialProgress: 'doughnut',
+            donut: 'doughnut', doughnut: 'doughnut', gauge: 'doughnut', radialProgress: 'doughnut',
             nightingaleRose: 'polarArea', polarArea: 'polarArea',
             scatter: 'scatter', dotPlot: 'scatter', networkGraph: 'scatter',
             arcDiagram: 'scatter', forceDirected: 'scatter', regressionLine: 'scatter',

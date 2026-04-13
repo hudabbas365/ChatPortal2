@@ -25,6 +25,10 @@ public class AdminController : Controller
     [HttpGet("/admin")]
     public async Task<IActionResult> Index()
     {
+        var user = await _userManager.GetUserAsync(User);
+        if (user == null || (user.Role != "OrgAdmin" && user.Role != "SuperAdmin"))
+            return Redirect("/access-denied?statusCode=403");
+
         ViewBag.TotalOrgs = await _db.Organizations.CountAsync();
         ViewBag.TotalUsers = await _db.Users.CountAsync();
         ViewBag.TotalWorkspaces = await _db.Workspaces.CountAsync();
@@ -38,7 +42,7 @@ public class AdminController : Controller
         // Verify caller is SuperAdmin
         var user = await _userManager.GetUserAsync(User);
         if (user == null || user.Role != "SuperAdmin")
-            return Forbid();
+            return Redirect("/access-denied?statusCode=403");
 
         ViewBag.TotalOrgs = await _db.Organizations.CountAsync();
         ViewBag.TotalUsers = await _db.Users.CountAsync();
