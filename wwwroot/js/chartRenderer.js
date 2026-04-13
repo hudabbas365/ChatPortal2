@@ -482,6 +482,10 @@ class ChartRenderer {
         // ---- Generic fallback ----
         const type = this.mapType(ct);
         const options = this._baseOptions(chartDef);
+        // Pie/doughnut/polar charts don't use cartesian axes
+        if (['pie', 'doughnut', 'polarArea'].includes(type)) {
+            options.scales = {};
+        }
         const isPerPoint = ['pie','doughnut','polarArea','bar'].includes(type);
         const bgColorArr = isPerPoint ? colors.slice(0, values.length).map(c => c + 'CC') : colors[0] + 'CC';
         const bdColorArr = isPerPoint ? colors.slice(0, values.length) : colors[0];
@@ -1150,6 +1154,7 @@ class ChartRenderer {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const vals = values.length ? values : lbls.map(()=>Math.round(20+Math.random()*60));
         const opts = this._baseOptions(chartDef);
+        opts.scales = {};
         return {
             type: 'polarArea',
             data: { labels: lbls, datasets: [{ label: chartDef.title||'Value', data: vals, backgroundColor: colors.map(c=>c+'CC') }] },
