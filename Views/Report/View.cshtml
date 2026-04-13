@@ -27,7 +27,7 @@
     <link rel="stylesheet" href="~/css/report-viewer.css" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
 </head>
-<body>
+<body class="rv-body">
     <nav class="rv-navbar">
         <a href="/" class="rv-brand">
             <i class="bi bi-bar-chart-fill text-primary"></i>
@@ -174,12 +174,13 @@
             return;
         }
 
-        // Match dashboard colsToPixels calculation exactly (canvasManager.js)
-        // 600px accounts for sidebar/toolbar space; 900px is the maximum canvas width
+        // Report view has no sidebar; base width on the rv-canvas-wrap element width.
+        // 1168 = 1200px max-width minus 2×16px padding (32px total) = 1168px usable width.
         function colsToPixels(width) {
-            const baseWidth = Math.min(window.innerWidth - 600, 900);
+            const wrapEl = document.getElementById('rvCanvasWrap');
+            const availableWidth = Math.min(wrapEl ? wrapEl.clientWidth : window.innerWidth, 1168);
             const pct = (parseInt(width) || 6) / 12;
-            return Math.round(Math.max(200, baseWidth * pct));
+            return Math.round(Math.max(200, availableWidth * pct));
         }
 
         pages.forEach((page, pi) => {
@@ -236,7 +237,7 @@
                     pageEl.appendChild(card);
                     requestAnimationFrame(() => ShapeManager.render(canvasWrap, c));
                 } else {
-                    // Chart: add header + canvas, render with chartRenderer (same engine as dashboard)
+                    // Chart: add header + canvasWrap, let chartRenderer create its own canvas
                     const header = document.createElement('div');
                     header.className = 'chart-card-header';
                     const titleSpan = document.createElement('span');
@@ -254,18 +255,24 @@
                     const canvasWrap = document.createElement('div');
                     canvasWrap.className = 'chart-canvas-wrap';
                     canvasWrap.style.height = (cardHeight - 36) + 'px';
-                    const canvas = document.createElement('canvas');
-                    canvasWrap.appendChild(canvas);
+                    canvasWrap.style.width = '100%';
+                    canvasWrap.style.position = 'relative';
                     card.appendChild(canvasWrap);
                     pageEl.appendChild(card);
 
                     // Ensure datasource context on chart definition
                     if (!c.datasourceId && datasourceId) c.datasourceId = datasourceId;
 
-                    // Render using the same engine as the Dashboard
-                    if (window.chartRenderer) {
-                        requestAnimationFrame(() => chartRenderer.render(c, canvas));
-                    }
+                    // Capture for closure
+                    const chartDefCopy = Object.assign({}, c);
+                    const wrapRef = canvasWrap;
+                    // Use setTimeout(50ms) so the absolutely-positioned card has been laid out
+                    // by the browser and clientWidth returns a non-zero value for _makeCanvas.
+                    setTimeout(() => {
+                        if (window.chartRenderer) {
+                            chartRenderer.render(chartDefCopy, wrapRef);
+                        }
+                    }, 50);
                 }
             });
 
