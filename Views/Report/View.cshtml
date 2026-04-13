@@ -218,7 +218,7 @@
                 // Build card using the same .chart-card classes as the Dashboard
                 const card = document.createElement('div');
                 card.className = 'chart-card' + (isShape ? ' shape-card' : '');
-                card.style.cssText = 'left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;z-index:' + zIdx + ';';
+                card.style.cssText = 'position:absolute;left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;height:' + cardHeight + 'px;z-index:' + zIdx + ';';
 
                 if (isShape) {
                     // Shape: render SVG via ShapeManager (same as dashboard)
