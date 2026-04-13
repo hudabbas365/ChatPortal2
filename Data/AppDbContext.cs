@@ -84,7 +84,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(a => a.Workspace)
             .WithMany()
             .HasForeignKey(a => a.WorkspaceId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.Entity<Dashboard>()
             .HasOne(d => d.Workspace)
@@ -148,7 +148,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(d => d.Workspace)
             .WithMany()
             .HasForeignKey(d => d.WorkspaceId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.Entity<WorkspaceUser>()
             .HasOne(wu => wu.Workspace)
