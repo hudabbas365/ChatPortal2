@@ -99,7 +99,7 @@
 
     // ── Message helpers ────────────────────────────────────────────────────────
     function _now() {
-        return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
     function addUserBubble(text) {
@@ -192,7 +192,7 @@
 
             if (!resp.ok) {
                 aiBubble.classList.remove('streaming');
-                aiBubble.textContent = 'Error ' + resp.status + ': ' + (await resp.text() || 'Request failed');
+                aiBubble.textContent = 'Request failed (HTTP ' + resp.status + '). Please try again.';
             } else {
                 // Stream tokens via aiStream helper
                 const streamHelper = global.aiStream;

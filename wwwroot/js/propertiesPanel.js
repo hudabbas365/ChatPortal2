@@ -509,7 +509,7 @@ class PropertiesPanel {
         document.querySelectorAll('.prop-section').forEach(section => {
             const title = section.querySelector('.prop-section-title');
             if (!title) return;
-            const sectionName = title.dataset.section || title.textContent.trim().replace(/[\n\t]/g,'').trim().toLowerCase().replace(/\s+/g,'_');
+            const sectionName = title.dataset.section || title.textContent.replace(/[\n\t]/g,'').trim().toLowerCase().replace(/\s+/g,'_');
 
             // Determine initial collapsed state: use saved state, fallback to default (Basic+Data open, Style collapsed)
             let isCollapsed;

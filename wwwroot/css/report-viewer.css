@@ -9,12 +9,17 @@ body.rv-body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-ser
 .rv-navbar {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 20px;
-    background: rgba(255,255,255,0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--cp-surface, #fff);
     border-bottom: 1px solid var(--cp-border, #e2e8f0);
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     position: sticky; top: 0; z-index: 100;
+}
+@supports (backdrop-filter: blur(12px)) {
+    .rv-navbar {
+        background: rgba(255,255,255,0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+    }
 }
 .rv-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
 .rv-brand:hover { color: var(--cp-primary, #4A90D9); }
