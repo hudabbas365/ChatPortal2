@@ -196,15 +196,15 @@
                             </div>
                         </div>
                         <div id="properties-empty" class="empty-state-small">
-                            <i class="bi bi-cursor-fill text-muted mb-2"></i>
-                            <small class="text-muted">Select a chart to edit its properties</small>
+                            <i class="bi bi-cursor" style="font-size:2.2rem;opacity:0.4"></i>
+                            <small style="font-size:0.8rem;line-height:1.5">Select a chart to<br>edit its properties</small>
                         </div>
                         <div id="properties-form" style="display:none">
                             <div id="properties-tab-content" class="properties-scroll">
                                 <div class="p-3">
                                     <!-- Basic -->
                                     <div class="prop-section">
-                                        <div class="prop-section-title">Basic</div>
+                                        <div class="prop-section-title" data-section="basic">Basic</div>
                                         <div class="mb-2">
                                             <label class="form-label">Title</label>
                                             <input type="text" id="prop-title" class="form-control form-control-sm">
@@ -328,22 +328,25 @@
 
                                     <!-- Data (chart-only) -->
                                     <div class="prop-section chart-only-section">
-                                        <div class="prop-section-title">Data</div>
+                                        <div class="prop-section-title" data-section="data">Data</div>
                                         <div class="mb-2">
-                                            <label class="form-label">Table</label>
-                                            <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
-                                                <option value="">-- Select table --</option>
-                                            </select>
+                                        <div class="prop-subgroup">
+                                            <div class="mb-2">
+                                                <label class="form-label">Table</label>
+                                                <select id="prop-dataset" class="form-select form-select-sm" onchange="propertiesPanel.datasetChanged()">
+                                                    <option value="">-- Select table --</option>
+                                                </select>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label class="form-label">Label Field</label>
+                                                <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label class="form-label">Value Field</label>
+                                                <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
+                                            </div>
                                         </div>
-                                        <div class="mb-2">
-                                            <label class="form-label">Label Field</label>
-                                            <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
-                                        </div>
-                                        <div class="mb-2">
-                                            <label class="form-label">Value Field</label>
-                                            <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
-                                        </div>
-                                        <div class="mb-2" id="multi-value-fields-section">
+                                        <div class="prop-subgroup" id="multi-value-fields-section">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
                                                 <label class="form-label mb-0" style="font-size:0.72rem">Additional Value Fields</label>
                                                 <button type="button" id="add-value-field-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add another value field">
@@ -393,7 +396,7 @@
                                         <div class="mb-2" style="display:none">
                                             <input type="hidden" id="prop-filter-where" />
                                         </div>
-                                        <div class="mb-2">
+                                        <div class="prop-subgroup">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
                                                 <label class="form-label mb-0">WHERE Conditions</label>
                                                 <button type="button" id="pp-add-condition-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-primary)" title="Add condition row">
@@ -402,7 +405,7 @@
                                             </div>
                                             <div id="pp-conditions"></div>
                                         </div>
-                                        <div class="mb-2">
+                                        <div class="prop-subgroup bg-alt">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
                                                 <label class="form-label mb-0">SQL Query</label>
                                                 <div class="d-flex gap-1">
@@ -425,7 +428,7 @@
 
                                     <!-- Style (chart-only) -->
                                     <div class="prop-section chart-only-section">
-                                        <div class="prop-section-title">Style</div>
+                                        <div class="prop-section-title" data-section="style">Style</div>
                                         <div class="mb-2">
                                             <label class="form-label">Primary Color</label>
                                             <input type="color" id="prop-color-palette" class="form-control form-control-sm">
@@ -469,7 +472,7 @@
 
                                     <!-- Shape Properties (shown only for shapes) -->
                                     <div class="prop-section" id="shape-props-section" style="display:none">
-                                        <div class="prop-section-title">Shape Style</div>
+                                        <div class="prop-section-title" data-section="shape_style">Shape Style</div>
                                         <div class="mb-2">
                                             <label class="form-label">Fill Color</label>
                                             <input type="color" id="prop-shape-fill" class="form-control form-control-sm">

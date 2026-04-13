@@ -1869,40 +1869,78 @@ body.dashboard-body {
 .chart-card {
     position: absolute;
     background: var(--cp-surface);
-    border-radius: var(--cp-radius);
+    border-radius: 12px;
     border: 2px solid transparent;
-    box-shadow: var(--cp-shadow-sm);
-    transition: border-color 0.15s, box-shadow 0.15s;
-    overflow: visible;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+    transition: border-color 0.15s, box-shadow 0.2s, transform 0.15s;
+    overflow: hidden;
     cursor: default;
     min-width: 200px;
 }
-.chart-card:hover { border-color: var(--cp-primary-light); box-shadow: 0 4px 16px rgba(91,155,213,0.14); }
+.chart-card:hover {
+    border-color: var(--cp-primary-light);
+    box-shadow: 0 4px 16px rgba(91,155,213,0.14), 0 12px 32px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+}
 .chart-card.selected {
     border-color: var(--cp-primary);
-    box-shadow: 0 0 0 3px rgba(91, 155, 213, 0.2);
+    box-shadow: 0 0 0 2px var(--cp-primary), 0 4px 20px rgba(91,155,213,0.18);
 }
 .chart-card.dragging {
     opacity: 0.85;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     cursor: grabbing;
+    transform: none;
 }
 .chart-card-header {
     display: flex;
     align-items: center;
-    padding: 8px 10px;
+    padding: 9px 12px 8px;
     background: var(--cp-surface);
     border-bottom: 1px solid var(--cp-border);
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: 0.82rem;
+    font-weight: 600;
+    gap: 6px;
 }
-.chart-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--cp-text);
+}
+.chart-subtitle {
+    font-size: 0.7rem;
+    color: var(--cp-text-muted);
+    font-weight: 400;
+    margin-left: auto;
+    flex-shrink: 0;
+}
 .chart-drag-handle { cursor: grab; color: var(--cp-text-muted); user-select: none; }
 .chart-drag-handle:hover { color: var(--cp-primary); }
 .chart-card-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.2s; }
 .chart-card:hover .chart-card-actions { opacity: 1; }
-.chart-canvas-wrap { padding: 8px; position: relative; }
+.chart-canvas-wrap { padding: 12px; position: relative; }
 .chart-canvas-wrap canvas { width: 100% !important; }
+/* Empty state overlay */
+.chart-no-data-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 6px;
+    color: var(--cp-text-muted); font-size: 0.82rem;
+}
+/* Loading skeleton shimmer */
+.chart-loading-skeleton {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, #f0f2f5 25%, #e8ecf1 50%, #f0f2f5 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s infinite;
+    border-radius: 0 0 10px 10px;
+}
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
 .chart-resize-handle {
     position: absolute;
     bottom: 0;
@@ -1911,7 +1949,7 @@ body.dashboard-body {
     height: 20px;
     cursor: nwse-resize;
     background: linear-gradient(135deg, transparent 50%, var(--cp-border) 50%);
-    border-radius: 0 0 var(--cp-radius) 0;
+    border-radius: 0 0 12px 0;
     opacity: 0;
     transition: opacity 0.2s;
     z-index: 5;
@@ -1933,20 +1971,95 @@ body.dashboard-body {
 .properties-scroll { flex: 1; overflow-y: auto; }
 .properties-scroll::-webkit-scrollbar { width: 4px; }
 .properties-scroll::-webkit-scrollbar-thumb { background: var(--cp-border); border-radius: 2px; }
-.prop-section { margin-bottom: 16px; padding: 0 14px; }
+.prop-section { margin-bottom: 4px; padding: 0; }
 .prop-section-title {
-    font-size: 0.7rem;
-    font-weight: 700;
+    display: flex;
+    align-items: center;
+    font-size: 0.78rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--cp-primary);
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--cp-primary-light);
+    letter-spacing: 0.5px;
+    color: var(--cp-text);
+    cursor: pointer;
+    padding: 8px 14px;
+    background: var(--cp-primary-light);
+    border-radius: 6px;
+    margin: 0 8px 2px;
+    user-select: none;
+    transition: background 0.15s;
 }
-/* Collapsible prop-sections */
+.prop-section-title:hover { background: #ddeeff; }
+.prop-section-title .prop-chevron { margin-left: auto; color: var(--cp-text-muted); font-size: 0.75rem; transition: transform 0.2s; }
+.prop-section-title.open .prop-chevron { transform: rotate(180deg); }
+.prop-section-body { padding: 8px 14px 4px; display: flex; flex-direction: column; gap: 10px; }
+.prop-section-body.collapsed { display: none; }
+/* Collapsible prop-sections (legacy fallback) */
 .prop-section.collapsed > *:not(.prop-section-title) { display: none; }
 .prop-section.collapsed .prop-section-title { margin-bottom: 4px; }
+/* Field sub-groups */
+.prop-subgroup {
+    border: 1px solid var(--cp-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--cp-surface);
+}
+.prop-subgroup.bg-alt {
+    background: var(--cp-bg);
+}
+/* Form control polish inside properties panel */
+.prop-section-body .form-label,
+#properties-form .form-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--cp-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.prop-section-body .form-control-sm,
+.prop-section-body .form-select-sm,
+#properties-form .form-control-sm,
+#properties-form .form-select-sm {
+    border-radius: 6px;
+    border-color: var(--cp-border);
+    font-size: 0.8rem;
+}
+.prop-section-body .form-control-sm:focus,
+.prop-section-body .form-select-sm:focus,
+#properties-form .form-control-sm:focus,
+#properties-form .form-select-sm:focus {
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 2px rgba(91,155,213,0.15);
+    outline: none;
+}
+/* Properties panel empty state */
+#properties-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--cp-text-muted);
+    text-align: center;
+    gap: 10px;
+}
+#properties-empty i {
+    font-size: 2.2rem;
+    opacity: 0.45;
+}
+#properties-empty small {
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+/* Properties panel body scrollable */
+#properties-section-body {
+    overflow-y: auto;
+    flex: 1;
+}
+
 
 /* Right-panel collapsible sections — split layout */
 .right-panel-section {

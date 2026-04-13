@@ -10,6 +10,7 @@
     var datasourceId = ViewBag.DatasourceId as int?;
     var status = ViewBag.Status as string ?? "Draft";
     var reportGuid = ViewBag.ReportGuid as string;
+    var savedAt = ViewBag.UpdatedAt as DateTime?;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -23,148 +24,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
     <link rel="stylesheet" href="~/css/site.css" />
     <link rel="stylesheet" href="~/css/dashboard-shapes.css" />
+    <link rel="stylesheet" href="~/css/report-viewer.css" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
-    <style>
-        body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-serif; margin: 0; }
-
-        /* ── Navbar ────────────────────────────────────── */
-        .rv-navbar {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px 20px; background: var(--cp-surface, #fff);
-            border-bottom: 1px solid var(--cp-border, #e2e8f0);
-            box-shadow: var(--cp-shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
-        }
-        .rv-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
-        .rv-brand:hover { color: var(--cp-primary, #4A90D9); }
-        .rv-brand-text { font-weight: 700; font-size: 0.95rem; }
-
-        /* ── Breadcrumbs ──────────────────────────────── */
-        .rv-breadcrumb {
-            display: flex; align-items: center; gap: 6px;
-            margin-left: 12px; font-size: 0.88rem;
-        }
-        .rv-breadcrumb a { color: var(--cp-primary, #4A90D9); text-decoration: none; font-weight: 500; }
-        .rv-breadcrumb a:hover { text-decoration: underline; }
-        .rv-breadcrumb .rv-sep { color: var(--cp-border, #cbd5e1); font-size: 0.7rem; }
-        .rv-breadcrumb .rv-current { font-weight: 600; color: var(--cp-text, #1e293b); }
-        .rv-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
-        .rv-badge-published { background: var(--cp-success-light, #d1fae5); color: var(--cp-success, #065f46); }
-        .rv-badge-draft { background: var(--cp-orange-light, #fef3c7); color: var(--cp-orange, #92400e); }
-        .rv-meta { display: flex; align-items: center; gap: 14px; font-size: 0.78rem; color: var(--cp-text-muted, #64748b); }
-        .rv-meta i { font-size: 0.72rem; }
-
-        /* ── Toolbar ──────────────────────────────────── */
-        .rv-toolbar {
-            margin-left: auto; display: flex; align-items: center; gap: 8px;
-        }
-        .rv-toolbar .btn {
-            display: inline-flex; align-items: center; gap: 5px;
-            font-size: 0.78rem; padding: 5px 12px; border-radius: var(--cp-radius, 6px);
-            font-weight: 500; border: 1px solid var(--cp-border, #e2e8f0);
-            background: var(--cp-surface, #fff); color: var(--cp-text, #475569);
-            cursor: pointer; transition: var(--cp-transition, all 0.15s);
-            text-decoration: none;
-        }
-        .rv-toolbar .btn:hover { background: var(--cp-bg, #f1f5f9); border-color: var(--cp-border, #cbd5e1); }
-        .rv-toolbar .btn i { font-size: 0.82rem; }
-        .rv-toolbar .btn-primary-rv {
-            background: var(--cp-gradient, #4A90D9); color: #fff; border-color: var(--cp-primary, #4A90D9);
-        }
-        .rv-toolbar .btn-primary-rv:hover { opacity: 0.9; }
-
-        /* ── Share modal ──────────────────────────────── */
-        .rv-share-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.4); z-index: 9999;
-            align-items: center; justify-content: center;
-        }
-        .rv-share-overlay.active { display: flex; }
-        .rv-share-box {
-            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 10px);
-            padding: 24px 28px; box-shadow: var(--cp-shadow, 0 8px 30px rgba(0,0,0,0.15));
-            width: 420px; max-width: 90vw;
-        }
-        .rv-share-box h5 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
-        .rv-share-url { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .rv-share-url input {
-            flex: 1; font-size: 0.8rem; padding: 7px 10px;
-            border: 1px solid var(--cp-border, #e2e8f0); border-radius: 6px;
-            background: var(--cp-bg, #f8fafc); color: var(--cp-text, #334155);
-        }
-        .rv-share-url button {
-            font-size: 0.78rem; padding: 7px 14px; border-radius: 6px;
-            border: 1px solid var(--cp-primary, #4A90D9); background: var(--cp-primary, #4A90D9);
-            color: #fff; cursor: pointer; white-space: nowrap; font-weight: 500;
-        }
-        .rv-share-url button:hover { opacity: 0.9; }
-        .rv-share-note { font-size: 0.72rem; color: var(--cp-text-muted, #94a3b8); margin-bottom: 8px; }
-        .rv-share-close {
-            font-size: 0.78rem; padding: 5px 14px; border-radius: 6px;
-            border: 1px solid var(--cp-border, #e2e8f0); background: var(--cp-surface, #fff);
-            color: var(--cp-text, #475569); cursor: pointer; float: right;
-        }
-
-        /* ── Canvas layout ────────────────────────────── */
-        .rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
-        .rv-page {
-            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 8px);
-            box-shadow: var(--cp-shadow-sm, 0 1px 4px rgba(0,0,0,0.06));
-            margin-bottom: 24px; padding: 16px;
-            position: relative; min-height: 400px; overflow: hidden;
-        }
-        .rv-page-title {
-            font-size: 0.78rem; font-weight: 600; color: var(--cp-text-muted, #94a3b8);
-            margin-bottom: 12px; padding-bottom: 6px;
-            border-bottom: 1px solid var(--cp-border, #f1f5f9);
-        }
-
-        /* ── Chart cards: reuse dashboard .chart-card from site.css, read-only overrides ── */
-        .rv-page .chart-card {
-            cursor: default;
-            overflow: hidden;
-        }
-        .rv-page .chart-card:hover {
-            border-color: var(--cp-primary-light);
-            transform: none;
-        }
-        .rv-page .chart-card .chart-card-actions,
-        .rv-page .chart-card .chart-drag-handle,
-        .rv-page .chart-card .chart-resize-handle,
-        .rv-page .chart-card .shape-hover-actions {
-            display: none !important;
-        }
-        .rv-page .chart-card.shape-card { cursor: default; }
-        .rv-page .chart-card.shape-card:hover { border-color: transparent; }
-        .rv-page .chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
-
-        /* ── Empty & export states ─────────────────────── */
-        .rv-empty { text-align: center; padding: 60px 20px; color: var(--cp-text-muted, #94a3b8); }
-        .rv-empty i { font-size: 2.5rem; margin-bottom: 12px; display: block; }
-        .rv-export-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.4); z-index: 9999;
-            align-items: center; justify-content: center;
-        }
-        .rv-export-overlay.active { display: flex; }
-        .rv-export-box {
-            background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 10px);
-            padding: 30px 40px; text-align: center;
-            box-shadow: var(--cp-shadow, 0 8px 30px rgba(0,0,0,0.15));
-        }
-        .rv-export-box .spinner-border { width: 2rem; height: 2rem; margin-bottom: 12px; }
-        .rv-export-box p { margin: 0; font-size: 0.9rem; color: var(--cp-text, #475569); }
-
-        @@media print {
-            body { background: #fff !important; }
-            .rv-navbar, .rv-toolbar, .rv-export-overlay, .rv-share-overlay { display: none !important; }
-            .rv-canvas-wrap { margin: 0; padding: 0; max-width: 100%; }
-            .rv-page {
-                box-shadow: none; border: none;
-                page-break-inside: avoid; break-inside: avoid;
-                margin-bottom: 0;
-            }
-        }
-    </style>
 </head>
 <body>
     <nav class="rv-navbar">
@@ -243,11 +104,52 @@
         </div>
     </div>
 
+    <!-- Footer -->
+    <footer class="rv-footer">
+        <span><i class="bi bi-bar-chart-fill" style="color:var(--cp-primary)"></i> Powered by ChatPortal2</span>
+        @if (savedAt.HasValue)
+        {
+            <span><i class="bi bi-clock"></i> Last saved: @savedAt.Value.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+        }
+    </footer>
+
+    <!-- Q&A FAB -->
+    <button class="rv-qa-fab" id="rv-qa-fab" title="Ask about this report" aria-label="Open AI Q&amp;A">
+        <i class="bi bi-chat-dots-fill"></i>
+    </button>
+
+    <!-- Q&A Panel -->
+    <div class="rv-qa-panel" id="rv-qa-panel" role="dialog" aria-label="AI Q&amp;A">
+        <div class="rv-qa-header">
+            <div class="rv-qa-header-icon"><i class="bi bi-stars"></i></div>
+            <div class="rv-qa-header-info">
+                <div class="rv-qa-header-title">Ask about this report</div>
+                <div class="rv-qa-header-sub">@reportName</div>
+            </div>
+            <button class="rv-qa-close" aria-label="Close Q&amp;A panel"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="rv-qa-chips"></div>
+        <div class="rv-qa-messages" id="rv-qa-messages"></div>
+        <div class="rv-qa-input-area">
+            <textarea class="rv-qa-textarea" placeholder="Ask a question about this report…" rows="1" maxlength="1000"></textarea>
+            <button class="rv-qa-send-btn" title="Send"><i class="bi bi-send-fill"></i></button>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="~/js/chartRenderer.js"></script>
     <script src="~/js/shapeManager.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="~/js/aiStream.js"></script>
+    <script>
+    // Global context for Q&A panel
+    window._rvReportGuid     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportGuid ?? ""));
+    window._rvWorkspaceGuid  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceGuid ?? ""));
+    window._rvDatasourceId   = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
+    window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
+    </script>
+    <script src="~/js/report-qa-panel.js"></script>
     <script>
     (function() {
         'use strict';
@@ -333,6 +235,12 @@
                     titleSpan.className = 'chart-title';
                     titleSpan.textContent = c.title || c.chartType || 'Chart';
                     header.appendChild(titleSpan);
+                    if (c.chartType) {
+                        const sub = document.createElement('span');
+                        sub.className = 'chart-subtitle';
+                        sub.textContent = c.chartType;
+                        header.appendChild(sub);
+                    }
                     card.appendChild(header);
 
                     const canvasWrap = document.createElement('div');

@@ -500,33 +500,66 @@ class PropertiesPanel {
         });
     }
 
-    // Initialize collapsible property sections (Data and Style collapsed by default)
+    // Initialize collapsible property sections with sessionStorage persistence
     initCollapsibleSections() {
+        const STORAGE_KEY = 'cp_prop_sections';
+        let savedState = {};
+        try { savedState = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}'); } catch {}
+
         document.querySelectorAll('.prop-section').forEach(section => {
             const title = section.querySelector('.prop-section-title');
             if (!title) return;
-            const sectionName = title.textContent.trim().toLowerCase();
-            // Collapse Data and Style sections by default
-            if (sectionName !== 'basic') {
-                section.classList.add('collapsed');
+            const sectionName = title.dataset.section || title.textContent.replace(/[\n\t]/g,'').trim().toLowerCase().replace(/\s+/g,'_');
+
+            // Determine initial collapsed state: use saved state, fallback to default (Basic+Data open, Style collapsed)
+            let isCollapsed;
+            if (sectionName in savedState) {
+                isCollapsed = savedState[sectionName];
+            } else {
+                const nameText = title.textContent.trim().toLowerCase();
+                isCollapsed = !(nameText.startsWith('basic') || nameText.startsWith('data'));
             }
+
+            // Apply state
+            if (isCollapsed) {
+                section.classList.add('collapsed');
+            } else {
+                section.classList.remove('collapsed');
+            }
+
             // Add chevron icon if not present
             if (!title.querySelector('.prop-chevron')) {
                 const chevron = document.createElement('i');
-                chevron.className = 'bi bi-chevron-down prop-chevron ms-auto';
+                chevron.className = isCollapsed
+                    ? 'bi bi-chevron-right prop-chevron ms-auto'
+                    : 'bi bi-chevron-down prop-chevron ms-auto';
                 title.style.display = 'flex';
                 title.style.alignItems = 'center';
                 title.style.cursor = 'pointer';
                 title.appendChild(chevron);
+            } else {
+                const chevron = title.querySelector('.prop-chevron');
+                chevron.className = isCollapsed
+                    ? 'bi bi-chevron-right prop-chevron ms-auto'
+                    : 'bi bi-chevron-down prop-chevron ms-auto';
             }
+
             title.addEventListener('click', () => {
                 section.classList.toggle('collapsed');
+                const collapsed = section.classList.contains('collapsed');
                 const chevron = title.querySelector('.prop-chevron');
                 if (chevron) {
-                    chevron.className = section.classList.contains('collapsed')
+                    chevron.className = collapsed
                         ? 'bi bi-chevron-right prop-chevron ms-auto'
                         : 'bi bi-chevron-down prop-chevron ms-auto';
                 }
+                // Persist to sessionStorage
+                try {
+                    let st = {};
+                    try { st = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}'); } catch {}
+                    st[sectionName] = collapsed;
+                    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(st));
+                } catch {}
             });
         });
     }

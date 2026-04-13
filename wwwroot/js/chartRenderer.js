@@ -1,3 +1,27 @@
+// ── Chart.js global defaults ─────────────────────────────────────────────────
+// Applied once when the script loads (before any charts are created).
+(function applyChartDefaults() {
+    if (typeof Chart === 'undefined') return;
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#7A90A8';
+
+    // Tooltip
+    Chart.defaults.plugins.tooltip.backgroundColor = '#1E2D3D';
+    Chart.defaults.plugins.tooltip.titleFont = { weight: '600', family: "'Inter', sans-serif" };
+    Chart.defaults.plugins.tooltip.bodyFont  = { size: 12, family: "'Inter', sans-serif" };
+    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.displayColors = true;
+    Chart.defaults.plugins.tooltip.boxPadding = 4;
+
+    // Legend
+    Chart.defaults.plugins.legend.labels.font          = { size: 11, family: "'Inter', sans-serif" };
+    Chart.defaults.plugins.legend.labels.color         = '#7A90A8';
+    Chart.defaults.plugins.legend.labels.padding       = 12;
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.pointStyleWidth = 8;
+}());
+
 // Chart rendering engine using Chart.js
 class ChartRenderer {
     constructor() {
@@ -87,19 +111,31 @@ class ChartRenderer {
     async render(chartDef, canvasEl) {
         this.destroy(chartDef.id);
         const wrap = canvasEl.parentElement;
+
+        // Show loading skeleton while fetching
+        const existingEmpty = wrap.querySelector('.chart-no-data-overlay');
+        if (existingEmpty) existingEmpty.remove();
+        const existingSkeleton = wrap.querySelector('.chart-loading-skeleton');
+        if (existingSkeleton) existingSkeleton.remove();
+        const skeleton = document.createElement('div');
+        skeleton.className = 'chart-loading-skeleton';
+        wrap.appendChild(skeleton);
+        canvasEl.style.display = 'none';
+
         let data;
         try { data = await this.fetchData(chartDef); }
         catch(e) { console.warn('Data fetch failed:', e); data = { labels: [], values: [] }; }
 
+        // Remove skeleton
+        const sk = wrap.querySelector('.chart-loading-skeleton');
+        if (sk) sk.remove();
+
         // Show empty-data overlay when no data is available
-        const existingEmpty = wrap.querySelector('.chart-no-data-overlay');
-        if (existingEmpty) existingEmpty.remove();
         if ((!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
             canvasEl.style.display = 'none';
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
-            noData.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:#94a3b8;font-size:0.82rem;';
-            noData.innerHTML = '<i class="bi bi-exclamation-circle" style="font-size:1.5rem"></i><span>No data available</span>';
+            noData.innerHTML = '<i class="bi bi-bar-chart" style="font-size:1.8rem;opacity:0.45;margin-bottom:6px"></i><span>No data available</span>';
             wrap.appendChild(noData);
             return;
         }
@@ -366,6 +402,9 @@ class ChartRenderer {
 
     _baseOptions(chartDef, extraScales) {
         const style = chartDef.style || {};
+        const fontFamily = style.fontFamily || "'Inter', sans-serif";
+        const gridColor = 'rgba(0,0,0,0.04)';
+        const tickFont = { size: 11, family: fontFamily };
         return {
             responsive: true,
             maintainAspectRatio: false,
@@ -374,19 +413,25 @@ class ChartRenderer {
                 legend: {
                     display: style.showLegend !== false,
                     position: style.legendPosition || 'top',
-                    labels: { font: { family: style.fontFamily || 'Inter, sans-serif', size: 11 } }
+                    labels: {
+                        font: { family: fontFamily, size: 11 },
+                        color: '#7A90A8',
+                        padding: 12,
+                        usePointStyle: true,
+                        pointStyleWidth: 8
+                    }
                 },
                 tooltip: { enabled: style.showTooltips !== false },
                 title: {
                     display: !!chartDef.title,
                     text: chartDef.title || '',
-                    font: { size: style.titleFontSize || 14, family: style.fontFamily || 'Inter, sans-serif', weight: '600' },
-                    color: '#2c3e50'
+                    font: { size: style.titleFontSize || 14, family: fontFamily, weight: '600' },
+                    color: '#1E2D3D'
                 }
             },
             scales: extraScales || {
-                x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } } },
-                y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true }
+                x: { grid: { color: gridColor }, ticks: { font: tickFont, color: '#7A90A8' } },
+                y: { grid: { color: gridColor }, ticks: { font: tickFont, color: '#7A90A8' }, beginAtZero: true }
             }
         };
     }
