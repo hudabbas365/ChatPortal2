@@ -1,6 +1,8 @@
 using System.Data;
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using ChatPortal2.Models;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using MySqlConnector;
@@ -37,8 +39,30 @@ public class QueryExecutionService : IQueryExecutionService
         "MySQL", "MariaDB"
     };
 
+    private static readonly string[] WriteKeywords =
+    {
+        "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
+        "TRUNCATE", "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE",
+        "REPLACE", "UPSERT", "ATTACH", "DETACH", "CALL"
+    };
+
+    private readonly IDataProtectionService _dataProtection;
+
+    public QueryExecutionService(IDataProtectionService dataProtection)
+    {
+        _dataProtection = dataProtection;
+    }
+
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
+        // Block write operations before executing
+        var normalized = Regex.Replace(sql.ToUpperInvariant(), @"\s+", " ").Trim();
+        foreach (var keyword in WriteKeywords)
+        {
+            if (Regex.IsMatch(normalized, $@"\b{keyword}\b"))
+                return new QueryExecutionResult { Success = false, Error = $"Write operation '{keyword}' is not permitted. Only SELECT queries are allowed." };
+        }
+
         DbConnection? conn = null;
         try
         {
@@ -99,11 +123,13 @@ public class QueryExecutionService : IQueryExecutionService
         }
     }
 
-    private static string BuildConnectionString(Datasource ds)
+    private string BuildConnectionString(Datasource ds)
     {
-        var connStr = ds.ConnectionString ?? "";
+        var connStr = _dataProtection.Unprotect(ds.ConnectionString ?? "");
+        var dbUser = string.IsNullOrEmpty(ds.DbUser) ? null : _dataProtection.Unprotect(ds.DbUser);
+        var dbPassword = string.IsNullOrEmpty(ds.DbPassword) ? null : _dataProtection.Unprotect(ds.DbPassword);
 
-        if (string.IsNullOrEmpty(ds.DbUser) && string.IsNullOrEmpty(ds.DbPassword))
+        if (string.IsNullOrEmpty(dbUser) && string.IsNullOrEmpty(dbPassword))
             return connStr;
 
         // Inject credentials if not already present in the connection string
@@ -113,13 +139,13 @@ public class QueryExecutionService : IQueryExecutionService
 
         if (!hasUser)
         {
-            if (!string.IsNullOrEmpty(ds.DbUser))
+            if (!string.IsNullOrEmpty(dbUser))
             {
-                connStr = connStr.TrimEnd(';') + $";User ID={ds.DbUser}";
+                connStr = connStr.TrimEnd(';') + $";User ID={dbUser}";
             }
-            if (!string.IsNullOrEmpty(ds.DbPassword))
+            if (!string.IsNullOrEmpty(dbPassword))
             {
-                connStr = connStr.TrimEnd(';') + $";Password={ds.DbPassword}";
+                connStr = connStr.TrimEnd(';') + $";Password={dbPassword}";
             }
         }
 
@@ -137,15 +163,15 @@ public class QueryExecutionService : IQueryExecutionService
         // SQL Server does not support LIMIT — convert to TOP
         if (SqlTypes.Contains(type))
         {
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(
-                sql, @"\bLIMIT\s+(\d+)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var limitMatch = Regex.Match(
+                sql, @"\bLIMIT\s+(\d+)\s*$", RegexOptions.IgnoreCase);
             if (limitMatch.Success)
             {
                 var n = limitMatch.Groups[1].Value;
                 sql = sql[..limitMatch.Index].TrimEnd();
-                sql = System.Text.RegularExpressions.Regex.Replace(
+                sql = Regex.Replace(
                     sql, @"^\s*SELECT\b", $"SELECT TOP {n}",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    RegexOptions.IgnoreCase);
             }
         }
         // MySQL does not support square-bracket quoting — strip brackets

@@ -43,12 +43,14 @@ public class DatasourceController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IQueryExecutionService _queryService;
     private readonly IWorkspacePermissionService _permissions;
+    private readonly IDataProtectionService _dataProtection;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IDataProtectionService dataProtection)
     {
         _db = db;
         _queryService = queryService;
         _permissions = permissions;
+        _dataProtection = dataProtection;
     }
 
     private async Task<int> ResolveOrganizationIdAsync(int supplied, string? userId)
@@ -134,9 +136,9 @@ public class DatasourceController : ControllerBase
         {
             Name = req.Name ?? "New Datasource",
             Type = req.Type ?? "SQL Server",
-            ConnectionString = req.ConnectionString ?? "",
-            DbUser = req.DbUser,
-            DbPassword = req.DbPassword,
+            ConnectionString = !string.IsNullOrEmpty(req.ConnectionString) ? _dataProtection.Protect(req.ConnectionString) : "",
+            DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : req.DbUser,
+            DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : req.DbPassword,
             XmlaEndpoint = req.XmlaEndpoint,
             MicrosoftAccountTenantId = req.MicrosoftAccountTenantId,
             OrganizationId = orgId,
@@ -468,8 +470,8 @@ public class DatasourceController : ControllerBase
             return StatusCode(403, new { error = "You need Editor or Admin role to update datasources." });
 
         if (req.Name != null) ds.Name = req.Name;
-        if (req.DbUser != null) ds.DbUser = req.DbUser;
-        if (req.DbPassword != null) ds.DbPassword = req.DbPassword;
+        if (req.DbUser != null) ds.DbUser = _dataProtection.Protect(req.DbUser);
+        if (req.DbPassword != null) ds.DbPassword = _dataProtection.Protect(req.DbPassword);
         if (req.SelectedTables != null) ds.SelectedTables = req.SelectedTables;
 
         await _db.SaveChangesAsync();

@@ -51,13 +51,13 @@ public class SmtpEmailService : IEmailService
 
         var body = $@"Hello {fullName},
 
-Your ChatPortal2 account has been created. Here are your login credentials:
+Your ChatPortal2 account has been created.
 
   Username: {username}
-  Password: {password}
   Login URL: {loginUrl}
 
-Please change your password after first login.
+For security reasons, your password is not included in this email.
+Please use the Forgot Password feature on the login page to set your password.
 
 Regards,
 ChatPortal2 Team";
@@ -91,12 +91,12 @@ ChatPortal2 Team";
 
         var body = $@"Hello {fullName},
 
-Your ChatPortal2 password has been reset. Here are your new credentials:
+Your ChatPortal2 password has been reset by an administrator.
 
-  Password: {newPassword}
   Login URL: {loginUrl}
 
-Please change your password after login.
+For security reasons, your new password is not included in this email.
+Please use the Forgot Password feature on the login page to set a new password, or contact your administrator for assistance.
 
 Regards,
 ChatPortal2 Team";
