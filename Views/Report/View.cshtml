@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="~/css/site.css" />
     <link rel="stylesheet" href="~/css/dashboard-shapes.css" />
     <link rel="stylesheet" href="~/css/report-viewer.css" />
+    <link rel="stylesheet" href="~/css/report-qa-enhanced.css" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
 </head>
 <body class="rv-body">
@@ -75,18 +76,28 @@
         </div>
     </nav>
 
-    <div class="rv-share-overlay" id="rvShareOverlay" onclick="if(event.target===this)closeShareModal()">
+    <div class="rv-share-overlay" id="rvShareOverlay">
         <div class="rv-share-box">
-            <h5><i class="bi bi-people me-2"></i>Share Internally</h5>
+            <h5><i class="bi bi-link-45deg me-2"></i>Share Report</h5>
             <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
-                This report is shared with all members of <strong id="rvShareWsName">this workspace</strong>.
-                Public sharing via URL is not permitted.
+                Generate a share link to invite people as <strong>viewers</strong> of this report in
+                <strong id="rvShareWsName">this workspace</strong>.
             </p>
-            <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
-                <i class="bi bi-shield-lock-fill me-1"></i>
-                Only workspace members can access this report. No public link is available.
+            <div class="rv-share-url" style="display:none">
+                <input type="text" id="rvShareUrlInput" readonly onclick="this.select()">
+                <button id="rvShareCopyBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
             </div>
-            <button class="rv-share-close" onclick="closeShareModal()">Close</button>
+            <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
+                <i class="bi bi-info-circle-fill me-1"></i>
+                Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
+            </div>
+            <div id="rvShareStatus" style="font-size:0.78rem;margin-bottom:10px;display:none;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="rv-share-close" id="rvShareCloseBtn">Close</button>
+                <button id="rvShareGenerateBtn" class="rv-share-url button" style="font-size:0.78rem;padding:5px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
+                    <i class="bi bi-link-45deg me-1"></i>Generate Link
+                </button>
+            </div>
         </div>
     </div>
 
@@ -97,10 +108,24 @@
         </div>
     </div>
 
-    <div class="rv-canvas-wrap" id="rvCanvasWrap">
-        <div class="rv-empty" id="rvEmpty" style="display:none">
-            <i class="bi bi-bar-chart"></i>
-            <p>This report has no charts.</p>
+    <div class="rv-layout" id="rvLayout">
+        <!-- Left page navigation sidebar -->
+        <aside class="rv-page-nav" id="rvPageNav">
+            <div class="rv-page-nav-header">
+                <i class="bi bi-journal-text"></i>
+                <span>Pages</span>
+            </div>
+            <ul class="rv-page-nav-list" id="rvPageNavList">
+                <!-- Populated by JS -->
+            </ul>
+        </aside>
+
+        <!-- Main canvas viewport -->
+        <div class="rv-canvas-wrap" id="rvCanvasWrap">
+            <div class="rv-empty" id="rvEmpty" style="display:none">
+                <i class="bi bi-bar-chart"></i>
+                <p>This report has no charts.</p>
+            </div>
         </div>
     </div>
 
@@ -115,7 +140,7 @@
 
     <!-- Q&A FAB -->
     <button class="rv-qa-fab" id="rv-qa-fab" title="Ask about this report" aria-label="Open AI Q&amp;A">
-        <i class="bi bi-chat-dots-fill"></i>
+        <i class="bi bi-stars"></i>
     </button>
 
     <!-- Q&A Panel -->
@@ -123,7 +148,7 @@
         <div class="rv-qa-header">
             <div class="rv-qa-header-icon"><i class="bi bi-stars"></i></div>
             <div class="rv-qa-header-info">
-                <div class="rv-qa-header-title">Ask about this report</div>
+                <div class="rv-qa-header-title">Ask AI about this report</div>
                 <div class="rv-qa-header-sub">@reportName</div>
             </div>
             <button class="rv-qa-close" aria-label="Close Q&amp;A panel"><i class="bi bi-x-lg"></i></button>
@@ -143,13 +168,15 @@
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="~/js/aiStream.js"></script>
     <script>
-    // Global context for Q&A panel
+    // Global context for Q&A panel and share
     window._rvReportGuid     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportGuid ?? ""));
     window._rvWorkspaceGuid  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceGuid ?? ""));
     window._rvDatasourceId   = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
     window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
+    window._rvWorkspaceName  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceName ?? ""));
     </script>
     <script src="~/js/report-qa-panel.js"></script>
+    <script src="~/js/report-share.js"></script>
     <script>
     (function() {
         'use strict';
@@ -157,6 +184,7 @@
         const canvasJson = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(canvasJson));
         const datasourceId = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
         const wrap = document.getElementById('rvCanvasWrap');
+        const navList = document.getElementById('rvPageNavList');
 
         // Set global datasource context so chartRenderer can fetch real data
         if (datasourceId) window.currentDatasourceId = datasourceId;
@@ -171,73 +199,96 @@
         const pages = parsed.pages || [];
         if (!pages.length) {
             document.getElementById('rvEmpty').style.display = '';
+            document.getElementById('rvPageNav').style.display = 'none';
             return;
         }
 
-        // Report view has no sidebar; base width on the rv-canvas-wrap element width.
-        // 1168 = 1200px max-width minus 2×16px padding (32px total) = 1168px usable width.
+        // Use the same formula as the dashboard canvas manager so charts
+        // render at identical pixel sizes regardless of the surrounding layout.
         function colsToPixels(width) {
-            const wrapEl = document.getElementById('rvCanvasWrap');
-            const availableWidth = Math.min(wrapEl ? wrapEl.clientWidth : window.innerWidth, 1168);
-            const pct = (parseInt(width) || 6) / 12;
-            return Math.round(Math.max(200, availableWidth * pct));
+            var baseWidth = Math.min(window.innerWidth - 600, 900);
+            var pct = (parseInt(width) || 6) / 12;
+            return Math.round(Math.max(200, baseWidth * pct));
         }
 
+        // Track page elements and rendered state
+        const pageElements = [];
+        const pageRendered = [];
+
+        // Build left nav items and page containers
         pages.forEach((page, pi) => {
             const charts = page.charts || [];
-            if (!charts.length) return;
+            const pageName = page.name || ('Page ' + (pi + 1));
+            const chartCount = charts.length;
 
+            // Create nav item
+            const li = document.createElement('li');
+            li.className = 'rv-page-nav-item' + (pi === 0 ? ' active' : '');
+            li.dataset.pageIndex = pi;
+            li.innerHTML =
+                '<div class="rv-page-nav-num">' + (pi + 1) + '</div>' +
+                '<div class="rv-page-nav-info">' +
+                    '<span class="rv-page-nav-name">' + pageName.replace(/</g, '&lt;') + '</span>' +
+                    '<span class="rv-page-nav-count">' + chartCount + ' chart' + (chartCount !== 1 ? 's' : '') + '</span>' +
+                '</div>';
+            li.addEventListener('click', function() { switchToPage(pi); });
+            navList.appendChild(li);
+
+            // Create page container (hidden except first)
             const pageEl = document.createElement('div');
             pageEl.className = 'rv-page';
+            pageEl.id = 'rvPage-' + pi;
             pageEl.style.position = 'relative';
             if (page.background) pageEl.style.background = page.background;
+            if (pi !== 0) pageEl.style.display = 'none';
 
             if (pages.length > 1) {
                 const title = document.createElement('div');
                 title.className = 'rv-page-title';
-                title.textContent = page.name || ('Page ' + (pi + 1));
+                title.textContent = pageName;
                 pageEl.appendChild(title);
             }
 
-            // Calculate page height and width from chart positions
-            const titleOffset = (pages.length > 1) ? 44 : 0; // offset for rv-page-title bar
+            // Calculate page height from chart positions
+            const titleOffset = (pages.length > 1) ? 44 : 0;
             let maxBottom = 400;
             let maxRight = 0;
             charts.forEach(c => {
-                const cardHeight = c.height || 300;
-                const bottom = (c.posY || 0) + cardHeight + 20 + titleOffset;
+                const ch = (parseInt(c.height) || 300) + 40;
+                const bottom = (c.posY !== undefined ? c.posY : 20) + ch + 20 + titleOffset;
                 if (bottom > maxBottom) maxBottom = bottom;
 
                 const w = colsToPixels(c.width || 6);
-                const right = (c.posX || 0) + w + 20;
+                const right = (c.posX !== undefined ? c.posX : 20) + w + 20;
                 if (right > maxRight) maxRight = right;
             });
             pageEl.style.minHeight = maxBottom + 'px';
             if (maxRight > 0) pageEl.style.minWidth = maxRight + 'px';
 
+            // Build card DOM (but defer chart rendering until page is shown)
             charts.forEach(c => {
                 const isShape = window.ShapeManager && ShapeManager.isShape(c.chartType);
                 const cardWidth = colsToPixels(c.width || 6);
-                const cardHeight = c.height || 300;
-                const posX = Math.max(0, c.posX || 0);
-                const posY = Math.max(0, (c.posY || 0) + titleOffset);
+                const cardHeight = parseInt(c.height) || 300;
+                const posX = c.posX !== undefined ? c.posX : 20;
+                const posY = (c.posY !== undefined ? c.posY : 20) + titleOffset;
                 const zIdx = c.zIndex || 1;
 
-                // Build card using the same .chart-card classes as the Dashboard
                 const card = document.createElement('div');
                 card.className = 'chart-card' + (isShape ? ' shape-card' : '');
-                card.style.cssText = 'position:absolute;left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;height:' + cardHeight + 'px;z-index:' + zIdx + ';';
+                card.style.cssText = 'position:absolute;left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;z-index:' + zIdx + ';';
 
                 if (isShape) {
-                    // Shape: render SVG via ShapeManager (same as dashboard)
                     const canvasWrap = document.createElement('div');
                     canvasWrap.className = 'chart-canvas-wrap';
                     canvasWrap.style.height = cardHeight + 'px';
                     card.appendChild(canvasWrap);
                     pageEl.appendChild(card);
-                    requestAnimationFrame(() => ShapeManager.render(canvasWrap, c));
+                    // Shapes are lightweight — render immediately
+                    card.dataset.shapeReady = '1';
+                    card._shapeDef = c;
+                    card._shapeWrap = canvasWrap;
                 } else {
-                    // Chart: add header + canvasWrap, let chartRenderer create its own canvas
                     const header = document.createElement('div');
                     header.className = 'chart-card-header';
                     const titleSpan = document.createElement('span');
@@ -254,30 +305,67 @@
 
                     const canvasWrap = document.createElement('div');
                     canvasWrap.className = 'chart-canvas-wrap';
-                    canvasWrap.style.height = (cardHeight - 36) + 'px';
+                    canvasWrap.style.height = cardHeight + 'px';
                     canvasWrap.style.width = '100%';
                     canvasWrap.style.position = 'relative';
                     card.appendChild(canvasWrap);
                     pageEl.appendChild(card);
 
-                    // Ensure datasource context on chart definition
                     if (!c.datasourceId && datasourceId) c.datasourceId = datasourceId;
 
-                    // Capture for closure
-                    const chartDefCopy = Object.assign({}, c);
-                    const wrapRef = canvasWrap;
-                    // Use setTimeout(50ms) so the absolutely-positioned card has been laid out
-                    // by the browser and clientWidth returns a non-zero value for _makeCanvas.
-                    setTimeout(() => {
-                        if (window.chartRenderer) {
-                            chartRenderer.render(chartDefCopy, wrapRef);
-                        }
-                    }, 50);
+                    // Store chart def on the card for lazy rendering
+                    card.dataset.chartReady = '1';
+                    card._chartDef = Object.assign({}, c);
+                    card._canvasWrap = canvasWrap;
                 }
             });
 
             wrap.appendChild(pageEl);
+            pageElements.push(pageEl);
+            pageRendered.push(false);
         });
+
+        // Render charts for a given page index
+        function renderPageCharts(pi) {
+            if (pageRendered[pi]) return;
+            pageRendered[pi] = true;
+            const pageEl = pageElements[pi];
+            const cards = pageEl.querySelectorAll('.chart-card');
+            cards.forEach(card => {
+                if (card.dataset.shapeReady === '1' && card._shapeDef) {
+                    requestAnimationFrame(() => ShapeManager.render(card._shapeWrap, card._shapeDef));
+                }
+                if (card.dataset.chartReady === '1' && card._chartDef) {
+                    const def = card._chartDef;
+                    const canvasWrap = card._canvasWrap;
+                    const canvasEl = document.createElement('canvas');
+                    canvasEl.id = 'canvas-' + (def.id || '');
+                    canvasWrap.appendChild(canvasEl);
+                    setTimeout(() => {
+                        if (window.chartRenderer) {
+                            chartRenderer.render(def, canvasEl);
+                        }
+                    }, 50);
+                }
+            });
+        }
+
+        // Switch to a specific page
+        function switchToPage(pi) {
+            // Update nav
+            navList.querySelectorAll('.rv-page-nav-item').forEach((item, idx) => {
+                item.classList.toggle('active', idx === pi);
+            });
+            // Show/hide pages
+            pageElements.forEach((el, idx) => {
+                el.style.display = idx === pi ? '' : 'none';
+            });
+            // Lazy-render charts on first visit
+            renderPageCharts(pi);
+        }
+
+        // Render the first page
+        renderPageCharts(0);
     })();
 
     // PDF Export using html2canvas + jsPDF
@@ -348,15 +436,6 @@
         } finally {
             overlay.classList.remove('active');
         }
-    }
-    // Share modal
-    function openShareModal() {
-        const wsNameEl = document.getElementById('rvShareWsName');
-        if (wsNameEl && '@workspaceName' !== '') wsNameEl.textContent = '@workspaceName';
-        document.getElementById('rvShareOverlay').classList.add('active');
-    }
-    function closeShareModal() {
-        document.getElementById('rvShareOverlay').classList.remove('active');
     }
     </script>
 </body>

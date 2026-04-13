@@ -16,6 +16,8 @@ public class Report
     public string? ChartIds { get; set; }  // JSON array of selected chart IDs
     public string? CanvasJson { get; set; } // Snapshot of canvas state for this report
     public string Status { get; set; } = "Draft"; // Draft, Published
+    public string? ShareToken { get; set; } // Token for share-link viewer access
     public string? CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
 }

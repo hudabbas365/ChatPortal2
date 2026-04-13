@@ -365,6 +365,32 @@ async Task ApplySchemaPatchesAsync(AppDbContext db)
             await cmd.ExecuteNonQueryAsync();
         }
 
+        // Add missing columns to Reports
+        var rptCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info('Reports')";
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                rptCols.Add(reader.GetString(1));
+        }
+
+        var rptPatches = new[]
+        {
+            ("ShareToken", "TEXT"),
+            ("UpdatedAt", "TEXT"),
+        };
+
+        foreach (var (col, def) in rptPatches)
+        {
+            if (!rptCols.Contains(col))
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"ALTER TABLE Reports ADD COLUMN \"{col}\" {def}";
+                await cmd.ExecuteNonQueryAsync();
+            }
+        }
+
         // Add AgentId column to ChatMessages if missing
         var cmCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using (var cmd = conn.CreateCommand())

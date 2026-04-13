@@ -56,10 +56,70 @@ public class ReportController : Controller
         ViewBag.WorkspaceName = report.Workspace?.Name;
         ViewBag.DatasourceName = report.Datasource?.Name;
         ViewBag.DatasourceId = report.DatasourceId;
+        ViewBag.DatasourceType = report.Datasource?.Type;
         ViewBag.AgentName = report.Agent?.Name;
         ViewBag.Status = report.Status;
+        ViewBag.UpdatedAt = report.UpdatedAt ?? report.CreatedAt;
 
         return View("~/Views/Report/View.cshtml");
+    }
+
+    [AllowAnonymous]
+    [HttpGet("/report/share/{token}")]
+    public async Task<IActionResult> AcceptShareLink(string token)
+    {
+        var report = await _db.Reports
+            .Include(r => r.Workspace)
+            .FirstOrDefaultAsync(r => r.ShareToken == token);
+        if (report == null) return NotFound("Invalid or expired share link.");
+
+        // If user is authenticated, add them as Viewer to the workspace
+        if (User.Identity?.IsAuthenticated == true && report.WorkspaceId > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            var already = await _db.WorkspaceUsers
+                .AnyAsync(wu => wu.WorkspaceId == report.WorkspaceId && wu.UserId == userId);
+            if (!already)
+            {
+                _db.WorkspaceUsers.Add(new WorkspaceUser
+                {
+                    WorkspaceId = report.WorkspaceId,
+                    UserId = userId,
+                    Role = "Viewer"
+                });
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        return Redirect("/report/view/" + report.Guid);
+    }
+
+    [HttpGet("/api/reports/{guid}/share")]
+    public async Task<IActionResult> GetShareToken(string guid)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        return Ok(new { shareToken = report.ShareToken });
+    }
+
+    [HttpPost("/api/reports/{guid}/share")]
+    public async Task<IActionResult> GenerateShareToken(string guid)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to share reports." });
+
+        if (string.IsNullOrEmpty(report.ShareToken))
+        {
+            report.ShareToken = Guid.NewGuid().ToString("N");
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { shareToken = report.ShareToken });
     }
 
     [HttpGet("/api/reports")]

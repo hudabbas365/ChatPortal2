@@ -1,0 +1,208 @@
+/* ============================================================
+   ChatPortal2 — Enhanced Q&A Panel & FAB Styles
+   ============================================================ */
+
+/* ── Animated Q&A FAB ─────────────────────────────────────── */
+.rv-qa-fab {
+    position: fixed; bottom: 24px; right: 24px;
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border: none; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    z-index: 9990;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.35rem;
+    transition: transform 0.25s cubic-bezier(0.34, 1.28, 0.64, 1), box-shadow 0.25s;
+    animation: rv-fab-entrance 0.6s cubic-bezier(0.34, 1.28, 0.64, 1) both;
+    animation-delay: 1s;
+}
+@keyframes rv-fab-entrance {
+    from { transform: scale(0) rotate(-180deg); opacity: 0; }
+    to   { transform: scale(1) rotate(0deg);    opacity: 1; }
+}
+.rv-qa-fab::before {
+    content: '';
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    opacity: 0;
+    z-index: -1;
+    animation: rv-fab-pulse 2.5s ease-in-out infinite;
+}
+@keyframes rv-fab-pulse {
+    0%, 100% { transform: scale(1); opacity: 0; }
+    50%      { transform: scale(1.35); opacity: 0.25; }
+}
+.rv-qa-fab:hover {
+    transform: scale(1.12) translateY(-2px);
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6);
+}
+.rv-qa-fab:active {
+    transform: scale(0.95);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Tooltip label on hover */
+.rv-qa-fab::after {
+    content: 'Ask AI';
+    position: absolute; right: calc(100% + 10px); top: 50%;
+    transform: translateY(-50%) translateX(8px);
+    background: #1e293b;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+}
+.rv-qa-fab:hover::after {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}
+
+/* ── Enhanced Q&A Panel ───────────────────────────────────── */
+.rv-qa-panel {
+    border: 1px solid rgba(102, 126, 234, 0.12);
+}
+
+/* Panel header gradient */
+.rv-qa-header {
+    background: linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%);
+    border-bottom: 1px solid rgba(102, 126, 234, 0.12);
+}
+.rv-qa-header-icon {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 0.95rem; flex-shrink: 0;
+}
+
+/* ── Enhanced Message Bubbles ─────────────────────────────── */
+.rv-qa-msg {
+    display: flex; flex-direction: column; gap: 3px;
+    max-width: 88%;
+    animation: rv-msg-in 0.3s ease-out both;
+}
+@keyframes rv-msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* User message */
+.rv-qa-msg.user { align-self: flex-end; align-items: flex-end; }
+.rv-qa-msg.user .rv-qa-bubble {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border-radius: 16px 16px 4px 16px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    word-wrap: break-word;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+/* AI message */
+.rv-qa-msg.ai { align-self: flex-start; align-items: flex-start; }
+.rv-qa-msg.ai .rv-qa-avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 0.65rem; flex-shrink: 0;
+    margin-bottom: 2px;
+}
+.rv-qa-msg.ai .rv-qa-bubble {
+    background: #f8f9fc;
+    color: var(--cp-text, #1e293b);
+    border-radius: 16px 16px 16px 4px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    word-wrap: break-word;
+    border: 1px solid #e8eaf0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.rv-qa-msg.ai .rv-qa-bubble.streaming {
+    background: linear-gradient(135deg, #f8f9fc 0%, #f0f4ff 100%);
+}
+.rv-qa-msg.ai .rv-qa-bubble.streaming::after {
+    content: '▋';
+    display: inline-block;
+    animation: blink-cursor 0.9s steps(1) infinite;
+    margin-left: 1px;
+    color: #667eea;
+}
+
+/* Timestamp */
+.rv-qa-msg-time {
+    font-size: 0.62rem;
+    color: var(--cp-text-muted, #94a3b8);
+    padding: 0 4px;
+    margin-top: 1px;
+}
+
+/* ── Enhanced Thinking Indicator ──────────────────────────── */
+.rv-qa-thinking {
+    display: flex; align-items: center; gap: 5px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #f8f9fc 0%, #f0f4ff 100%);
+    border-radius: 16px 16px 16px 4px;
+    border: 1px solid #e8eaf0;
+}
+.rv-qa-thinking span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    animation: qa-pulse 1.2s ease-in-out infinite;
+}
+.rv-qa-thinking span:nth-child(2) { animation-delay: 0.2s; }
+.rv-qa-thinking span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Enhanced Chips ───────────────────────────────────────── */
+.rv-qa-chip {
+    white-space: nowrap; font-size: 0.72rem;
+    padding: 5px 12px; border-radius: 20px;
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    background: linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%);
+    color: #667eea;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    font-weight: 500;
+}
+.rv-qa-chip:hover {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border-color: transparent;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* ── Enhanced Send Button ─────────────────────────────────── */
+.rv-qa-send-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem; flex-shrink: 0;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.rv-qa-send-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 3px 10px rgba(102, 126, 234, 0.35);
+}
+.rv-qa-send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── Empty state in messages ──────────────────────────────── */
+.rv-qa-messages:empty::after {
+    content: 'Ask a question about your report or pick a suggestion above.';
+    display: block;
+    text-align: center;
+    color: var(--cp-text-muted, #94a3b8);
+    font-size: 0.78rem;
+    padding: 40px 20px;
+    line-height: 1.6;
+}

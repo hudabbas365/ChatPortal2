@@ -118,11 +118,15 @@
         if (!_msgsEl) return null;
         const msg = document.createElement('div');
         msg.className = 'rv-qa-msg ai';
+        const avatar = document.createElement('div');
+        avatar.className = 'rv-qa-avatar';
+        avatar.innerHTML = '<i class="bi bi-stars"></i>';
         const bubble = document.createElement('div');
         bubble.className = 'rv-qa-bubble streaming';
         const timeEl = document.createElement('div');
         timeEl.className = 'rv-qa-msg-time';
         timeEl.textContent = _now();
+        msg.appendChild(avatar);
         msg.appendChild(bubble);
         msg.appendChild(timeEl);
         _msgsEl.appendChild(msg);

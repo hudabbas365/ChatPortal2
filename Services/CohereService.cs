@@ -7,7 +7,7 @@ public class CohereService
     private readonly IConfiguration _config;
     private readonly ILogger<CohereService> _logger;
     private readonly HttpClient _httpClient;
-    private const string CohereApiUrl = "https://api.cohere.ai/v2/chat";
+    private const string CohereApiUrl = "https://api.cohere.com/v2/chat";
 
     public CohereService(IConfiguration config, ILogger<CohereService> logger, IHttpClientFactory httpClientFactory)
     {
@@ -42,9 +42,10 @@ public class CohereService
         }
         messages.Add(new { role = "user", content = userMessage });
 
+        var model = _config["Cohere:Model"] ?? "command-r-plus";
         var requestBody = new
         {
-            model = "command-a-03-2025",
+            model = model,
             messages = messages,
             stream = true
         };
@@ -59,11 +60,26 @@ public class CohereService
         try
         {
             response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Cohere API returned {StatusCode}: {Body}", (int)response.StatusCode, errorBody);
+                connectionError = $"AI service error (HTTP {(int)response.StatusCode}). Please try again.";
+            }
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested == false)
+        {
+            _logger.LogError(ex, "Cohere API request timed out");
+            connectionError = "The AI service request timed out. Please try again.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to Cohere API");
+            connectionError = "Could not connect to the AI service. Please check your network and try again.";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to call Cohere API");
+            _logger.LogError(ex, "Unexpected error calling Cohere API");
             connectionError = "Sorry, I encountered an error connecting to the AI service. Please try again.";
         }
 
@@ -117,9 +133,10 @@ public class CohereService
             ? "Analyze this chart. Describe the key trends, outliers, and actionable insights visible in the data."
             : prompt;
 
+        var visionModel = _config["Cohere:VisionModel"] ?? "command-r-plus";
         var requestBody = new
         {
-            model = "command-a-vision-07-2025",
+            model = visionModel,
             messages = new object[]
             {
                 new
@@ -149,7 +166,12 @@ public class CohereService
         try
         {
             response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Cohere Vision API returned {StatusCode}: {Body}", (int)response.StatusCode, errorBody);
+                connectionError = $"AI service error (HTTP {(int)response.StatusCode}). Please try again.";
+            }
         }
         catch (Exception ex)
         {
@@ -204,9 +226,10 @@ public class CohereService
             $"Assistant: {aiResponse}\n\n" +
             "JSON array:";
 
+        var model = _config["Cohere:Model"] ?? "command-r-plus";
         var requestBody = new
         {
-            model = "command-a-03-2025",
+            model = model,
             messages = new object[]
             {
                 new { role = "user", content = prompt }

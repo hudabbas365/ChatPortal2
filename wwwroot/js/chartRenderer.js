@@ -41,7 +41,7 @@ class ChartRenderer {
             'choropleth','bubbleMap','heatMapGeo','flowMap','spikeMap',
             'networkGraph','chordDiagram','arcDiagram','forceDirected','matrix',
             'waffleChart','pictograph',
-            'kpiCard','metricTile',
+            'kpiCard','metricTile','card',
             'marimekko','dumbbell',
             'table','slicer'
         ]);
@@ -110,6 +110,17 @@ class ChartRenderer {
 
     async render(chartDef, canvasEl) {
         this.destroy(chartDef.id);
+
+        // If a wrapper element was passed instead of a <canvas>, find or create the canvas inside it
+        if (canvasEl && canvasEl.tagName !== 'CANVAS') {
+            let actual = canvasEl.querySelector('canvas');
+            if (!actual) {
+                actual = document.createElement('canvas');
+                canvasEl.appendChild(actual);
+            }
+            canvasEl = actual;
+        }
+
         const wrap = canvasEl.parentElement;
 
         // Show loading skeleton while fetching
@@ -1224,6 +1235,7 @@ class ChartRenderer {
             case 'pictograph':   this.renderPictograph(chartDef, container, data, colors, h); break;
             case 'kpiCard':      this.renderKpiCard(chartDef, container, data, colors, h); break;
             case 'metricTile':   this.renderMetricTile(chartDef, container, data, colors, h); break;
+            case 'card':         this.renderCard(chartDef, container, data, colors, h); break;
             case 'marimekko':    this.renderMarimekko(chartDef, container, data, colors, h); break;
             case 'dumbbell':     this.renderDumbbell(chartDef, container, data, colors, h); break;
             case 'table':        this.renderTableChart(chartDef, container, data, colors, h); break;
@@ -1829,6 +1841,22 @@ class ChartRenderer {
                 <div style="font-size:18px;font-weight:700;color:${m.color};line-height:1.2;margin-top:4px">${typeof m.val==='number'?m.val.toLocaleString():m.val}</div>
                 <div style="font-size:10px;color:#8492a6;margin-top:2px">${this._esc(m.label)}</div>
             </div>`).join('');
+    }
+
+    renderCard(chartDef, container, data, colors, h) {
+        const title = chartDef.title || (data.labels||[])[0] || 'Value';
+        const val = (data.values||[])[0] || 0;
+        const subtitle = (data.labels||[])[1] || '';
+        const color = colors[0] || '#4A90D9';
+        container.style.cssText += 'background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;';
+        container.innerHTML = `<div style="text-align:center;font-family:Inter,sans-serif;padding:20px;width:100%">
+            <div style="width:48px;height:48px;border-radius:12px;background:${color}18;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
+                <div style="width:24px;height:24px;border-radius:6px;background:${color};"></div>
+            </div>
+            <div style="font-size:36px;font-weight:700;color:#1e293b;line-height:1.1">${typeof val==='number'?val.toLocaleString():this._esc(String(val))}</div>
+            <div style="font-size:13px;font-weight:600;color:#64748b;margin-top:8px;text-transform:uppercase;letter-spacing:0.5px">${this._esc(title)}</div>
+            ${subtitle ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px">' + this._esc(subtitle) + '</div>' : ''}
+        </div>`;
     }
 
     renderMarimekko(chartDef, container, data, colors, h) {
