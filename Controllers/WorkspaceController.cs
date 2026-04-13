@@ -426,9 +426,10 @@ public class WorkspaceController : Controller
         if (targetUser == null)
             return BadRequest(new { error = $"No user found with email '{req.Email}'." });
 
-        // Org sandbox: only users belonging to the same organization may be added to a workspace
+        // Org sandbox: only users belonging to the same organization may be added to a workspace.
+        // Return 404 (not 403) to avoid leaking the existence of users in other orgs.
         if (targetUser.OrganizationId.HasValue && targetUser.OrganizationId.Value != workspace.OrganizationId)
-            return StatusCode(403, new { error = "You cannot add users from another organization to this workspace." });
+            return NotFound(new { error = $"No user found with email '{req.Email}'." });
 
         var already = await _db.WorkspaceUsers
             .AnyAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == targetUser.Id);
