@@ -27,6 +27,33 @@
     </div>
     <div class="col-sm-6 col-lg-3">
         <div class="sa-stat">
+            <div class="sa-stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="sa-stat-label"><i class="bi bi-cash-stack me-1"></i>Total Revenue / Month</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ProUsers</div>
+            <div class="sa-stat-label"><i class="bi bi-award me-1"></i>Professional Users</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.EnterpriseUsers</div>
+            <div class="sa-stat-label"><i class="bi bi-building-fill-gear me-1"></i>Enterprise Users</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ActiveTrials</div>
+            <div class="sa-stat-label"><i class="bi bi-clock me-1"></i>Active Trials</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
             <div class="sa-stat-val">@ViewBag.TotalMessages</div>
             <div class="sa-stat-label"><i class="bi bi-chat-dots me-1"></i>Chat Messages</div>
         </div>
@@ -36,11 +63,11 @@
 <div class="row g-3">
     <div class="col-md-4">
         <div class="sa-card">
-            <h6 class="text-muted mb-3">Quick Actions</h6>
+            <h6 class="text-muted mb-3">Quick Links</h6>
             <div class="d-flex flex-column gap-2">
-                <a href="/superadmin/organizations" class="btn btn-sa"><i class="bi bi-building me-2"></i>Manage Organizations</a>
-                <a href="/superadmin/activity" class="btn btn-sa"><i class="bi bi-activity me-2"></i>View Activity</a>
-                <a href="/superadmin/aiconfig" class="btn btn-sa"><i class="bi bi-cpu me-2"></i>AI Configuration</a>
+                <a href="/superadmin/organizations" class="btn btn-sa"><i class="bi bi-building me-2"></i>View Organizations</a>
+                <a href="/superadmin/activity" class="btn btn-sa"><i class="bi bi-activity me-2"></i>Activity Logs</a>
+                <a href="/superadmin/revenue" class="btn btn-sa"><i class="bi bi-cash-stack me-2"></i>Revenue & Income</a>
             </div>
         </div>
     </div>

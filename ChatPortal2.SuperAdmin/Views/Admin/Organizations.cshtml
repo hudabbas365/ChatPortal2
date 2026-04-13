@@ -14,22 +14,57 @@
     <table class="sa-table">
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Name</th>
-                <th>Users</th>
+                <th>Total Users</th>
+                <th>Pro</th>
+                <th>Enterprise</th>
+                <th>Trial</th>
                 <th>Workspaces</th>
+                <th>Monthly Revenue</th>
                 <th>Created</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var org in Model)
             {
+                var proCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Professional) ?? 0;
+                var entCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Enterprise) ?? 0;
+                var trialCount = org.Users?.Count(u => u.Subscription?.IsTrialActive == true) ?? 0;
+                var revenue = proCount * ChatPortal2.Models.PlanPricing.ProPricePerUser
+                            + entCount * ChatPortal2.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
-                    <td>@org.Id</td>
-                    <td>@org.Name</td>
+                    <td class="fw-semibold">@org.Name</td>
                     <td>@(org.Users?.Count ?? 0)</td>
+                    <td>
+                        @if (proCount > 0)
+                        {
+                            <span class="sa-badge sa-badge-blue">@proCount</span>
+                        }
+                        else { <span class="text-muted">—</span> }
+                    </td>
+                    <td>
+                        @if (entCount > 0)
+                        {
+                            <span class="sa-badge sa-badge-green">@entCount</span>
+                        }
+                        else { <span class="text-muted">—</span> }
+                    </td>
+                    <td>
+                        @if (trialCount > 0)
+                        {
+                            <span class="sa-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24">@trialCount</span>
+                        }
+                        else { <span class="text-muted">—</span> }
+                    </td>
                     <td>@(org.Workspaces?.Count ?? 0)</td>
-                    <td>@org.CreatedAt.ToString("MMM d, yyyy")</td>
+                    <td>
+                        @if (revenue > 0)
+                        {
+                            <span class="sa-badge sa-badge-green">$@revenue.ToString("N0")/mo</span>
+                        }
+                        else { <span class="text-muted">$0</span> }
+                    </td>
+                    <td class="text-muted">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                 </tr>
             }
         </tbody>
