@@ -137,8 +137,8 @@ public class DatasourceController : ControllerBase
             Name = req.Name ?? "New Datasource",
             Type = req.Type ?? "SQL Server",
             ConnectionString = !string.IsNullOrEmpty(req.ConnectionString) ? _dataProtection.Protect(req.ConnectionString) : "",
-            DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : req.DbUser,
-            DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : req.DbPassword,
+            DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : null,
+            DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : null,
             XmlaEndpoint = req.XmlaEndpoint,
             MicrosoftAccountTenantId = req.MicrosoftAccountTenantId,
             OrganizationId = orgId,
@@ -470,8 +470,8 @@ public class DatasourceController : ControllerBase
             return StatusCode(403, new { error = "You need Editor or Admin role to update datasources." });
 
         if (req.Name != null) ds.Name = req.Name;
-        if (req.DbUser != null) ds.DbUser = _dataProtection.Protect(req.DbUser);
-        if (req.DbPassword != null) ds.DbPassword = _dataProtection.Protect(req.DbPassword);
+        if (req.DbUser != null) ds.DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : null;
+        if (req.DbPassword != null) ds.DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : null;
         if (req.SelectedTables != null) ds.SelectedTables = req.SelectedTables;
 
         await _db.SaveChangesAsync();

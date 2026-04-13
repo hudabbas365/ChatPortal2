@@ -129,12 +129,14 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         await db.Database.MigrateAsync();
     }
-    catch
+    catch (Exception ex)
     {
+        logger.LogWarning(ex, "MigrateAsync failed (no migrations may exist yet). Falling back to EnsureCreated.");
         db.Database.EnsureCreated();
     }
 
