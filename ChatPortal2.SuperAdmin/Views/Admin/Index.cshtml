@@ -1,0 +1,87 @@
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["ActivePage"] = "dashboard";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<h2 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2 text-primary"></i>System Dashboard</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.TotalOrgs</div>
+            <div class="sa-stat-label"><i class="bi bi-building me-1"></i>Organizations</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.TotalUsers</div>
+            <div class="sa-stat-label"><i class="bi bi-people me-1"></i>Total Users</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.TotalWorkspaces</div>
+            <div class="sa-stat-label"><i class="bi bi-folder me-1"></i>Workspaces</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="sa-stat-label"><i class="bi bi-cash-stack me-1"></i>Total Revenue / Month</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ProUsers</div>
+            <div class="sa-stat-label"><i class="bi bi-award me-1"></i>Professional Users</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.EnterpriseUsers</div>
+            <div class="sa-stat-label"><i class="bi bi-building-fill-gear me-1"></i>Enterprise Users</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ActiveTrials</div>
+            <div class="sa-stat-label"><i class="bi bi-clock me-1"></i>Active Trials</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.TotalMessages</div>
+            <div class="sa-stat-label"><i class="bi bi-chat-dots me-1"></i>Chat Messages</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="sa-card">
+            <h6 class="text-muted mb-3">Quick Links</h6>
+            <div class="d-flex flex-column gap-2">
+                <a href="/superadmin/organizations" class="btn btn-sa"><i class="bi bi-building me-2"></i>View Organizations</a>
+                <a href="/superadmin/activity" class="btn btn-sa"><i class="bi bi-activity me-2"></i>Activity Logs</a>
+                <a href="/superadmin/revenue" class="btn btn-sa"><i class="bi bi-cash-stack me-2"></i>Revenue & Income</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="sa-card">
+            <h6 class="text-muted mb-3">System Status</h6>
+            <table class="sa-table">
+                <tbody>
+                    <tr><td>Database</td><td><span class="sa-badge sa-badge-green">SQL Server</span></td></tr>
+                    <tr><td>AI Provider</td><td><span class="sa-badge sa-badge-blue">Cohere AI</span></td></tr>
+                    <tr><td>Authentication</td><td><span class="sa-badge sa-badge-green">JWT + ASP.NET Identity</span></td></tr>
+                    <tr><td>Payment Gateway</td><td><span class="sa-badge sa-badge-blue">Stripe</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

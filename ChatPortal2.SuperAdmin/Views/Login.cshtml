@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SuperAdmin Login – ChatPortal2</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <style>
+        body { background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2.5rem; width: 100%; max-width: 400px; }
+        .login-title { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
+        .form-control { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; }
+        .form-control:focus { background: rgba(255,255,255,0.12); border-color: #3b82f6; color: #e2e8f0; box-shadow: none; }
+        .btn-sa { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; color: #fff; font-weight: 600; }
+        .btn-sa:hover { opacity: 0.9; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="text-center mb-4">
+            <div style="font-size:2.5rem;color:#60a5fa"><i class="bi bi-shield-lock-fill"></i></div>
+            <h1 class="login-title mt-2">SuperAdmin Portal</h1>
+            <p class="text-muted small">ChatPortal2 System Administration</p>
+        </div>
+        <div id="loginAlert" class="alert d-none"></div>
+        <form id="loginForm">
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" placeholder="superadmin@example.com" required />
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" placeholder="••••••••" required />
+            </div>
+            <button type="submit" class="btn btn-sa w-100" id="loginBtn">
+                <i class="bi bi-shield-lock me-2"></i>Sign In as SuperAdmin
+            </button>
+        </form>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script>
+    $('#loginForm').on('submit', function(e) {
+        e.preventDefault();
+        const btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
+        $.ajax({
+            url: '/api/superadmin/login',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ email: $('#email').val(), password: $('#password').val() }),
+            success: function() { window.location.href = '/superadmin'; },
+            error: function(e) {
+                $('#loginAlert').removeClass('d-none').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');
+                btn.prop('disabled', false).html('<i class="bi bi-shield-lock me-2"></i>Sign In as SuperAdmin');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

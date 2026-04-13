@@ -3,25 +3,19 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>ChatPortal2</RootNamespace>
+    <RootNamespace>ChatPortal2.SuperAdmin</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="ChatPortal2.SuperAdmin/**" />
-    <Content Remove="ChatPortal2.SuperAdmin/**" />
-    <EmbeddedResource Remove="ChatPortal2.SuperAdmin/**" />
-    <None Remove="ChatPortal2.SuperAdmin/**" />
-  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0" />
-    <PackageReference Include="MySqlConnector" Version="2.3.7" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.0" />
-    <PackageReference Include="Npgsql" Version="8.0.6" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ChatPortal2.csproj" />
   </ItemGroup>
 </Project>

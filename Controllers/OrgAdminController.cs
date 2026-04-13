@@ -69,7 +69,11 @@ public class OrgAdminController : Controller
         var existing = await _userManager.FindByEmailAsync(req.Email);
         if (existing != null)
         {
-            // If user exists, add to org
+            // Prevent org hijacking: never silently move a user who already belongs to a different org
+            if (existing.OrganizationId.HasValue && existing.OrganizationId.Value != req.OrganizationId)
+                return Conflict(new { error = "This user already belongs to another organization and cannot be added." });
+
+            // User has no org yet (or same org) — safe to assign
             existing.OrganizationId = req.OrganizationId;
             existing.Role = req.Role ?? "User";
             await _userManager.UpdateAsync(existing);

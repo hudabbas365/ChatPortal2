@@ -28,6 +28,17 @@ public class WorkspaceController : Controller
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins are always hard-scoped to their own org.
+        // SuperAdmins may use the organizationId query param as a filter.
+        if (appUser?.Role != "SuperAdmin")
+        {
+            if (callerOrgId <= 0)
+                return StatusCode(403, new { error = "User is not assigned to an organization." });
+            organizationId = callerOrgId;
+        }
+
         var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
 
         var query = _db.Workspaces.Where(w => w.OrganizationId == organizationId);
@@ -69,12 +80,22 @@ public class WorkspaceController : Controller
 
         if (workspace == null) return NotFound();
 
-        // Access check: user must be owner, explicit member, or OrgAdmin/SuperAdmin
+        // Access check: user must be owner, explicit member, or OrgAdmin of the SAME org / SuperAdmin
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var appUser = await _db.Users.FindAsync(userId);
-        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+        var callerOrgId = appUser?.OrganizationId ?? 0;
 
-        if (!isOrgLevel && workspace.OwnerId != userId)
+        if (appUser?.Role == "SuperAdmin")
+        {
+            // SuperAdmins have unrestricted access
+        }
+        else if (appUser?.Role == "OrgAdmin")
+        {
+            // OrgAdmins can only access workspaces within their own org
+            if (callerOrgId <= 0 || workspace.OrganizationId != callerOrgId)
+                return StatusCode(403, new { error = "You do not have access to this workspace." });
+        }
+        else if (workspace.OwnerId != userId)
         {
             var hasAccess = await _db.WorkspaceUsers
                 .AnyAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == userId);
@@ -360,8 +381,16 @@ public class WorkspaceController : Controller
         if (!await _permissions.CanViewAsync(workspace.Id, userId))
         {
             var appUser = await _db.Users.FindAsync(userId);
-            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            // OrgAdmins may only view members of workspaces in their own org
+            if (appUser?.Role == "OrgAdmin")
+            {
+                if ((appUser.OrganizationId ?? 0) != workspace.OrganizationId)
+                    return StatusCode(403, new { error = "You do not have access to this workspace." });
+            }
+            else if (appUser?.Role != "SuperAdmin")
+            {
                 return StatusCode(403, new { error = "You do not have access to this workspace." });
+            }
         }
 
         var members = await _db.WorkspaceUsers
@@ -396,6 +425,11 @@ public class WorkspaceController : Controller
         var targetUser = await _userManager.FindByEmailAsync(req.Email ?? "");
         if (targetUser == null)
             return BadRequest(new { error = $"No user found with email '{req.Email}'." });
+
+        // Org sandbox: only users belonging to the same organization may be added to a workspace.
+        // Return 404 (not 403) to avoid leaking the existence of users in other orgs.
+        if (targetUser.OrganizationId.HasValue && targetUser.OrganizationId.Value != workspace.OrganizationId)
+            return NotFound(new { error = $"No user found with email '{req.Email}'." });
 
         var already = await _db.WorkspaceUsers
             .AnyAsync(wu => wu.WorkspaceId == workspace.Id && wu.UserId == targetUser.Id);

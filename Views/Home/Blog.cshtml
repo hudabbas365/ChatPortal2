@@ -1,3 +1,4 @@
+@model List<ChatPortal2.Models.BlogPost>
 @{
     ViewData["Title"] = "Blog";
 }
@@ -12,30 +13,55 @@
 <section class="cp-section">
     <div class="container">
         <div class="row g-4">
-            <div class="col-md-4">
-                <div class="blog-card glass-card">
-                    <div class="blog-date">April 2026</div>
-                    <h3 class="blog-title">Introducing 72 Chart Types in ChatPortal2</h3>
-                    <p class="blog-excerpt">We've migrated the full ManageCharts library into ChatPortal2, giving you access to 72 chart types including treemaps, Sankey diagrams, candlesticks, and more.</p>
-                    <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+            @if (Model != null && Model.Count > 0)
+            {
+                @foreach (var post in Model)
+                {
+                    <div class="col-md-4">
+                        <div class="blog-card glass-card">
+                            @if (!string.IsNullOrEmpty(post.ImageUrl))
+                            {
+                                <img src="@post.ImageUrl" alt="@post.Title" class="img-fluid rounded mb-3" />
+                            }
+                            <div class="blog-date">@post.PublishedAt.ToString("MMMM yyyy")</div>
+                            <h3 class="blog-title">@post.Title</h3>
+                            <p class="blog-excerpt">@post.Summary</p>
+                            @if (!string.IsNullOrEmpty(post.Author))
+                            {
+                                <small class="text-muted">By @post.Author</small>
+                            }
+                            <a href="/blog/@post.Slug" class="blog-read-more d-block mt-2">Read More <i class="bi bi-arrow-right"></i></a>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="col-md-4">
+                    <div class="blog-card glass-card">
+                        <div class="blog-date">April 2026</div>
+                        <h3 class="blog-title">Introducing 72 Chart Types in ChatPortal2</h3>
+                        <p class="blog-excerpt">We've migrated the full ManageCharts library into ChatPortal2, giving you access to 72 chart types including treemaps, Sankey diagrams, candlesticks, and more.</p>
+                        <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="blog-card glass-card">
-                    <div class="blog-date">March 2026</div>
-                    <h3 class="blog-title">Cohere AI Integration: Real-time Streaming</h3>
-                    <p class="blog-excerpt">ChatPortal2 now uses Cohere's command-a-03-2025 model with real-time SSE streaming for instant AI responses to your data questions.</p>
-                    <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+                <div class="col-md-4">
+                    <div class="blog-card glass-card">
+                        <div class="blog-date">March 2026</div>
+                        <h3 class="blog-title">Cohere AI Integration: Real-time Streaming</h3>
+                        <p class="blog-excerpt">ChatPortal2 now uses Cohere's command-a-03-2025 model with real-time SSE streaming for instant AI responses to your data questions.</p>
+                        <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="blog-card glass-card">
-                    <div class="blog-date">February 2026</div>
-                    <h3 class="blog-title">SEO Management & Dynamic Sitemaps</h3>
-                    <p class="blog-excerpt">Super Admins can now manage all SEO metadata, canonical URLs, Open Graph tags, and generate dynamic sitemaps from the Admin panel.</p>
-                    <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+                <div class="col-md-4">
+                    <div class="blog-card glass-card">
+                        <div class="blog-date">February 2026</div>
+                        <h3 class="blog-title">SEO Management &amp; Dynamic Sitemaps</h3>
+                        <p class="blog-excerpt">Super Admins can now manage all SEO metadata, canonical URLs, Open Graph tags, and generate dynamic sitemaps from the Admin panel.</p>
+                        <a href="#" class="blog-read-more">Read More <i class="bi bi-arrow-right"></i></a>
+                    </div>
                 </div>
-            </div>
+            }
         </div>
     </div>
 </section>

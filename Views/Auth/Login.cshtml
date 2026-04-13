@@ -3,6 +3,10 @@
     Layout = "_Layout";
 }
 
+@section Head {
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+}
+
 <div class="auth-page">
     <div class="container">
         <div class="row justify-content-center min-vh-100 align-items-center">
@@ -31,6 +35,9 @@
                                 <input type="password" class="form-control cp-input" id="loginPassword" placeholder="••••••••" required />
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <div class="g-recaptcha" data-sitekey="@ViewBag.RecaptchaSiteKey"></div>
+                        </div>
                         <button type="submit" class="btn cp-btn-gradient w-100 btn-lg" id="loginBtn">
                             <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
                         </button>
@@ -48,12 +55,19 @@
 <script>
 $('#loginForm').on('submit', function(e) {
     e.preventDefault();
+
+    const captchaToken = typeof grecaptcha !== 'undefined' ? grecaptcha.getResponse() : '';
+    if (typeof grecaptcha !== 'undefined' && !captchaToken) {
+        $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text('Please complete the CAPTCHA verification.');
+        return;
+    }
+
     const btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
     $.ajax({
         url: '/api/auth/login',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ email: $('#loginEmail').val(), password: $('#loginPassword').val() }),
+        data: JSON.stringify({ email: $('#loginEmail').val(), password: $('#loginPassword').val(), captchaToken: captchaToken }),
         success: function(r) {
             localStorage.setItem('cp_user', JSON.stringify(r.user));
             localStorage.setItem('cp_token', r.token);
@@ -62,6 +76,7 @@ $('#loginForm').on('submit', function(e) {
         error: function(e) {
             $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');
             btn.prop('disabled', false).html('<i class="bi bi-box-arrow-in-right me-2"></i>Sign In');
+            if (typeof grecaptcha !== 'undefined') grecaptcha.reset();
         }
     });
 });

@@ -10,6 +10,8 @@ public class Datasource
     public string? DbUser { get; set; }
     public string? DbPassword { get; set; }
     public string? SelectedTables { get; set; }
+    public string? XmlaEndpoint { get; set; }
+    public string? MicrosoftAccountTenantId { get; set; }
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
     public int? WorkspaceId { get; set; }

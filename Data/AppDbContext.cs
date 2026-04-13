@@ -21,6 +21,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Dashboard> Dashboards => Set<Dashboard>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<TokenUsage> TokenUsages => Set<TokenUsage>();
+    public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
+    public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -173,5 +175,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .Ignore(s => s.IsTrialActive)
             .Ignore(s => s.IsTrialExpired)
             .Ignore(s => s.DaysRemaining);
+
+        builder.Entity<WorkspaceMemory>()
+            .HasOne(m => m.Workspace)
+            .WithMany()
+            .HasForeignKey(m => m.WorkspaceId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -1,0 +1,142 @@
+@{
+    ViewData["Title"] = "Revenue & Income";
+    ViewData["ActivePage"] = "revenue";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<h2 class="fw-bold mb-4"><i class="bi bi-cash-stack me-2 text-primary"></i>Revenue &amp; Income</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="sa-stat-label"><i class="bi bi-cash-stack me-1"></i>Total Monthly Revenue</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ProCount</div>
+            <div class="sa-stat-label"><i class="bi bi-award me-1"></i>Professional ($@ChatPortal2.Models.PlanPricing.ProPricePerUser/user)</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.EnterpriseCount</div>
+            <div class="sa-stat-label"><i class="bi bi-building-fill-gear me-1"></i>Enterprise ($@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser/user)</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="sa-stat">
+            <div class="sa-stat-val">@ViewBag.ActiveTrials</div>
+            <div class="sa-stat-label"><i class="bi bi-clock me-1"></i>Active Free Trials</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="sa-card">
+            <h6 class="text-muted mb-3">Revenue Breakdown</h6>
+            <table class="sa-table">
+                <thead>
+                    <tr>
+                        <th>Plan</th>
+                        <th>Users</th>
+                        <th>Price/User</th>
+                        <th>Monthly Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="sa-badge sa-badge-blue">Professional</span></td>
+                        <td>@ViewBag.ProCount</td>
+                        <td>$@ChatPortal2.Models.PlanPricing.ProPricePerUser</td>
+                        <td class="fw-semibold">$@ViewBag.ProRevenue.ToString("N2")</td>
+                    </tr>
+                    <tr>
+                        <td><span class="sa-badge sa-badge-green">Enterprise</span></td>
+                        <td>@ViewBag.EnterpriseCount</td>
+                        <td>$@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser</td>
+                        <td class="fw-semibold">$@ViewBag.EnterpriseRevenue.ToString("N2")</td>
+                    </tr>
+                    <tr>
+                        <td><span class="sa-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24">Free Trial</span></td>
+                        <td>@ViewBag.ActiveTrials</td>
+                        <td>—</td>
+                        <td class="text-muted">$0.00</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" class="fw-bold">Total</td>
+                        <td class="fw-bold" style="color:var(--sa-primary)">$@ViewBag.TotalIncome.ToString("N2")</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="sa-card">
+            <h6 class="text-muted mb-3">Plan Distribution</h6>
+            <canvas id="planChart" height="160"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sa-card">
+    <h6 class="text-muted mb-3">Users with Payment Methods on File <span class="sa-badge sa-badge-blue ms-2">Read-only</span></h6>
+    @{
+        var paidUsers = ViewBag.PaidUsers as IEnumerable<dynamic>;
+    }
+    @if (paidUsers == null || !paidUsers.Any())
+    {
+        <p class="text-muted">No payment methods on file yet.</p>
+    }
+    else
+    {
+        <table class="sa-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Email</th>
+                    <th>Card Brand</th>
+                    <th>Masked Number</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in paidUsers)
+                {
+                    <tr>
+                        <td>@user.FullName</td>
+                        <td class="text-muted">@user.Email</td>
+                        <td><span class="sa-badge sa-badge-blue">@user.CardBrand</span></td>
+                        <td>**** **** **** @user.CardLast4</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    var ctx = document.getElementById('planChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Professional', 'Enterprise', 'Free Trial'],
+            datasets: [{
+                data: [@ViewBag.ProCount, @ViewBag.EnterpriseCount, @ViewBag.ActiveTrials],
+                backgroundColor: ['rgba(96,165,250,0.7)', 'rgba(52,211,153,0.7)', 'rgba(251,191,36,0.6)'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            plugins: { legend: { labels: { color: '#e2e8f0', font: { size: 12 } } } },
+            cutout: '65%'
+        }
+    });
+})();
+</script>
+}

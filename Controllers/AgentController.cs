@@ -57,6 +57,13 @@ public class AgentController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] int? workspaceId, [FromQuery] int? organizationId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+
+        // Every request is scoped to the caller's own organization — ignore any organizationId param
+        // for non-SuperAdmins to prevent cross-org data leakage.
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+        if (appUser?.Role != "SuperAdmin" && callerOrgId <= 0)
+            return StatusCode(403, new { error = "User is not assigned to an organization." });
 
         // If workspace context provided, block Viewers from seeing agents
         if (workspaceId.HasValue && workspaceId.Value > 0)
@@ -66,11 +73,20 @@ public class AgentController : ControllerBase
         }
 
         var query = _db.Agents.AsQueryable();
-        if (organizationId.HasValue)
-            query = query.Where(a => a.OrganizationId == organizationId.Value);
+
+        if (appUser?.Role == "SuperAdmin")
+        {
+            // SuperAdmins may optionally filter by org
+            if (organizationId.HasValue && organizationId.Value > 0)
+                query = query.Where(a => a.OrganizationId == organizationId.Value);
+        }
+        else
+        {
+            // All other roles are hard-scoped to their own org only
+            query = query.Where(a => a.OrganizationId == callerOrgId);
+        }
 
         // Non-OrgAdmin users only see agents from workspaces they own or are a member of
-        var appUser = await _db.Users.FindAsync(userId);
         var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
         if (!isOrgLevel)
         {
@@ -88,6 +104,8 @@ public class AgentController : ControllerBase
     public async Task<IActionResult> Create([FromBody] AgentRequest req)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
 
         if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
         {
@@ -96,6 +114,10 @@ public class AgentController : ControllerBase
         }
 
         var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, userId);
+
+        // Enforce org sandbox: non-SuperAdmins can only create agents in their own org
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && orgId != callerOrgId)
+            return StatusCode(403, new { error = "You cannot create agents in another organization." });
 
         var agent = new Agent
         {
@@ -127,6 +149,13 @@ public class AgentController : ControllerBase
         if (agent == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins cannot modify agents from a different organization
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && agent.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this agent." });
+
         var wsId = agent.WorkspaceId ?? req.WorkspaceId ?? 0;
         if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
             return StatusCode(403, new { error = "You need Editor or Admin role to update agents." });
@@ -150,6 +179,13 @@ public class AgentController : ControllerBase
         if (agent == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins cannot delete agents from a different organization
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && agent.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this agent." });
+
         var wsId = agent.WorkspaceId ?? 0;
         if (wsId > 0 && !await _permissions.CanDeleteAsync(wsId, userId))
             return StatusCode(403, new { error = "Only Admins can delete agents." });
