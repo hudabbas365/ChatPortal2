@@ -176,7 +176,7 @@
 
         // Match dashboard colsToPixels calculation
         function colsToPixels(width) {
-            const baseWidth = Math.min(1200 - 32, 900);
+            const baseWidth = 1200 - 32; // match the dashboard canvas width (1168px)
             const pct = (parseInt(width) || 6) / 12;
             return Math.round(Math.max(200, baseWidth * pct));
         }
@@ -198,10 +198,11 @@
             }
 
             // Calculate page height from chart positions
+            const titleOffset = (pages.length > 1) ? 44 : 0; // offset for rv-page-title bar
             let maxBottom = 400;
             charts.forEach(c => {
                 const cardHeight = c.height || 300;
-                const bottom = (c.posY || 0) + cardHeight + 20;
+                const bottom = (c.posY || 0) + cardHeight + 20 + titleOffset;
                 if (bottom > maxBottom) maxBottom = bottom;
             });
             pageEl.style.minHeight = maxBottom + 'px';
@@ -211,7 +212,7 @@
                 const cardWidth = colsToPixels(c.width || 6);
                 const cardHeight = c.height || 300;
                 const posX = c.posX || 0;
-                const posY = c.posY || 0;
+                const posY = (c.posY || 0) + titleOffset;
                 const zIdx = c.zIndex || 1;
 
                 // Build card using the same .chart-card classes as the Dashboard
