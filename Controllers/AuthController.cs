@@ -15,6 +15,7 @@ public class AuthController : Controller
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
@@ -22,7 +23,8 @@ public class AuthController : Controller
         JwtService jwtService,
         AppDbContext db,
         IConfiguration config,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -30,6 +32,7 @@ public class AuthController : Controller
         _db = db;
         _config = config;
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     [HttpGet("/auth/login")]
@@ -174,7 +177,13 @@ public class AuthController : Controller
     private async Task<bool> VerifyCaptchaAsync(string token)
     {
         var secretKey = _config["Recaptcha:SecretKey"];
-        if (string.IsNullOrEmpty(secretKey)) return true;
+        // CAPTCHA verification is skipped in dev mode when the secret key is not configured.
+        // In production, always set Recaptcha:SecretKey to enforce CAPTCHA.
+        if (string.IsNullOrEmpty(secretKey))
+        {
+            _logger.LogWarning("Recaptcha:SecretKey is not configured. CAPTCHA verification is being skipped.");
+            return true;
+        }
 
         try
         {

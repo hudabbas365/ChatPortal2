@@ -17,13 +17,24 @@ public class SuperAdminController : Controller
         _db = db;
     }
 
-    private bool IsSuperAdmin() =>
-        User.Claims.Any(c => c.Type == "role" && c.Value == "SuperAdmin");
+    private string? GetCurrentUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+
+    // Verifies SuperAdmin role both from JWT claims AND database for defense-in-depth
+    private async Task<bool> IsSuperAdminAsync()
+    {
+        if (!User.Claims.Any(c => c.Type == "role" && c.Value == "SuperAdmin"))
+            return false;
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId)) return false;
+        var user = await _db.Users.FindAsync(userId) as ApplicationUser;
+        return user?.Role == "SuperAdmin";
+    }
 
     [HttpGet("/superadmin")]
     public async Task<IActionResult> Index()
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         ViewBag.TotalOrgs = await _db.Organizations.CountAsync();
         ViewBag.TotalUsers = await _db.Users.CountAsync();
@@ -35,7 +46,7 @@ public class SuperAdminController : Controller
     [HttpGet("/superadmin/organizations")]
     public async Task<IActionResult> Organizations()
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         var orgs = await _db.Organizations
             .Include(o => o.Users)
@@ -48,7 +59,7 @@ public class SuperAdminController : Controller
     [HttpGet("/superadmin/activity")]
     public async Task<IActionResult> ActivityLogs([FromQuery] int page = 1)
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         const int pageSize = 50;
         var logs = await _db.ActivityLogs
@@ -61,16 +72,16 @@ public class SuperAdminController : Controller
     }
 
     [HttpGet("/superadmin/aiconfig")]
-    public IActionResult AiConfig()
+    public async Task<IActionResult> AiConfig()
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
         return View("~/Views/Admin/AiConfig.cshtml");
     }
 
     [HttpGet("/superadmin/payments")]
     public async Task<IActionResult> Payments()
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         var users = await _db.Users
             .Where(u => u.CardLast4 != null)
@@ -82,7 +93,7 @@ public class SuperAdminController : Controller
     [HttpGet("/superadmin/seo")]
     public async Task<IActionResult> Seo()
     {
-        if (!IsSuperAdmin()) return StatusCode(403);
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         var entries = await _db.SeoEntries.OrderBy(s => s.PageUrl).ToListAsync();
         return View("~/Views/Admin/Seo.cshtml", entries);
