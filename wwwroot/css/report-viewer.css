@@ -89,12 +89,12 @@ body.rv-body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-ser
 }
 
 /* ── Canvas layout ────────────────────────────────────────── */
-.rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; overflow-x: auto; }
+.rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; overflow-x: auto; box-sizing: border-box; }
 .rv-page {
     background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 8px);
     box-shadow: var(--cp-shadow-sm, 0 1px 4px rgba(0,0,0,0.06));
-    margin-bottom: 24px; padding: 16px;
-    position: relative; min-height: 400px; overflow: hidden;
+    margin-bottom: 32px; padding: 20px;
+    position: relative; min-height: 400px; overflow: visible;
 }
 .rv-page-title {
     font-size: 0.88rem; font-weight: 600; color: var(--cp-text, #334155);
@@ -123,7 +123,11 @@ body.rv-body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-ser
 }
 .rv-page .chart-card.shape-card { cursor: default; }
 .rv-page .chart-card.shape-card:hover { transform: none; border-color: transparent; box-shadow: none; }
-.rv-page .chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+.rv-page .chart-canvas-wrap {
+    overflow: hidden;
+    position: relative;
+}
+.rv-page .chart-canvas-wrap canvas { display: block; width: 100% !important; height: 100% !important; }
 
 /* ── Empty & export states ────────────────────────────────── */
 .rv-empty { text-align: center; padding: 60px 20px; color: var(--cp-text-muted, #94a3b8); }
