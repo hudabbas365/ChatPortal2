@@ -33,7 +33,11 @@ public class AuthController : Controller
     }
 
     [HttpGet("/auth/login")]
-    public IActionResult Login() => View();
+    public IActionResult Login()
+    {
+        ViewBag.RecaptchaSiteKey = _config["Recaptcha:SiteKey"] ?? "";
+        return View();
+    }
 
     [HttpGet("/auth/register")]
     public IActionResult Register() => View();
@@ -90,7 +94,7 @@ public class AuthController : Controller
         var recaptchaSecret = _config["Recaptcha:SecretKey"];
         if (!string.IsNullOrEmpty(recaptchaSecret) && !recaptchaSecret.StartsWith("YOUR_"))
         {
-            if (!string.IsNullOrEmpty(req.CaptchaToken) && !await VerifyCaptchaAsync(req.CaptchaToken))
+            if (string.IsNullOrEmpty(req.CaptchaToken) || !await VerifyCaptchaAsync(req.CaptchaToken))
                 return BadRequest(new { error = "CAPTCHA verification failed." });
         }
 

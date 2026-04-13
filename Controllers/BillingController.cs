@@ -13,11 +13,13 @@ public class BillingController : Controller
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IConfiguration _config;
 
-    public BillingController(AppDbContext db, UserManager<ApplicationUser> userManager)
+    public BillingController(AppDbContext db, UserManager<ApplicationUser> userManager, IConfiguration config)
     {
         _db = db;
         _userManager = userManager;
+        _config = config;
     }
 
     [HttpGet("/admin/billing")]
@@ -30,6 +32,7 @@ public class BillingController : Controller
 
         ViewBag.User = user;
         ViewBag.Plan = user?.Subscription;
+        ViewBag.StripePublishableKey = _config["Stripe:PublishableKey"] ?? "";
         return View("~/Views/Admin/Billing.cshtml");
     }
 
