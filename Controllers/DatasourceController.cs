@@ -16,25 +16,28 @@ public class DatasourceController : ControllerBase
 {
     private static readonly List<string> DatasourceTypes = new()
     {
-        "SQL Server", "PostgreSQL", "MySQL", "MariaDB", "Oracle", "SQLite", "MongoDB",
-        "Redis", "Cassandra", "CouchDB", "DynamoDB", "Firebase Realtime DB", "Firestore",
-        "Elasticsearch", "OpenSearch", "Solr", "InfluxDB", "TimescaleDB", "QuestDB",
-        "REST API", "GraphQL API", "SOAP / WSDL", "OData", "WebSocket",
-        "CSV", "Excel (XLSX)", "Google Sheets", "JSON File", "XML File",
-        "Parquet", "Avro", "ORC", "Feather", "HDF5",
-        "Snowflake", "BigQuery", "Amazon Redshift", "Azure Synapse", "Databricks",
-        "Teradata", "IBM Db2", "SAP HANA", "Vertica", "Greenplum",
-        "Amazon S3", "Azure Blob Storage", "Google Cloud Storage", "HDFS",
-        "Apache Kafka", "Apache Spark", "Apache Flink", "RabbitMQ", "Azure Event Hubs",
-        "Salesforce", "HubSpot", "Zendesk", "Shopify", "Stripe",
-        "Google Analytics", "Mixpanel", "Amplitude", "Segment", "Heap",
-        "Looker", "Tableau", "Power BI", "Metabase", "Mode Analytics",
-        "Airtable", "Notion", "Coda", "Smartsheet",
-        "GitHub", "GitLab", "Jira", "Confluence", "Linear",
-        "Slack", "Microsoft Teams", "Discord",
-        "MySQL Cluster", "CockroachDB", "PlanetScale", "Neon", "Supabase",
-        "FTP / SFTP", "Email (IMAP/SMTP)", "SMS API", "Push Notification Service",
-        "Custom JDBC", "Custom ODBC", "In-Memory Cache"
+        "SQL Server",
+        "Power BI",
+        // TODO: Additional datasource types are disabled pending SQL Server-first rollout
+        // "PostgreSQL", "MySQL", "MariaDB", "Oracle", "MongoDB",
+        // "Redis", "Cassandra", "CouchDB", "DynamoDB", "Firebase Realtime DB", "Firestore",
+        // "Elasticsearch", "OpenSearch", "Solr", "InfluxDB", "TimescaleDB", "QuestDB",
+        // "REST API", "GraphQL API", "SOAP / WSDL", "OData", "WebSocket",
+        // "CSV", "Excel (XLSX)", "Google Sheets", "JSON File", "XML File",
+        // "Parquet", "Avro", "ORC", "Feather", "HDF5",
+        // "Snowflake", "BigQuery", "Amazon Redshift", "Azure Synapse", "Databricks",
+        // "Teradata", "IBM Db2", "SAP HANA", "Vertica", "Greenplum",
+        // "Amazon S3", "Azure Blob Storage", "Google Cloud Storage", "HDFS",
+        // "Apache Kafka", "Apache Spark", "Apache Flink", "RabbitMQ", "Azure Event Hubs",
+        // "Salesforce", "HubSpot", "Zendesk", "Shopify", "Stripe",
+        // "Google Analytics", "Mixpanel", "Amplitude", "Segment", "Heap",
+        // "Looker", "Tableau", "Metabase", "Mode Analytics",
+        // "Airtable", "Notion", "Coda", "Smartsheet",
+        // "GitHub", "GitLab", "Jira", "Confluence", "Linear",
+        // "Slack", "Microsoft Teams", "Discord",
+        // "MySQL Cluster", "CockroachDB", "PlanetScale", "Neon", "Supabase",
+        // "FTP / SFTP", "Email (IMAP/SMTP)", "SMS API", "Push Notification Service",
+        // "Custom JDBC", "Custom ODBC", "In-Memory Cache"
     };
 
     private readonly AppDbContext _db;
@@ -113,6 +116,10 @@ public class DatasourceController : ControllerBase
 
         var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, userId);
 
+        // Power BI requires an XMLA endpoint
+        if (string.Equals(req.Type, "Power BI", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(req.XmlaEndpoint))
+            return BadRequest(new { error = "XMLA Endpoint is required for Power BI datasources." });
+
         var ds = new Datasource
         {
             Name = req.Name ?? "New Datasource",
@@ -120,6 +127,8 @@ public class DatasourceController : ControllerBase
             ConnectionString = req.ConnectionString ?? "",
             DbUser = req.DbUser,
             DbPassword = req.DbPassword,
+            XmlaEndpoint = req.XmlaEndpoint,
+            MicrosoftAccountTenantId = req.MicrosoftAccountTenantId,
             OrganizationId = orgId,
             WorkspaceId = req.WorkspaceId
         };
@@ -184,14 +193,12 @@ public class DatasourceController : ControllerBase
     private static string? GetFieldsQuery(string type, string? selectedTables)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
             return "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS ORDER BY COLUMN_NAME";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT DISTINCT column_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY column_name";
         if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
             return "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY COLUMN_NAME";
-        if (t.Contains("SQLite", StringComparison.OrdinalIgnoreCase))
-            return null; // SQLite doesn't have INFORMATION_SCHEMA
         return null;
     }
 
@@ -259,14 +266,12 @@ public class DatasourceController : ControllerBase
     private static string? GetTablesQuery(string type)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
             return "SELECT TABLE_SCHEMA + '.' + TABLE_NAME as table_name, TABLE_TYPE as table_type FROM INFORMATION_SCHEMA.TABLES ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_type, table_name";
         if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
             return "SELECT TABLE_NAME as table_name, TABLE_TYPE as table_type FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_TYPE, TABLE_NAME";
-        if (t.Contains("SQLite", StringComparison.OrdinalIgnoreCase))
-            return "SELECT name as table_name, type as table_type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name";
         return null;
     }
 
@@ -342,14 +347,12 @@ public class DatasourceController : ControllerBase
     private static string? GetSchemaQuery(string type)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.TABLE_SCHEMA + '.' + t.TABLE_NAME as table_name, t.TABLE_TYPE as table_type, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.table_name, t.table_type, c.column_name, c.data_type FROM information_schema.tables t JOIN information_schema.columns c ON c.table_name = t.table_name AND c.table_schema = t.table_schema WHERE t.table_schema = 'public' ORDER BY t.table_name, c.ordinal_position";
         if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.TABLE_NAME as table_name, t.TABLE_TYPE as table_type, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_NAME = t.TABLE_NAME AND c.TABLE_SCHEMA = t.TABLE_SCHEMA WHERE t.TABLE_SCHEMA = DATABASE() ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
-        if (t.Contains("SQLite", StringComparison.OrdinalIgnoreCase))
-            return null; // SQLite uses PRAGMA, not INFORMATION_SCHEMA
         return null;
     }
 
@@ -489,6 +492,8 @@ public class DatasourceRequest
     public string? DbUser { get; set; }
     public string? DbPassword { get; set; }
     public string? SelectedTables { get; set; }
+    public string? XmlaEndpoint { get; set; }
+    public string? MicrosoftAccountTenantId { get; set; }
     public int OrganizationId { get; set; }
     public int? WorkspaceId { get; set; }
     public string? UserId { get; set; }

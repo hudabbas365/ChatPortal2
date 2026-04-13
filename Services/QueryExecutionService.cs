@@ -1,7 +1,6 @@
 using System.Data;
 using System.Data.Common;
 using ChatPortal2.Models;
-using Microsoft.Data.Sqlite;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using MySqlConnector;
@@ -25,7 +24,7 @@ public class QueryExecutionService : IQueryExecutionService
 {
     private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "SQL Server", "SqlServer", "MSSQL"
+        "SQL Server", "SqlServer", "MSSQL", "Power BI"
     };
 
     private static readonly HashSet<string> PgTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -38,11 +37,6 @@ public class QueryExecutionService : IQueryExecutionService
         "MySQL", "MariaDB"
     };
 
-    private static readonly HashSet<string> SqliteTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SQLite"
-    };
-
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
         DbConnection? conn = null;
@@ -51,7 +45,7 @@ public class QueryExecutionService : IQueryExecutionService
             var connStr = BuildConnectionString(ds);
             conn = CreateConnection(ds.Type, connStr);
             if (conn == null)
-                return new QueryExecutionResult { Success = false, Error = $"Unsupported datasource type: {ds.Type}. Only SQL Server, PostgreSQL, MySQL/MariaDB, and SQLite are supported for live queries." };
+                return new QueryExecutionResult { Success = false, Error = $"Unsupported datasource type: {ds.Type}. Only SQL Server, Power BI, PostgreSQL, and MySQL/MariaDB are supported for live queries." };
 
             // Normalize SQL dialect differences before execution
             sql = NormalizeSql(ds.Type, sql);
@@ -173,9 +167,6 @@ public class QueryExecutionService : IQueryExecutionService
 
         if (MySqlTypes.Contains(type))
             return new MySqlConnection(connectionString);
-
-        if (SqliteTypes.Contains(type))
-            return new SqliteConnection(connectionString);
 
         return null;
     }

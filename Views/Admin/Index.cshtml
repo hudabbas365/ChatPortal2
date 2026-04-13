@@ -3,8 +3,62 @@
     Layout = "_Layout";
 }
 
-<div class="admin-page">
-    <div class="container-fluid py-4">
+<style>
+.admin-layout { min-height: calc(100vh - 70px); }
+.admin-sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid rgba(255,255,255,0.1);
+    padding: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+}
+.admin-sidebar-brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--cp-primary, #3b82f6);
+    padding: 0 1.5rem 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 1rem;
+}
+.admin-side-nav { display: flex; flex-direction: column; gap: 0.25rem; padding: 0 0.75rem; }
+.admin-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 8px;
+    color: var(--cp-text-secondary, #94a3b8);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.2s, color 0.2s;
+}
+.admin-nav-item:hover, .admin-nav-item.active {
+    background: rgba(59,130,246,0.15);
+    color: var(--cp-primary, #3b82f6);
+}
+.admin-main { min-width: 0; }
+</style>
+
+<div class="admin-layout d-flex">
+    <!-- Left Sidebar -->
+    <aside class="admin-sidebar">
+        <div class="admin-sidebar-brand">
+            <i class="bi bi-shield-lock"></i> Admin
+        </div>
+        <nav class="admin-side-nav">
+            <a href="/admin" class="admin-nav-item active"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a href="/admin/users" class="admin-nav-item"><i class="bi bi-people"></i> Users</a>
+            <a href="/admin/billing" class="admin-nav-item"><i class="bi bi-credit-card"></i> Billing</a>
+            <a href="/admin/activity" class="admin-nav-item"><i class="bi bi-activity"></i> Activity Logs</a>
+            <a href="/admin/seo" class="admin-nav-item"><i class="bi bi-search"></i> SEO</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main flex-grow-1 p-4">
         <div class="admin-header mb-4">
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                 <div>
@@ -88,8 +142,8 @@
                     </div>
                     <h4>Income &amp; Revenue</h4>
                     <p>Track subscription revenue, payment history, and financial reports.</p>
-                    <a href="#" class="btn cp-btn-gradient">
-                        <i class="bi bi-currency-dollar me-2"></i>View Revenue
+                    <a href="/admin/billing" class="btn cp-btn-gradient">
+                        <i class="bi bi-currency-dollar me-2"></i>View Billing
                     </a>
                 </div>
             </div>
@@ -100,11 +154,11 @@
                     </div>
                     <h4>User Management</h4>
                     <p>View, manage, and configure user accounts, roles, and subscription plans.</p>
-                    <button class="btn btn-outline-cp">
+                    <a href="/admin/users" class="btn btn-outline-cp">
                         <i class="bi bi-people me-2"></i>Manage Users
-                    </button>
+                    </a>
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 </div>

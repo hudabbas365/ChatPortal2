@@ -1,0 +1,267 @@
+@{
+    ViewData["Title"] = "Billing & Subscription";
+    Layout = "_Layout";
+    var plan = ViewBag.Plan as ChatPortal2.Models.SubscriptionPlan;
+    var user = ViewBag.User as ChatPortal2.Models.ApplicationUser;
+}
+
+<style>
+.admin-layout { min-height: calc(100vh - 70px); }
+.admin-sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid rgba(255,255,255,0.1);
+    padding: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+}
+.admin-sidebar-brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--cp-primary, #3b82f6);
+    padding: 0 1.5rem 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 1rem;
+}
+.admin-side-nav { display: flex; flex-direction: column; gap: 0.25rem; padding: 0 0.75rem; }
+.admin-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 8px;
+    color: var(--cp-text-secondary, #94a3b8);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.2s, color 0.2s;
+}
+.admin-nav-item:hover, .admin-nav-item.active {
+    background: rgba(59,130,246,0.15);
+    color: var(--cp-primary, #3b82f6);
+}
+.admin-main { min-width: 0; }
+.stripe-card-element {
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    min-height: 44px;
+}
+.plan-option { cursor: pointer; }
+.plan-option.selected { border-color: var(--cp-primary, #3b82f6) !important; }
+</style>
+
+<script src="https://js.stripe.com/v3/"></script>
+
+<div class="admin-layout d-flex">
+    <!-- Left Sidebar -->
+    <aside class="admin-sidebar">
+        <div class="admin-sidebar-brand">
+            <i class="bi bi-shield-lock"></i> Admin
+        </div>
+        <nav class="admin-side-nav">
+            <a href="/admin" class="admin-nav-item"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a href="/admin/users" class="admin-nav-item"><i class="bi bi-people"></i> Users</a>
+            <a href="/admin/billing" class="admin-nav-item active"><i class="bi bi-credit-card"></i> Billing</a>
+            <a href="/admin/activity" class="admin-nav-item"><i class="bi bi-activity"></i> Activity Logs</a>
+            <a href="/admin/seo" class="admin-nav-item"><i class="bi bi-search"></i> SEO</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main flex-grow-1 p-4">
+        <h1 class="admin-title mb-1"><i class="bi bi-credit-card me-2"></i>Billing &amp; Subscription</h1>
+        <p class="admin-subtitle mb-4">Manage your subscription plan and payment details.</p>
+
+        <!-- Current Plan Status -->
+        <div class="glass-card p-4 mb-4">
+            <h5 class="mb-3">Current Plan</h5>
+            @if (plan != null)
+            {
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <span class="badge bg-primary fs-6">@plan.Plan.ToString()</span>
+                    @if (plan.Plan == ChatPortal2.Models.PlanType.FreeTrial)
+                    {
+                        @if (plan.IsTrialActive)
+                        {
+                            <span class="text-success"><i class="bi bi-clock me-1"></i>@plan.DaysRemaining days remaining in trial</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Trial expired</span>
+                        }
+                    }
+                    @if (!string.IsNullOrEmpty(user?.CardLast4))
+                    {
+                        <span class="text-muted"><i class="bi bi-credit-card me-1"></i>@(user.CardBrand ?? "Card") ending in ****@user.CardLast4</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">No active subscription found.</p>
+            }
+        </div>
+
+        <!-- Payment Form -->
+        <div class="glass-card p-4">
+            <h5 class="mb-3">Upgrade Your Plan</h5>
+            <div id="billingAlert" class="alert d-none mb-3"></div>
+            <form id="billingForm">
+                <!-- Plan Selection -->
+                <div class="mb-4">
+                    <label class="form-label-cp mb-2">Select Plan</label>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="glass-card p-3 plan-option border" data-plan="Professional" onclick="selectPlan('Professional', this)">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">Professional</h6>
+                                        <p class="text-muted small mb-0">For growing teams</p>
+                                    </div>
+                                    <span class="badge bg-primary">$@ChatPortal2.Models.PlanPricing.ProPricePerUser/user/mo</span>
+                                </div>
+                                <ul class="small mt-2 mb-0 ps-3">
+                                    <li>Unlimited workspaces</li>
+                                    <li>Advanced AI insights</li>
+                                    <li>Priority support</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="glass-card p-3 plan-option border" data-plan="Enterprise" onclick="selectPlan('Enterprise', this)">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">Enterprise</h6>
+                                        <p class="text-muted small mb-0">For large organizations</p>
+                                    </div>
+                                    <span class="badge bg-warning text-dark">$@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser/user/mo</span>
+                                </div>
+                                <ul class="small mt-2 mb-0 ps-3">
+                                    <li>Everything in Professional</li>
+                                    <li>Custom AI models</li>
+                                    <li>Dedicated support</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="selectedPlan" value="" />
+                </div>
+
+                <!-- Cardholder Name -->
+                <div class="mb-3">
+                    <label class="form-label-cp">Cardholder Name</label>
+                    <input type="text" class="form-control cp-input" id="cardholderName" placeholder="Full name on card" />
+                </div>
+
+                <!-- Stripe Card Element -->
+                <div class="mb-4">
+                    <label class="form-label-cp">Card Details</label>
+                    <div id="card-element" class="stripe-card-element"></div>
+                    <div id="card-errors" class="text-danger small mt-1"></div>
+                </div>
+
+                <button type="submit" class="btn cp-btn-gradient" id="subscribeBtn">
+                    <i class="bi bi-lock me-2"></i>Subscribe Securely
+                </button>
+            </form>
+        </div>
+    </main>
+</div>
+
+@section Scripts {
+<script>
+const stripeKey = '@(ViewBag.StripePublishableKey ?? "YOUR_STRIPE_PUBLISHABLE_KEY")';
+let stripe, cardElement, selectedPlanValue = '';
+
+if (stripeKey && !stripeKey.startsWith('YOUR_')) {
+    stripe = Stripe(stripeKey);
+    const elements = stripe.elements();
+    cardElement = elements.create('card', {
+        style: {
+            base: { color: '#e2e8f0', '::placeholder': { color: '#64748b' } }
+        }
+    });
+    cardElement.mount('#card-element');
+    cardElement.on('change', function(e) {
+        document.getElementById('card-errors').textContent = e.error ? e.error.message : '';
+    });
+} else {
+    document.getElementById('card-element').innerHTML = '<p class="text-muted small mb-0">Configure Stripe:PublishableKey in appsettings.json to enable payments.</p>';
+}
+
+function selectPlan(plan, el) {
+    document.querySelectorAll('.plan-option').forEach(e => e.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedPlanValue = plan;
+    document.getElementById('selectedPlan').value = plan;
+}
+
+document.getElementById('billingForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!selectedPlanValue) {
+        showAlert('Please select a plan.', 'danger');
+        return;
+    }
+    const btn = document.getElementById('subscribeBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+    try {
+        let paymentMethodId = null;
+        let cardLast4 = null;
+        let cardBrand = null;
+
+        if (stripe && cardElement) {
+            const result = await stripe.createPaymentMethod({
+                type: 'card',
+                card: cardElement,
+                billing_details: { name: document.getElementById('cardholderName').value }
+            });
+            if (result.error) {
+                document.getElementById('card-errors').textContent = result.error.message;
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-lock me-2"></i>Subscribe Securely';
+                return;
+            }
+            paymentMethodId = result.paymentMethod.id;
+            cardLast4 = result.paymentMethod.card.last4;
+            cardBrand = result.paymentMethod.card.brand;
+        }
+
+        const resp = await fetch('/api/billing/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                paymentMethodId,
+                planType: selectedPlanValue,
+                cardholderName: document.getElementById('cardholderName').value,
+                cardLast4,
+                cardBrand
+            })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            showAlert('Subscription updated successfully!', 'success');
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            showAlert(data.error || 'Subscription failed.', 'danger');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-lock me-2"></i>Subscribe Securely';
+        }
+    } catch (err) {
+        showAlert('An unexpected error occurred.', 'danger');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-lock me-2"></i>Subscribe Securely';
+    }
+});
+
+function showAlert(msg, type) {
+    const el = document.getElementById('billingAlert');
+    el.className = `alert alert-${type}`;
+    el.textContent = msg;
+}
+</script>
+}

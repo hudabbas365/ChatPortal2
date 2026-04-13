@@ -13,7 +13,7 @@ AI-Powered Data Conversations Portal with integrated charting (migrated from Man
 ## Tech Stack
 - ASP.NET Core 8 MVC + Web API
 - Bootstrap 5.3, jQuery 3.7, Chart.js 4.4
-- Entity Framework Core with SQLite
+- Entity Framework Core with SQL Server
 - JWT Bearer Authentication
 
 ## Getting Started

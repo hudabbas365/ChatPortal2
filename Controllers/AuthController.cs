@@ -13,17 +13,23 @@ public class AuthController : Controller
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly JwtService _jwtService;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         JwtService jwtService,
-        AppDbContext db)
+        AppDbContext db,
+        IConfiguration config,
+        IHttpClientFactory httpClientFactory)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _jwtService = jwtService;
         _db = db;
+        _config = config;
+        _httpClientFactory = httpClientFactory;
     }
 
     [HttpGet("/auth/login")]
@@ -57,8 +63,15 @@ public class AuthController : Controller
         if (!result.Succeeded)
             return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
 
-        // Create free subscription
-        _db.SubscriptionPlans.Add(new SubscriptionPlan { UserId = user.Id, Plan = PlanType.Free });
+        // Create 30-day free trial subscription
+        _db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            UserId = user.Id,
+            Plan = PlanType.FreeTrial,
+            TrialStartDate = DateTime.UtcNow,
+            TrialEndDate = DateTime.UtcNow.AddDays(30),
+            HasUsedTrial = true
+        });
         await _db.SaveChangesAsync();
 
         var token = _jwtService.GenerateToken(user);
@@ -72,6 +85,14 @@ public class AuthController : Controller
     {
         if (string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Password))
             return BadRequest(new { error = "Email and password are required." });
+
+        // Verify CAPTCHA if secret key is configured
+        var recaptchaSecret = _config["Recaptcha:SecretKey"];
+        if (!string.IsNullOrEmpty(recaptchaSecret) && !recaptchaSecret.StartsWith("YOUR_"))
+        {
+            if (!string.IsNullOrEmpty(req.CaptchaToken) && !await VerifyCaptchaAsync(req.CaptchaToken))
+                return BadRequest(new { error = "CAPTCHA verification failed." });
+        }
 
         var user = await _userManager.FindByEmailAsync(req.Email);
         if (user == null)
@@ -145,6 +166,30 @@ public class AuthController : Controller
             Expires = DateTime.UtcNow.AddHours(24)
         });
     }
+
+    private async Task<bool> VerifyCaptchaAsync(string token)
+    {
+        var secretKey = _config["Recaptcha:SecretKey"];
+        if (string.IsNullOrEmpty(secretKey)) return true;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("secret", secretKey),
+                new KeyValuePair<string, string>("response", token)
+            });
+            var response = await client.PostAsync("https://www.google.com/recaptcha/api/siteverify", content);
+            var body = await response.Content.ReadAsStringAsync();
+            var result = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(body);
+            return result?.success == true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
 
 public class RegisterRequest
@@ -159,4 +204,5 @@ public class LoginRequest
 {
     public string? Email { get; set; }
     public string? Password { get; set; }
+    public string? CaptchaToken { get; set; }
 }

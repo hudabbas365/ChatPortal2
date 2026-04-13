@@ -1,5 +1,11 @@
 namespace ChatPortal2.Models;
 
+public static class PlanPricing
+{
+    public const decimal ProPricePerUser = 25.00m;
+    public const decimal EnterprisePricePerUser = 35.00m;
+}
+
 public enum PlanType { Free, FreeTrial, Professional, Enterprise }
 
 public class SubscriptionPlan

@@ -7,7 +7,7 @@ public class CohereService
     private readonly IConfiguration _config;
     private readonly ILogger<CohereService> _logger;
     private readonly HttpClient _httpClient;
-    private const string CohereApiUrl = "https://api.cohere.com/v2/chat";
+    private const string CohereApiUrl = "https://api.cohere.ai/v2/chat";
 
     public CohereService(IConfiguration config, ILogger<CohereService> logger, IHttpClientFactory httpClientFactory)
     {
