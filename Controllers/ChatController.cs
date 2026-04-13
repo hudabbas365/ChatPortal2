@@ -231,15 +231,24 @@ Always be concise and actionable.";
         {
             var ds = await _db.Datasources.FindAsync(req.DatasourceId.Value);
 
-            // Permission check: verify user has access to the datasource's workspace
-            if (ds != null && ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+            if (ds != null)
             {
                 var execUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-                if (!string.IsNullOrEmpty(execUserId) && !await _permissions.CanViewAsync(ds.WorkspaceId.Value, execUserId))
+                var execUser = await _db.Users.FindAsync(execUserId);
+                var callerOrgId = execUser?.OrganizationId ?? 0;
+
+                // Org sandbox: non-SuperAdmins cannot run queries against datasources from another org
+                if (execUser?.Role != "SuperAdmin" && callerOrgId > 0 && ds.OrganizationId != callerOrgId)
+                    return StatusCode(403, new { success = false, error = "You do not have access to this datasource." });
+
+                // Workspace-level permission check (OrgAdmins are scoped to own org above, so no bypass needed)
+                if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
                 {
-                    var appUser = await _db.Users.FindAsync(execUserId);
-                    if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
-                        return StatusCode(403, new { success = false, error = "You do not have access to this datasource." });
+                    if (!string.IsNullOrEmpty(execUserId) && !await _permissions.CanViewAsync(ds.WorkspaceId.Value, execUserId))
+                    {
+                        if (execUser?.Role != "OrgAdmin" && execUser?.Role != "SuperAdmin")
+                            return StatusCode(403, new { success = false, error = "You do not have access to this datasource." });
+                    }
                 }
             }
 

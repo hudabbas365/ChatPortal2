@@ -87,6 +87,16 @@ public class DatasourceController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins are always scoped to their own org.
+        if (appUser?.Role != "SuperAdmin")
+        {
+            if (callerOrgId <= 0)
+                return StatusCode(403, new { error = "User is not assigned to an organization." });
+            organizationId = callerOrgId;
+        }
+
         var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
 
         var query = _db.Datasources.Where(d => d.OrganizationId == organizationId);
@@ -446,6 +456,13 @@ public class DatasourceController : ControllerBase
         if (ds == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins cannot modify datasources from another organization
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && ds.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this datasource." });
+
         var wsId = ds.WorkspaceId ?? req.WorkspaceId ?? 0;
         if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
             return StatusCode(403, new { error = "You need Editor or Admin role to update datasources." });
@@ -470,6 +487,13 @@ public class DatasourceController : ControllerBase
         if (ds == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        // Org sandbox: non-SuperAdmins cannot delete datasources from another organization
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && ds.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this datasource." });
+
         var wsId = ds.WorkspaceId ?? 0;
         if (wsId > 0 && !await _permissions.CanDeleteAsync(wsId, userId))
             return StatusCode(403, new { error = "Only Admins can delete datasources." });
