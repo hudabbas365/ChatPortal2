@@ -174,9 +174,10 @@
             return;
         }
 
-        // Match dashboard colsToPixels calculation
+        // Match dashboard colsToPixels calculation exactly (canvasManager.js)
+        // 600px accounts for sidebar/toolbar space; 900px is the maximum canvas width
         function colsToPixels(width) {
-            const baseWidth = 1200 - 32; // match the dashboard canvas width (1168px)
+            const baseWidth = Math.min(window.innerWidth - 600, 900);
             const pct = (parseInt(width) || 6) / 12;
             return Math.round(Math.max(200, baseWidth * pct));
         }
@@ -197,22 +198,28 @@
                 pageEl.appendChild(title);
             }
 
-            // Calculate page height from chart positions
+            // Calculate page height and width from chart positions
             const titleOffset = (pages.length > 1) ? 44 : 0; // offset for rv-page-title bar
             let maxBottom = 400;
+            let maxRight = 0;
             charts.forEach(c => {
                 const cardHeight = c.height || 300;
                 const bottom = (c.posY || 0) + cardHeight + 20 + titleOffset;
                 if (bottom > maxBottom) maxBottom = bottom;
+
+                const w = colsToPixels(c.width || 6);
+                const right = (c.posX || 0) + w + 20;
+                if (right > maxRight) maxRight = right;
             });
             pageEl.style.minHeight = maxBottom + 'px';
+            if (maxRight > 0) pageEl.style.minWidth = maxRight + 'px';
 
             charts.forEach(c => {
                 const isShape = window.ShapeManager && ShapeManager.isShape(c.chartType);
                 const cardWidth = colsToPixels(c.width || 6);
                 const cardHeight = c.height || 300;
-                const posX = c.posX || 0;
-                const posY = (c.posY || 0) + titleOffset;
+                const posX = Math.max(0, c.posX || 0);
+                const posY = Math.max(0, (c.posY || 0) + titleOffset);
                 const zIdx = c.zIndex || 1;
 
                 // Build card using the same .chart-card classes as the Dashboard

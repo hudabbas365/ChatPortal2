@@ -89,12 +89,12 @@ body.rv-body { background: var(--cp-bg, #f0f2f5); font-family: 'Inter', sans-ser
 }
 
 /* ── Canvas layout ────────────────────────────────────────── */
-.rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+.rv-canvas-wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; overflow-x: auto; }
 .rv-page {
     background: var(--cp-surface, #fff); border-radius: var(--cp-radius, 8px);
     box-shadow: var(--cp-shadow-sm, 0 1px 4px rgba(0,0,0,0.06));
     margin-bottom: 24px; padding: 16px;
-    position: relative; min-height: 400px; overflow: visible;
+    position: relative; min-height: 400px; overflow: hidden;
 }
 .rv-page-title {
     font-size: 0.88rem; font-weight: 600; color: var(--cp-text, #334155);
