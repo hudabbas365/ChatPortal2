@@ -332,36 +332,44 @@
                     'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '')
                 },
                 body: JSON.stringify({
-                    message    : text,
-                    workspaceId: wsId,
-                    userId     : user?.id || ''
+                    message      : text,
+                    workspaceId  : wsId,
+                    userId       : user?.id || '',
+                    datasourceId : window.currentDatasourceId || null,
+                    reportGuid   : window._currentReportGuid || null,
+                    pageIndex    : window.canvasManager?.activePageIndex ?? null,
+                    agentId      : window._dashboardWsData?.agentId || null
                 })
             });
             _httpStatus = response.status;
 
-            const reader  = response.body.getReader();
-            const decoder = new TextDecoder();
+            if (!response.ok) {
+                const errText = await response.text().catch(function () { return ''; });
+                if (aiBubble) {
+                    aiBubble.innerHTML =
+                        '<span style="color:var(--cp-danger)">' +
+                        '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                        'AI error ' + _httpStatus +
+                        (errText ? ': ' + _esc(errText.substring(0, 120)) : '') +
+                        '</span>';
+                }
+                return;
+            }
+
             if (aiBubble) aiBubble.innerHTML = '';
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const raw = decoder.decode(value);
-                for (const line of raw.split('\n')) {
-                    if (!line.startsWith('data: ')) continue;
-                    const data = line.slice(6);
-                    if (data === '[DONE]') break;
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.text && aiBubble) {
-                            fullText += parsed.text;
-                            aiBubble.textContent = fullText;
-                            const container = document.getElementById('dcpMessages');
-                            if (container) container.scrollTop = container.scrollHeight;
-                        }
-                    } catch {}
+            const { fullText: streamedText } = await window.aiStream.readSseText(
+                response,
+                function (chunk) {
+                    fullText += chunk;
+                    if (aiBubble) {
+                        aiBubble.textContent = fullText;
+                        const container = document.getElementById('dcpMessages');
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }
                 }
-            }
+            );
+            fullText = streamedText;
 
             // Streaming done — check for structured response
             if (aiBubble && fullText) {

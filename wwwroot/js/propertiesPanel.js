@@ -790,13 +790,26 @@ class PropertiesPanel {
 
     // ── AI Generate SQL ──────────────────────────────────────────────
 
-    /** Wire the AI Generate SQL button. */
+    /** Wire the AI Generate SQL button and the "Use this SQL" apply button. */
     _wireAISqlBtn() {
         const btn = document.getElementById('pp-ai-sql-btn');
-        if (!btn) return;
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', () => this._aiGenerateSQL());
+        if (btn) {
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            newBtn.addEventListener('click', () => this._aiGenerateSQL());
+        }
+
+        const useBtn = document.getElementById('pp-use-sql-btn');
+        if (useBtn) {
+            const newUseBtn = useBtn.cloneNode(true);
+            useBtn.parentNode.replaceChild(newUseBtn, useBtn);
+            newUseBtn.addEventListener('click', () => {
+                const sqlArea = document.getElementById('pp-sql-area');
+                if (!sqlArea || !this.currentChart) return;
+                this.currentChart.dataQuery = sqlArea.value.trim();
+                this.apply();
+            });
+        }
     }
 
     /** Call the AI to generate a SQL statement from current field selections. */
@@ -804,6 +817,9 @@ class PropertiesPanel {
         const btn = document.getElementById('pp-ai-sql-btn');
         const sqlArea = document.getElementById('pp-sql-area');
         if (!sqlArea) return;
+
+        // Preserve current SQL so we can restore it on failure
+        const previousSql = sqlArea.value;
 
         const tableName = this.getVal('prop-dataset') || '';
         const labelField = this.getVal('prop-label-field') || '';
@@ -845,40 +861,41 @@ class PropertiesPanel {
                     'Authorization': 'Bearer ' + token
                 },
                 body: JSON.stringify({
-                    message: prompt,
-                    workspaceId: (new URLSearchParams(window.location.search)).get('workspace') || window.currentWorkspaceGuid || null,
-                    datasourceId: dsId,
-                    userId: (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || ''
+                    message      : prompt,
+                    workspaceId  : (new URLSearchParams(window.location.search)).get('workspace') || window.currentWorkspaceGuid || null,
+                    datasourceId : dsId,
+                    userId       : (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || '',
+                    reportGuid   : window._currentReportGuid || null,
+                    pageIndex    : window.canvasManager?.activePageIndex ?? null,
+                    agentId      : window._dashboardWsData?.agentId || null
                 })
             });
 
-            if (!response.ok) throw new Error('AI request failed');
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let fullText = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const raw = decoder.decode(value);
-                for (const line of raw.split('\n')) {
-                    if (!line.startsWith('data: ')) continue;
-                    const data = line.slice(6);
-                    if (data === '[DONE]') break;
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.text) fullText += parsed.text;
-                    } catch {}
-                }
+            if (!response.ok) {
+                const errText = await response.text().catch(function () { return ''; });
+                const errMsg = '-- AI error ' + response.status + (errText ? ': ' + errText.substring(0, 100) : '') + '. Please type SQL manually.';
+                sqlArea.value = errMsg;
+                return;
             }
+
+            let fullText = '';
+            await window.aiStream.readSseText(response, function (chunk) {
+                fullText += chunk;
+            });
 
             // Extract SQL from response (strip markdown code fences if present)
             const sqlMatch = fullText.match(/```(?:sql)?\s*([\s\S]*?)```/i);
             const sql = (sqlMatch ? sqlMatch[1] : fullText).trim();
-            sqlArea.value = sql || fullText.trim();
+            sqlArea.value = sql || fullText.trim() || previousSql;
         } catch (e) {
-            sqlArea.value = '-- AI generation failed. Please type SQL manually.';
+            // Restore previous SQL on error; show error info below
+            sqlArea.value = previousSql;
+            const errNote = document.getElementById('pp-sql-err-note');
+            if (errNote) {
+                errNote.textContent = 'AI generation failed: ' + (e?.message || 'network error');
+                errNote.style.display = '';
+                setTimeout(function () { errNote.style.display = 'none'; }, 6000);
+            }
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-stars me-1"></i>AI Generate'; }
         }
