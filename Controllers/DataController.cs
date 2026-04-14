@@ -1,8 +1,8 @@
-using ChatPortal2.Services;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 [Route("api/[controller]")]

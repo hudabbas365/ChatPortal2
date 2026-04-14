@@ -1,8 +1,8 @@
 @{
     ViewData["Title"] = "Billing & Subscription";
     Layout = "_Layout";
-    var plan = ViewBag.Plan as ChatPortal2.Models.SubscriptionPlan;
-    var user = ViewBag.User as ChatPortal2.Models.ApplicationUser;
+    var plan = ViewBag.Plan as AIInsights.Models.SubscriptionPlan;
+    var user = ViewBag.User as AIInsights.Models.ApplicationUser;
 }
 
 <style>
@@ -82,7 +82,7 @@
             {
                 <div class="d-flex align-items-center gap-3 flex-wrap">
                     <span class="badge bg-primary fs-6">@plan.Plan.ToString()</span>
-                    @if (plan.Plan == ChatPortal2.Models.PlanType.FreeTrial)
+                    @if (plan.Plan == AIInsights.Models.PlanType.FreeTrial)
                     {
                         @if (plan.IsTrialActive)
                         {
@@ -121,7 +121,7 @@
                                         <h6 class="mb-1">Professional</h6>
                                         <p class="text-muted small mb-0">For growing teams</p>
                                     </div>
-                                    <span class="badge bg-primary">$@ChatPortal2.Models.PlanPricing.ProPricePerUser/user/month</span>
+                                    <span class="badge bg-primary">$@AIInsights.Models.PlanPricing.ProPricePerUser/user/month</span>
                                 </div>
                                 <ul class="small mt-2 mb-0 ps-3">
                                     <li>Unlimited workspaces</li>
@@ -137,7 +137,7 @@
                                         <h6 class="mb-1">Enterprise</h6>
                                         <p class="text-muted small mb-0">For large organizations</p>
                                     </div>
-                                    <span class="badge bg-warning text-dark">$@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser/user/month</span>
+                                    <span class="badge bg-warning text-dark">$@AIInsights.Models.PlanPricing.EnterprisePricePerUser/user/month</span>
                                 </div>
                                 <ul class="small mt-2 mb-0 ps-3">
                                     <li>Everything in Professional</li>

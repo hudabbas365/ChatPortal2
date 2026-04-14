@@ -1,7 +1,7 @@
-using ChatPortal2.Data;
+using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class WorkspacePermissionService : IWorkspacePermissionService
 {

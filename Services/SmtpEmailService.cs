@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class SmtpEmailService : IEmailService
 {
@@ -51,7 +51,7 @@ public class SmtpEmailService : IEmailService
 
         var body = $@"Hello {fullName},
 
-Your ChatPortal2 account has been created. Here are your login credentials:
+Your AIInsights account has been created. Here are your login credentials:
 
   Username: {username}
   Password: {password}
@@ -60,11 +60,11 @@ Your ChatPortal2 account has been created. Here are your login credentials:
 Please change your password after first login.
 
 Regards,
-ChatPortal2 Team";
+AIInsights Team";
 
-        var mail = new MailMessage(from ?? "noreply@chatportal2.com", toEmail)
+        var mail = new MailMessage(from ?? "noreply@AIInsights.com", toEmail)
         {
-            Subject = "Your ChatPortal2 Account Credentials",
+            Subject = "Your AIInsights Account Credentials",
             Body = body
         };
 
@@ -91,7 +91,7 @@ ChatPortal2 Team";
 
         var body = $@"Hello {fullName},
 
-Your ChatPortal2 password has been reset. Here are your new credentials:
+Your AIInsights password has been reset. Here are your new credentials:
 
   Password: {newPassword}
   Login URL: {loginUrl}
@@ -99,11 +99,11 @@ Your ChatPortal2 password has been reset. Here are your new credentials:
 Please change your password after login.
 
 Regards,
-ChatPortal2 Team";
+AIInsights Team";
 
-        var mail = new MailMessage(from ?? "noreply@chatportal2.com", toEmail)
+        var mail = new MailMessage(from ?? "noreply@AIInsights.com", toEmail)
         {
-            Subject = "Your ChatPortal2 Password Has Been Reset",
+            Subject = "Your AIInsights Password Has Been Reset",
             Body = body
         };
 

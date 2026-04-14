@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class CohereService
 {

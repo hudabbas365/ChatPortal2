@@ -1,4 +1,4 @@
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public interface IWorkspacePermissionService
 {

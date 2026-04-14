@@ -1,9 +1,9 @@
 using System.Data;
-using ChatPortal2.Models;
+using AIInsights.Models;
 using Microsoft.AnalysisServices.AdomdClient;
 using Microsoft.Identity.Client;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public interface IPowerBiService
 {

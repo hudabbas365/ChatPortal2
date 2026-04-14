@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "ChatPortal2.SuperAdmin": {
+    "AIInsights.SuperAdmin": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

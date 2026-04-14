@@ -1,11 +1,11 @@
 using System.Data;
 using System.Data.Common;
-using ChatPortal2.Models;
+using AIInsights.Models;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using MySqlConnector;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public interface IQueryExecutionService
 {

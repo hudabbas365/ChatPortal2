@@ -6,10 +6,10 @@
     <RootNamespace>AIInsights</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="ChatPortal2.SuperAdmin/**" />
-    <Content Remove="ChatPortal2.SuperAdmin/**" />
-    <EmbeddedResource Remove="ChatPortal2.SuperAdmin/**" />
-    <None Remove="ChatPortal2.SuperAdmin/**" />
+    <Compile Remove="AIInsights.SuperAdmin/**" />
+    <Content Remove="AIInsights.SuperAdmin/**" />
+    <EmbeddedResource Remove="AIInsights.SuperAdmin/**" />
+    <None Remove="AIInsights.SuperAdmin/**" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AnalysisServices.AdomdClient.NetCore.retail.amd64" Version="19.84.1" />

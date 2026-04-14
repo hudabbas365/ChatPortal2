@@ -1,8 +1,8 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
+using AIInsights.Data;
+using AIInsights.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class TokenBudgetService : ITokenBudgetService
 {

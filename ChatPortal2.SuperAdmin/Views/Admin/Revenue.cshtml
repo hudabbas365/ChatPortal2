@@ -21,14 +21,14 @@
         <div class="stat">
             <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-award"></i></div>
             <div class="stat-val">@ViewBag.ProCount</div>
-            <div class="stat-label">Professional ($@ChatPortal2.Models.PlanPricing.ProPricePerUser/user)</div>
+            <div class="stat-label">Professional ($@AIInsights.Models.PlanPricing.ProPricePerUser/user)</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
         <div class="stat">
             <div class="stat-icon" style="background:rgba(14,165,233,.1);color:#38bdf8"><i class="bi bi-building-fill-gear"></i></div>
             <div class="stat-val">@ViewBag.EnterpriseCount</div>
-            <div class="stat-label">Enterprise ($@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser/user)</div>
+            <div class="stat-label">Enterprise ($@AIInsights.Models.PlanPricing.EnterprisePricePerUser/user)</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
@@ -57,13 +57,13 @@
                     <tr>
                         <td><span class="badge-sm badge-indigo">Professional</span></td>
                         <td>@ViewBag.ProCount</td>
-                        <td>$@ChatPortal2.Models.PlanPricing.ProPricePerUser</td>
+                        <td>$@AIInsights.Models.PlanPricing.ProPricePerUser</td>
                         <td style="color:#1e3a5f;font-weight:600">$@ViewBag.ProRevenue.ToString("N2")</td>
                     </tr>
                     <tr>
                         <td><span class="badge-sm badge-emerald">Enterprise</span></td>
                         <td>@ViewBag.EnterpriseCount</td>
-                        <td>$@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser</td>
+                        <td>$@AIInsights.Models.PlanPricing.EnterprisePricePerUser</td>
                         <td style="color:#1e3a5f;font-weight:600">$@ViewBag.EnterpriseRevenue.ToString("N2")</td>
                     </tr>
                     <tr>

@@ -1,4 +1,4 @@
-namespace ChatPortal2.Models;
+namespace AIInsights.Models;
 
 public class AggregationConfig
 {

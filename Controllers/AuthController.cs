@@ -1,13 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 public class AuthController : Controller
 {

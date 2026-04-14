@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "ChatPortal2": {
+    "AIInsights": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

@@ -190,12 +190,8 @@
                     <input type="text" class="form-control cp-input" id="createFullName" placeholder="Jane Doe" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label-cp">Email Address</label>
-                    <input type="email" class="form-control cp-input" id="createEmail" placeholder="user@example.com" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label-cp">Username</label>
-                    <input type="text" class="form-control cp-input" id="createUsername" placeholder="janedoe" />
+                    <label class="form-label-cp">Email Address <span class="text-danger">*</span></label>
+                    <input type="email" class="form-control cp-input" id="createEmail" placeholder="user@example.com" required />
                 </div>
                 <div class="mb-3">
                     <label class="form-label-cp">Password</label>
@@ -303,7 +299,7 @@
                 <i class="bi bi-stripe fs-1 text-primary mb-3 d-block"></i>
                 <h5>Payment Integration Coming Soon</h5>
                 <p class="text-muted">Stripe and PayPal payment processing will be integrated here. Your plan upgrade request has been noted.</p>
-                <p class="text-muted small">Contact us at <strong>billing@chatportal2.com</strong> for manual upgrades.</p>
+                <p class="text-muted small">Contact us at <strong>billing@AIInsights.com</strong> for manual upgrades.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn cp-btn-gradient" data-bs-dismiss="modal">Got it</button>
@@ -499,15 +495,14 @@
     document.getElementById('submitCreateUserBtn')?.addEventListener('click', function() {
         const fullName  = document.getElementById('createFullName').value.trim();
         const email     = document.getElementById('createEmail').value.trim();
-        const username  = document.getElementById('createUsername').value.trim();
         const password  = document.getElementById('createPassword').value;
         const role      = document.getElementById('createRole').value;
         const alertEl   = document.getElementById('createUserAlert');
-        if (!username) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Username is required.'; alertEl.classList.remove('d-none'); return; }
+        if (!email) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Email is required.'; alertEl.classList.remove('d-none'); return; }
         if (!password) { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Password is required.'; alertEl.classList.remove('d-none'); return; }
         fetch('/api/org/users/create', {
             method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ fullName, email, username, password, role, organizationId: orgId, createdBy: userId })
+            body: JSON.stringify({ fullName, email, username: email, password, role, organizationId: orgId, createdBy: userId })
         }).then(r => r.json()).then(d => {
             if (d.error) {
                 alertEl.className = 'alert alert-danger'; alertEl.textContent = d.error; alertEl.classList.remove('d-none');

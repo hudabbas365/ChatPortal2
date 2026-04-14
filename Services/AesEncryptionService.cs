@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 /// <summary>
 /// AES-256-CBC encryption service for sensitive datasource fields.

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace ChatPortal2.Migrations
+namespace AIInsights.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration

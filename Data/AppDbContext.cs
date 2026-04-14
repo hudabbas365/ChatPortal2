@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using ChatPortal2.Models;
+using AIInsights.Models;
 
-namespace ChatPortal2.Data;
+namespace AIInsights.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser>
 {

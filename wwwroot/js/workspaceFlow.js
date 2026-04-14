@@ -895,7 +895,7 @@
             panel.innerHTML = `
                 <div class="wf-empty-state">
                     <div class="wf-empty-icon"><i class="bi bi-folder-plus"></i></div>
-                    <h4>Welcome to ChatPortal2</h4>
+                    <h4>Welcome to AIInsights</h4>
                     <p>Select a workspace from the left panel or create a new one to get started.</p>
                     <button class="btn cp-btn-gradient" id="wfLandingCreateBtn">
                         <i class="bi bi-plus-lg me-1"></i>New Workspace

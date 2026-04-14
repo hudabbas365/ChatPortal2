@@ -1,13 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Text;
 
-namespace ChatPortal2.SuperAdmin.Controllers;
+namespace AIInsights.SuperAdmin.Controllers;
 
 public class SuperAdminController : Controller
 {

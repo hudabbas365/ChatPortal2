@@ -1,4 +1,4 @@
-@model List<ChatPortal2.Models.Organization>
+@model List<AIInsights.Models.Organization>
 @{
     ViewData["Title"] = "Organizations";
     ViewData["ActivePage"] = "orgs";
@@ -29,11 +29,11 @@
         <tbody>
             @foreach (var org in Model)
             {
-                var proCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Professional) ?? 0;
-                var entCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Enterprise) ?? 0;
+                var proCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Professional) ?? 0;
+                var entCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Enterprise) ?? 0;
                 var trialCount = org.Users?.Count(u => u.Subscription?.IsTrialActive == true) ?? 0;
-                var revenue = proCount * ChatPortal2.Models.PlanPricing.ProPricePerUser
-                            + entCount * ChatPortal2.Models.PlanPricing.EnterprisePricePerUser;
+                var revenue = proCount * AIInsights.Models.PlanPricing.ProPricePerUser
+                            + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
                     <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
                     <td>@(org.Users?.Count ?? 0)</td>

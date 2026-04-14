@@ -1,4 +1,4 @@
-// ChatPortal2 - Chat Workspace JS
+// AIInsights - Chat Workspace JS
 (function() {
     'use strict';
 
@@ -1377,7 +1377,7 @@
             const origin  = window.location.origin;
             let src = `${origin}/chat/embed?workspaceId=${currentWorkspaceId || 0}`;
             if (agentId) src += `&agentId=${agentId}`;
-            const code = `<iframe\n  src="${src}"\n  width="420"\n  height="680"\n  frameborder="0"\n  allow="clipboard-write"\n  title="ChatPortal2 Assistant"\n></iframe>`;
+            const code = `<iframe\n  src="${src}"\n  width="420"\n  height="680"\n  frameborder="0"\n  allow="clipboard-write"\n  title="AIInsights Assistant"\n></iframe>`;
             if (box) box.value = code;
         }
 

@@ -1,4 +1,4 @@
-// ChatPortal2 - Main App JS
+// AIInsights - Main App JS
 (function() {
     'use strict';
 

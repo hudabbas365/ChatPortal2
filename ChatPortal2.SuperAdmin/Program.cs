@@ -1,7 +1,7 @@
 using System.Text;
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.SuperAdmin.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -73,15 +73,15 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddHttpClient("cohere");
-builder.Services.AddScoped<ChatPortal2.Services.CohereService>();
+builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>
     {
-        // Remove the main ChatPortal2 assembly so its controllers are not discovered
+        // Remove the main AIInsights assembly so its controllers are not discovered
         var mainPart = manager.ApplicationParts
-            .FirstOrDefault(p => p.Name == "ChatPortal2");
+            .FirstOrDefault(p => p.Name == "AIInsights");
         if (mainPart != null)
             manager.ApplicationParts.Remove(mainPart);
     });

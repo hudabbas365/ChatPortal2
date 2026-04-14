@@ -1,12 +1,12 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
+using AIInsights.Data;
+using AIInsights.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 public class BillingController : Controller

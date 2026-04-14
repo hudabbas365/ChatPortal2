@@ -1,12 +1,12 @@
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Serialization;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 [Route("api/[controller]")]

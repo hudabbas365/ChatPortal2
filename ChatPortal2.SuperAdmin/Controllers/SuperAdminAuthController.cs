@@ -1,9 +1,9 @@
-using ChatPortal2.Models;
-using ChatPortal2.SuperAdmin.Services;
+using AIInsights.Models;
+using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
-namespace ChatPortal2.SuperAdmin.Controllers;
+namespace AIInsights.SuperAdmin.Controllers;
 
 public class SuperAdminAuthController : Controller
 {

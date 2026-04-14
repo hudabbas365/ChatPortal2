@@ -5,7 +5,7 @@
 namespace AIInsights.Migrations
 {
     /// <inheritdoc />
-    public partial class test10 : Migration
+    public partial class test11 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

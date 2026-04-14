@@ -1,10 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using ChatPortal2.Models;
+using AIInsights.Models;
 using Microsoft.IdentityModel.Tokens;
 
-namespace ChatPortal2.SuperAdmin.Services;
+namespace AIInsights.SuperAdmin.Services;
 
 public class SuperAdminJwtService
 {

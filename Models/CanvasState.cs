@@ -1,7 +1,7 @@
 using Newtonsoft.Json;
 using System.Xml.Serialization;
 
-namespace ChatPortal2.Models;
+namespace AIInsights.Models;
 
 public class CanvasState
 {

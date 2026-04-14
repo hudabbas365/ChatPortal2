@@ -1,4 +1,4 @@
-# ChatPortal2
+# AIInsights
 
 AI-Powered Data Conversations Portal with integrated charting (migrated from ManageCharts).
 

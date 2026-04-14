@@ -1,9 +1,9 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
+using AIInsights.Data;
+using AIInsights.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public interface ISeoService
 {
@@ -118,10 +118,10 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
             new SeoEntry
             {
                 PageUrl = "/",
-                Title = "ChatPortal2 — AI-Powered Data Conversations",
+                Title = "AIInsights — AI-Powered Data Conversations",
                 MetaDescription = "Connect your datasources, chat with AI agents, and visualize insights with 72+ chart types.",
                 MetaKeywords = "AI chat, data analytics, dashboards, charts, agents",
-                OgTitle = "ChatPortal2 — AI-Powered Data Conversations",
+                OgTitle = "AIInsights — AI-Powered Data Conversations",
                 OgDescription = "Connect your datasources, chat with AI agents, and visualize insights.",
                 SitemapPriority = 1.0m,
                 SitemapChangeFreq = "daily",
@@ -130,10 +130,10 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
             new SeoEntry
             {
                 PageUrl = "/about",
-                Title = "About ChatPortal2 — Our Mission",
+                Title = "About AIInsights — Our Mission",
                 MetaDescription = "Learn about our mission to democratize data analytics with AI-powered conversations.",
                 MetaKeywords = "about, mission, AI analytics",
-                OgTitle = "About ChatPortal2",
+                OgTitle = "About AIInsights",
                 OgDescription = "Learn about our mission to democratize data analytics.",
                 SitemapPriority = 0.8m,
                 SitemapChangeFreq = "monthly",
@@ -142,10 +142,10 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
             new SeoEntry
             {
                 PageUrl = "/pricing",
-                Title = "Pricing — ChatPortal2 Plans",
+                Title = "Pricing — AIInsights Plans",
                 MetaDescription = "Choose the plan that fits your needs. Start with a 30-day free trial.",
                 MetaKeywords = "pricing, plans, free trial, subscription",
-                OgTitle = "ChatPortal2 Pricing",
+                OgTitle = "AIInsights Pricing",
                 OgDescription = "Choose the plan that fits your needs. Start with a 30-day free trial.",
                 SitemapPriority = 0.9m,
                 SitemapChangeFreq = "weekly",
@@ -154,11 +154,11 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
             new SeoEntry
             {
                 PageUrl = "/docs",
-                Title = "Documentation — ChatPortal2",
+                Title = "Documentation — AIInsights",
                 MetaDescription = "Learn how to connect datasources, create agents, and build dashboards.",
                 MetaKeywords = "documentation, docs, help, guide",
-                OgTitle = "ChatPortal2 Documentation",
-                OgDescription = "Learn how to use ChatPortal2.",
+                OgTitle = "AIInsights Documentation",
+                OgDescription = "Learn how to use AIInsights.",
                 SitemapPriority = 0.7m,
                 SitemapChangeFreq = "weekly",
                 CreatedBy = "system"
@@ -166,11 +166,11 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
             new SeoEntry
             {
                 PageUrl = "/blog",
-                Title = "Blog — ChatPortal2 Updates",
-                MetaDescription = "Latest updates, tips, and insights from the ChatPortal2 team.",
+                Title = "Blog — AIInsights Updates",
+                MetaDescription = "Latest updates, tips, and insights from the AIInsights team.",
                 MetaKeywords = "blog, updates, tips, news",
-                OgTitle = "ChatPortal2 Blog",
-                OgDescription = "Latest updates, tips, and insights from the ChatPortal2 team.",
+                OgTitle = "AIInsights Blog",
+                OgDescription = "Latest updates, tips, and insights from the AIInsights team.",
                 SitemapPriority = 0.6m,
                 SitemapChangeFreq = "daily",
                 CreatedBy = "system"

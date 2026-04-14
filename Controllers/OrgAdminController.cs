@@ -1,13 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 public class OrgAdminController : Controller
@@ -194,20 +194,26 @@ public class OrgAdminController : Controller
         if (req.Role == "SuperAdmin" && caller?.Role != "SuperAdmin")
             return StatusCode(403, new { error = "Only a SuperAdmin can create SuperAdmin users." });
 
-        if (string.IsNullOrEmpty(req.Username))
-            return BadRequest(new { error = "Username is required." });
+        if (string.IsNullOrEmpty(req.Email))
+            return BadRequest(new { error = "Email is required." });
         if (string.IsNullOrEmpty(req.Password))
             return BadRequest(new { error = "Password is required." });
 
-        var existing = await _userManager.FindByNameAsync(req.Username);
-        if (existing != null)
-            return BadRequest(new { error = $"Username '{req.Username}' is already taken." });
+        var existingByEmail = await _userManager.FindByEmailAsync(req.Email);
+        if (existingByEmail != null)
+            return BadRequest(new { error = $"Email '{req.Email}' is already taken." });
+
+        // Use email as the username so login-by-email always works
+        var userName = !string.IsNullOrWhiteSpace(req.Username) ? req.Username : req.Email;
+        var existingByName = await _userManager.FindByNameAsync(userName);
+        if (existingByName != null)
+            return BadRequest(new { error = $"Username '{userName}' is already taken." });
 
         var user = new ApplicationUser
         {
-            UserName = req.Username,
-            Email = req.Email ?? "",
-            FullName = req.FullName ?? req.Username,
+            UserName = userName,
+            Email = req.Email,
+            FullName = req.FullName ?? req.Email,
             Role = req.Role ?? "User",
             OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null,
             Status = "Active"
@@ -221,7 +227,7 @@ public class OrgAdminController : Controller
         _db.ActivityLogs.Add(new ActivityLog
         {
             Action = "user_created",
-            Description = $"User '{req.Username}' created with role {req.Role}.",
+            Description = $"User '{req.Email}' created with role {req.Role}.",
             UserId = req.CreatedBy ?? "",
             OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null
         });
@@ -230,7 +236,7 @@ public class OrgAdminController : Controller
         var emailSent = false;
         if (!string.IsNullOrEmpty(req.Email))
         {
-            emailSent = await _emailService.SendCredentialsEmailAsync(req.Email, user.FullName ?? req.Username, req.Username, req.Password, loginUrl + "/auth/login");
+            emailSent = await _emailService.SendCredentialsEmailAsync(req.Email, user.FullName ?? req.Email, req.Email, req.Password, loginUrl + "/auth/login");
         }
 
         if (!emailSent)
@@ -238,7 +244,7 @@ public class OrgAdminController : Controller
             _db.ActivityLogs.Add(new ActivityLog
             {
                 Action = "credentials_email_skipped",
-                Description = $"Credentials email skipped for user '{req.Username}' (SMTP not configured or no email provided).",
+                Description = $"Credentials email skipped for user '{req.Email}' (SMTP not configured or no email provided).",
                 UserId = req.CreatedBy ?? "",
                 OrganizationId = req.OrganizationId > 0 ? req.OrganizationId : null
             });
