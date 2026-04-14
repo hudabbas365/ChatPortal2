@@ -23,6 +23,7 @@
                 <th>Trial</th>
                 <th>Workspaces</th>
                 <th>Revenue</th>
+                <th>Plan Tier</th>
                 <th>Created</th>
             </tr>
         </thead>
@@ -66,9 +67,34 @@
                         }
                         else { <span style="color:var(--text-muted)">$0</span> }
                     </td>
+                    <td>
+                        <div class="d-flex gap-1 align-items-center">
+                            <select class="form-select form-select-sm" id="orgPlan_@org.Id" style="min-width:140px">
+                                <option value="Free" selected="@(org.Plan == AIInsights.Models.PlanType.Free)">Free</option>
+                                <option value="FreeTrial" selected="@(org.Plan == AIInsights.Models.PlanType.FreeTrial)">FreeTrial</option>
+                                <option value="Professional" selected="@(org.Plan == AIInsights.Models.PlanType.Professional)">Professional</option>
+                                <option value="Enterprise" selected="@(org.Plan == AIInsights.Models.PlanType.Enterprise)">Enterprise</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" onclick="saveOrgPlan(@org.Id)">Save</button>
+                        </div>
+                    </td>
                     <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                 </tr>
             }
         </tbody>
     </table>
 </div>
+
+<script>
+async function saveOrgPlan(id) {
+    const plan = document.getElementById('orgPlan_' + id)?.value;
+    const r = await fetch('/api/admin/super/orgs/' + id + '/plan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(data.error || 'Failed to update plan.'); return; }
+    alert('Organization plan updated.');
+}
+</script>

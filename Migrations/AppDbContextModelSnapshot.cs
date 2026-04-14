@@ -10,6 +10,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace AIInsights.Migrations
 {
+    /// <summary>
+    /// Snapshot for AIInsights.Data.AppDbContext (namespace rename applied on 2026-04-14).
+    /// </summary>
     [DbContext(typeof(AppDbContext))]
     partial class AppDbContextModelSnapshot : ModelSnapshot
     {

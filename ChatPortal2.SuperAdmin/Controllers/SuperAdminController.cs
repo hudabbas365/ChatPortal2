@@ -110,6 +110,30 @@ public class SuperAdminController : Controller
         return View("~/Views/Admin/Organizations.cshtml", orgs);
     }
 
+    [HttpGet("/api/admin/super/orgs")]
+    public async Task<IActionResult> GetOrganizationsForPlanEditor()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var orgs = await _db.Organizations
+            .OrderBy(o => o.Name)
+            .Select(o => new { o.Id, o.Name, plan = o.Plan.ToString() })
+            .ToListAsync();
+        return Ok(orgs);
+    }
+
+    [HttpPut("/api/admin/super/orgs/{id}/plan")]
+    public async Task<IActionResult> UpdateOrgPlan(int id, [FromBody] UpdateOrgPlanRequest req)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+        if (!Enum.TryParse<PlanType>(req.Plan, true, out var plan))
+            return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
+        org.Plan = plan;
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, orgId = id, plan = org.Plan.ToString() });
+    }
+
     [HttpGet("/superadmin/activity")]
     public async Task<IActionResult> ActivityLogs([FromQuery] int page = 1, [FromQuery] string? search = null)
     {
@@ -168,6 +192,11 @@ public class SuperAdminController : Controller
         public string? UserEmail { get; set; }
         public int? OrganizationId { get; set; }
         public string? OrganizationName { get; set; }
+    }
+
+    public class UpdateOrgPlanRequest
+    {
+        public string Plan { get; set; } = "";
     }
 
     [HttpGet("/superadmin/aiconfig")]

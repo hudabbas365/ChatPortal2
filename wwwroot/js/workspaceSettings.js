@@ -25,9 +25,6 @@ class WorkspaceSettings {
                 <button class="ws-settings-tab active" data-tab="general">
                     <i class="bi bi-gear"></i>General
                 </button>
-                <button class="ws-settings-tab" data-tab="agents">
-                    <i class="bi bi-robot"></i>Agents
-                </button>
                 <button class="ws-settings-tab" data-tab="users">
                     <i class="bi bi-people"></i>Users
                 </button>
@@ -66,12 +63,12 @@ class WorkspaceSettings {
 
                         <div class="ws-field">
                             <label class="ws-field-label" for="wsSettingsName">Workspace Name</label>
-                            <input type="text" class="form-control" id="wsSettingsName" placeholder="e.g. Sales Analytics">
+                            <input type="text" class="form-control" id="wsSettingsName" placeholder="e.g. Sales Analytics" autocomplete="off">
                         </div>
 
                         <div class="ws-field">
                             <label class="ws-field-label" for="wsSettingsDesc">Description</label>
-                            <textarea class="form-control" id="wsSettingsDesc" rows="3" placeholder="Describe the purpose of this workspace..."></textarea>
+                            <textarea class="form-control" id="wsSettingsDesc" rows="3" placeholder="Describe the purpose of this workspace..." autocomplete="off"></textarea>
                         </div>
 
                         <div class="ws-field">
@@ -97,41 +94,6 @@ class WorkspaceSettings {
                             </button>
                             <div class="ws-field-hint">Permanently delete this workspace and all its artifacts.</div>
                         </div>
-                    </div>
-
-                    <!-- Agents Tab -->
-                    <div class="ws-settings-panel" data-panel="agents">
-                        <div class="ws-agents-header">
-                            <h6><i class="bi bi-robot me-2"></i>AI Agents</h6>
-                            <button class="btn btn-sm cp-btn-gradient" id="wsAddAgentToggle">
-                                <i class="bi bi-plus-lg me-1"></i>Create Agent
-                            </button>
-                        </div>
-
-                        <div class="ws-create-agent-form" id="wsCreateAgentForm">
-                            <div class="ws-field">
-                                <label class="ws-field-label" for="wsNewAgentName">Agent Name</label>
-                                <input type="text" class="form-control" id="wsNewAgentName" placeholder="e.g. Sales Agent">
-                            </div>
-                            <div class="ws-field">
-                                <label class="ws-field-label" for="wsNewAgentPrompt">System Prompt</label>
-                                <textarea class="form-control" id="wsNewAgentPrompt" rows="3" placeholder="You are a helpful data assistant..."></textarea>
-                            </div>
-                            <div class="ws-field">
-                                <label class="ws-field-label" for="wsNewAgentDs">Datasource</label>
-                                <select class="form-select" id="wsNewAgentDs">
-                                    <option value="">-- None --</option>
-                                </select>
-                            </div>
-                            <div class="d-flex gap-2 mt-3">
-                                <button class="btn btn-sm cp-btn-gradient" id="wsCreateAgentBtn">
-                                    <i class="bi bi-robot me-1"></i>Create
-                                </button>
-                                <button class="btn btn-sm btn-outline-secondary" id="wsCancelAgentBtn">Cancel</button>
-                            </div>
-                        </div>
-
-                        <div class="ws-agents-list" id="wsAgentsList"></div>
                     </div>
 
                     <!-- Users Tab -->
@@ -182,15 +144,6 @@ class WorkspaceSettings {
         ov.querySelector('#wsLogoInput').addEventListener('change', (e) => this._handleLogoUpload(e));
         ov.querySelector('#wsLogoRemoveBtn').addEventListener('click', () => this._removeLogo());
 
-        // Agent form toggle
-        ov.querySelector('#wsAddAgentToggle').addEventListener('click', () => {
-            ov.querySelector('#wsCreateAgentForm').classList.toggle('show');
-        });
-        ov.querySelector('#wsCancelAgentBtn').addEventListener('click', () => {
-            ov.querySelector('#wsCreateAgentForm').classList.remove('show');
-        });
-        ov.querySelector('#wsCreateAgentBtn').addEventListener('click', () => this._createAgent());
-
         // Delete workspace
         ov.querySelector('#wsDeleteWorkspaceBtn').addEventListener('click', () => this._deleteWorkspace());
     }
@@ -198,12 +151,14 @@ class WorkspaceSettings {
     // ── Public open / close ──────────────────────────────────────
 
     async open(workspaceId) {
-        // Only OrgAdmin / SuperAdmin can access settings
+        // Org Admin / Super Admin can access settings; workspace Admin can also access.
         try {
             var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
             if (!u || (u.role !== 'OrgAdmin' && u.role !== 'SuperAdmin')) {
-                console.warn('Settings access denied — OrgAdmin required.');
-                return;
+                if (window.workspaceRoles && !window.workspaceRoles.canAdmin()) {
+                    console.warn('Settings access denied — Admin role required.');
+                    return;
+                }
             }
         } catch (e) { return; }
 
@@ -228,7 +183,6 @@ class WorkspaceSettings {
         this._overlay.classList.remove('open');
         this._workspaceId = null;
         this._workspaceData = null;
-        this._overlay.querySelector('#wsCreateAgentForm').classList.remove('show');
     }
 
     // ── Tab switching ────────────────────────────────────────────
@@ -295,43 +249,9 @@ class WorkspaceSettings {
             });
         }
 
-        // Agents
-        this._populateAgents(d.agents || []);
-
-        // Datasources in create-agent dropdown
-        this._populateDatasources(d.datasources || []);
-    }
-
-    _populateAgents(agents) {
-        const list = this._overlay.querySelector('#wsAgentsList');
-        if (!agents.length) {
-            list.innerHTML = `
-                <div class="ws-agents-empty">
-                    <i class="bi bi-robot"></i>
-                    <p>No agents yet. Create one to get started.</p>
-                </div>`;
-            return;
-        }
-        list.innerHTML = agents.map(a => `
-            <div class="ws-agent-card" data-agent-id="${a.id}">
-                <div class="ws-agent-icon"><i class="bi bi-robot"></i></div>
-                <div class="ws-agent-info">
-                    <div class="ws-agent-name">${this._esc(a.name)}</div>
-                    <div class="ws-agent-ds">${a.datasourceId ? 'Datasource #' + a.datasourceId : 'No datasource'}</div>
-                </div>
-                <div class="ws-agent-actions">
-                    <button class="btn btn-icon btn-sm" title="Delete" onclick="workspaceSettings._deleteAgent(${a.id})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    _populateDatasources(datasources) {
-        const sel = this._overlay.querySelector('#wsNewAgentDs');
-        sel.innerHTML = '<option value="">-- None --</option>' +
-            datasources.map(d => `<option value="${d.id}">${this._esc(d.name)} (${this._esc(d.type)})</option>`).join('');
+        // Keep list tooltip current
+        const item = document.querySelector(`.panel-list-item[data-workspace-id="${this._workspaceId}"]`);
+        if (item) item.title = d.description || '';
     }
 
     // ── Users / Roles ────────────────────────────────────────────
@@ -463,7 +383,12 @@ class WorkspaceSettings {
             // Update left panel workspace name
             const item = document.querySelector(`.panel-list-item[data-workspace-id="${this._workspaceId}"]`);
             if (item) {
-                item.innerHTML = `<i class="bi bi-folder me-2"></i>${this._esc(name)}`;
+                const logoUrl = this._workspaceData?.logoUrl;
+                const iconHtml = logoUrl
+                    ? `<img src="${this._esc(logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
+                    : `<i class="bi bi-folder me-2"></i>`;
+                item.innerHTML = `${iconHtml}${this._esc(name)}`;
+                item.title = desc || '';
             }
 
             // Update subnav title if visible
@@ -506,111 +431,31 @@ class WorkspaceSettings {
         if (this._workspaceData) this._workspaceData.logoUrl = '';
     }
 
-    // ── Create agent inside workspace ────────────────────────────
-
-    async _createAgent() {
-        const ov = this._overlay;
-        const name = ov.querySelector('#wsNewAgentName').value.trim();
-        const prompt = ov.querySelector('#wsNewAgentPrompt').value.trim();
-        const dsId = ov.querySelector('#wsNewAgentDs').value;
-        const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
-
-        if (!name) {
-            this._showAlert('Agent name is required.', 'error');
-            return;
-        }
-
-        const btn = ov.querySelector('#wsCreateAgentBtn');
-        btn.disabled = true;
-
-        try {
-            const r = await fetch('/api/agents', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name,
-                    systemPrompt: prompt || 'You are a helpful data assistant.',
-                    datasourceId: dsId ? parseInt(dsId) : null,
-                    organizationId: this._workspaceData?.organizationId || user?.organizationId || 0,
-                    userId: user?.id || ''
-                })
-            });
-            if (!r.ok) throw new Error('Create failed');
-            const agent = await r.json();
-
-            // Add to local list
-            if (!this._workspaceData.agents) this._workspaceData.agents = [];
-            this._workspaceData.agents.push(agent);
-            this._populateAgents(this._workspaceData.agents);
-
-            // Also update left panel agent list
-            const agentList = document.getElementById('agentList');
-            if (agentList) {
-                const item = document.createElement('div');
-                item.className = 'panel-list-item';
-                item.dataset.agentId = agent.id;
-                item.innerHTML = `<i class="bi bi-robot me-2"></i>${this._esc(agent.name)}`;
-                agentList.appendChild(item);
-            }
-
-            // Reset form
-            ov.querySelector('#wsNewAgentName').value = '';
-            ov.querySelector('#wsNewAgentPrompt').value = '';
-            ov.querySelector('#wsNewAgentDs').value = '';
-            ov.querySelector('#wsCreateAgentForm').classList.remove('show');
-
-            this._showAlert(`Agent "${name}" created!`, 'success');
-            setTimeout(() => this._clearAlert(), 2500);
-        } catch {
-            this._showAlert('Failed to create agent.', 'error');
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    async _deleteAgent(agentId) {
-        if (!confirm('Delete this agent?')) return;
-        try {
-            const r = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' });
-            if (!r.ok) throw new Error('Delete failed');
-
-            // Remove from local data
-            if (this._workspaceData?.agents) {
-                this._workspaceData.agents = this._workspaceData.agents.filter(a => a.id !== agentId);
-                this._populateAgents(this._workspaceData.agents);
-            }
-
-            // Remove from left panel
-            const item = document.querySelector(`.panel-list-item[data-agent-id="${agentId}"]`);
-            if (item) item.remove();
-
-            this._showAlert('Agent deleted.', 'success');
-            setTimeout(() => this._clearAlert(), 2500);
-        } catch {
-            this._showAlert('Failed to delete agent.', 'error');
-        }
-    }
-
     // ── Delete workspace ─────────────────────────────────────
 
     async _deleteWorkspace() {
         if (!this._workspaceId) return;
         if (!confirm('Delete this workspace and all its artifacts? This cannot be undone.')) return;
+        const wsId = this._workspaceId;
         try {
-            const r = await fetch(`/api/workspaces/${this._workspaceId}`, { method: 'DELETE' });
-            if (!r.ok) throw new Error('Delete failed');
-            this.close();
+            const r = await fetch(`/api/workspaces/${wsId}`, { method: 'DELETE' });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                throw new Error(err.error || 'Delete failed');
+            }
             // Remove from left panel
-            const item = document.querySelector(`.panel-list-item[data-workspace-id="${this._workspaceId}"]`);
+            const item = document.querySelector(`.panel-list-item[data-workspace-id="${wsId}"]`);
             if (item) item.remove();
+            history.replaceState(null, '', '/chat');
             // Reset workspace flow if this was the selected workspace
-            if (window.workspaceFlow && window.workspaceFlow._selectedWsId === this._workspaceId) {
+            if (window.workspaceFlow) {
                 window.workspaceFlow._selectedWsId = null;
                 window.workspaceFlow._wsData = null;
                 if (window.workspaceFlow._showLanding) window.workspaceFlow._showLanding();
             }
-        } catch {
-            this._showAlert('Failed to delete workspace.', 'error');
+            this.close();
+        } catch (e) {
+            this._showAlert(e?.message || 'Failed to delete workspace.', 'error');
         }
     }
 

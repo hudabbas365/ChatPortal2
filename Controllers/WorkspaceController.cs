@@ -15,12 +15,14 @@ public class WorkspaceController : Controller
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IWorkspacePermissionService _permissions;
+    private readonly ILogger<WorkspaceController> _logger;
 
-    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager, IWorkspacePermissionService permissions)
+    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager, IWorkspacePermissionService permissions, ILogger<WorkspaceController> logger)
     {
         _db = db;
         _userManager = userManager;
         _permissions = permissions;
+        _logger = logger;
     }
 
     [HttpGet("/api/workspaces")]
@@ -301,24 +303,36 @@ public class WorkspaceController : Controller
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         if (!await _permissions.CanDeleteAsync(workspace.Id, userId))
             return StatusCode(403, new { error = "Only Admins can delete workspaces." });
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // Explicitly remove child entities to avoid FK constraint failures
+            var datasources = await _db.Datasources.Where(d => d.WorkspaceId == workspace.Id).ToListAsync();
+            var agents = await _db.Agents.Where(a => a.WorkspaceId == workspace.Id).ToListAsync();
+            var dashboards = await _db.Dashboards.Where(d => d.WorkspaceId == workspace.Id).ToListAsync();
+            var wsUsers = await _db.WorkspaceUsers.Where(wu => wu.WorkspaceId == workspace.Id).ToListAsync();
+            var reports = await _db.Reports.Where(r => r.WorkspaceId == workspace.Id).ToListAsync();
 
-        // Explicitly remove child entities to avoid FK constraint failures
-        var datasources = await _db.Datasources.Where(d => d.WorkspaceId == workspace.Id).ToListAsync();
-        var agents = await _db.Agents.Where(a => a.WorkspaceId == workspace.Id).ToListAsync();
-        var dashboards = await _db.Dashboards.Where(d => d.WorkspaceId == workspace.Id).ToListAsync();
-        var wsUsers = await _db.WorkspaceUsers.Where(wu => wu.WorkspaceId == workspace.Id).ToListAsync();
+            // Null out agent references to datasources before removing
+            foreach (var a in agents) a.DatasourceId = null;
+            await _db.SaveChangesAsync();
 
-        // Null out agent references to datasources before removing
-        foreach (var a in agents) a.DatasourceId = null;
-        await _db.SaveChangesAsync();
-
-        _db.WorkspaceUsers.RemoveRange(wsUsers);
-        _db.Datasources.RemoveRange(datasources);
-        _db.Agents.RemoveRange(agents);
-        _db.Dashboards.RemoveRange(dashboards);
-        _db.Workspaces.Remove(workspace);
-        await _db.SaveChangesAsync();
-        return Ok(new { success = true });
+            _db.WorkspaceUsers.RemoveRange(wsUsers);
+            _db.Datasources.RemoveRange(datasources);
+            _db.Agents.RemoveRange(agents);
+            _db.Dashboards.RemoveRange(dashboards);
+            _db.Reports.RemoveRange(reports);
+            _db.Workspaces.Remove(workspace);
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            _logger.LogError(ex, "Failed to delete workspace {WorkspaceGuid}", guid);
+            return StatusCode(500, new { error = "Failed to delete workspace." });
+        }
     }
 
     [HttpDelete("/api/workspaces/{wsGuid}/insights/{dsGuid}")]
@@ -621,4 +635,3 @@ public class AddMemoryRequest
     public string? Content { get; set; }
     public string? Category { get; set; }
 }
-

@@ -1994,6 +1994,12 @@ body.dashboard-body {
     flex-direction: column; gap: 6px;
     color: var(--cp-text-muted); font-size: 0.82rem;
 }
+.chart-no-data {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+    font-size: 0.9rem;
+}
 /* Loading skeleton shimmer */
 .chart-loading-skeleton {
     position: absolute; inset: 0;
@@ -4327,4 +4333,3 @@ body.embed-body {
     .ad-actions { flex-direction: column; }
     .ad-btn { justify-content: center; width: 100%; }
 }
-

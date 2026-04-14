@@ -950,7 +950,13 @@
                     pages: canvasManager.pages,
                     activePageIndex: canvasManager.activePageIndex
                 });
-                const reportName = document.getElementById('canvas-name-display')?.textContent || 'Report';
+                const defaultReportName = document.getElementById('canvas-name-display')?.textContent || ('Report — ' + new Date().toLocaleDateString());
+                const reportName = prompt('Enter a name for this report:', defaultReportName);
+                if (!reportName) {
+                    btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
+                    btn.disabled = false;
+                    return;
+                }
                 const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
                 const wsData = window._dashboardWsData || {};
                 const existingGuid = window._currentReportGuid || null;
@@ -1008,6 +1014,7 @@
                     viewBtn.onclick = () => window.open('/report/view/' + report.guid, '_blank');
                 }
                 btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Saved!';
+                alert(`Report "${reportName}" saved successfully!`);
                 setTimeout(() => {
                     btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
                     btn.disabled = false;

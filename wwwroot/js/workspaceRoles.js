@@ -94,6 +94,8 @@
                 document.querySelectorAll(
                     '#aiInsightsSection, .agent-panel, .btn-create-agent, ' +
                     '#newArtifactInsightsBtn, ' +
+                    '#newAIInsightBtn, ' +
+                    '#wfLineageContainer, .wf-flow-diagram, ' +
                     '.wfe-insights-del, .wfe-artifact-del, ' +
                     '.wfe-header-actions, .wfe-ws-actions, ' +
                     '.wf-flow-node.wf-flow-datasource, .wf-flow-node.wf-flow-agent, ' +
@@ -115,7 +117,8 @@
             function _isUserOrgAdmin() {
                 try {
                     var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
-                    return u && (u.role === 'OrgAdmin' || u.role === 'SuperAdmin');
+                    if (u && (u.role === 'OrgAdmin' || u.role === 'SuperAdmin')) return true;
+                    return window.workspaceRoles && window.workspaceRoles.canAdmin && window.workspaceRoles.canAdmin();
                 } catch (e) { return false; }
             }
 
@@ -174,7 +177,7 @@
                 '<div class="ws-people-picker">',
                 '  <div class="input-group input-group-sm">',
                 '    <span class="input-group-text"><i class="bi bi-search"></i></span>',
-                '    <input type="text" class="form-control" placeholder="Search organization users..." id="wsPickerSearch">',
+                '    <input type="text" class="form-control" placeholder="Search organization users..." id="wsPickerSearch" autocomplete="off">',
                 '  </div>',
                 '  <div class="ws-people-picker-results" id="wsPickerResults"></div>',
                 '</div>'
@@ -230,12 +233,19 @@
         async generateReport(wsGuid, opts) {
             opts = opts || {};
             try {
+                if (!opts.name) {
+                    var defaultName = 'Report — ' + new Date().toLocaleDateString();
+                    var reportName = prompt('Enter a name for this report:', defaultName);
+                    if (!reportName) return null;
+                    opts.name = reportName.trim();
+                    if (!opts.name) return null;
+                }
                 var r = await fetch('/api/reports', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         workspaceGuid: wsGuid,
-                        name: opts.name || 'Report — ' + new Date().toLocaleDateString(),
+                        name: opts.name,
                         dashboardId: opts.dashboardId || null,
                         datasourceId: opts.datasourceId || null,
                         agentId: opts.agentId || null,

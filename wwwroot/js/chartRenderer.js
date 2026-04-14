@@ -146,7 +146,7 @@ class ChartRenderer {
             canvasEl.style.display = 'none';
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
-            noData.innerHTML = '<i class="bi bi-bar-chart" style="font-size:1.8rem;opacity:0.45;margin-bottom:6px"></i><span>No data available</span>';
+            noData.innerHTML = '<div class="chart-no-data"><i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>No records returned on this query.</div>';
             wrap.appendChild(noData);
             return;
         }
