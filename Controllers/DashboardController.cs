@@ -55,6 +55,13 @@ public class DashboardController : Controller
                     if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
                         return Redirect("/access-denied?statusCode=403");
                 }
+                if (rpt.WorkspaceId > 0)
+                {
+                    var appUser2 = await _db.Users.FindAsync(currentUserId);
+                    var wsRole = await _permissions.GetRoleAsync(rpt.WorkspaceId, currentUserId);
+                    if (wsRole == "Viewer" && appUser2?.Role != "OrgAdmin" && appUser2?.Role != "SuperAdmin")
+                        return Redirect("/access-denied?statusCode=403");
+                }
 
                 canvas = JsonConvert.DeserializeObject<CanvasState>(rpt.CanvasJson) ?? new CanvasState();
                 canvas.CanvasName = rpt.Name ?? canvas.CanvasName;
@@ -100,6 +107,10 @@ public class DashboardController : Controller
                     if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
                         return Redirect("/access-denied?statusCode=403");
                 }
+                var appUser2 = await _db.Users.FindAsync(currentUserId);
+                var wsRole = await _permissions.GetRoleAsync(ws.Id, currentUserId);
+                if (wsRole == "Viewer" && appUser2?.Role != "OrgAdmin" && appUser2?.Role != "SuperAdmin")
+                    return Redirect("/access-denied?statusCode=403");
 
                 // Find the most recent report in this workspace
                 var latestReport = await _db.Reports

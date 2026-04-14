@@ -137,7 +137,14 @@
                     }
                     return;
                 }
-                if (!r.ok) throw new Error('Create failed');
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    if (alert) {
+                        alert.textContent = err.error || 'Failed to create workspace.';
+                        alert.style.display = 'block';
+                    }
+                    return;
+                }
                 const ws = await r.json();
                 // Update local user org if server resolved it
                 if (ws.organizationId && user) {
@@ -164,7 +171,11 @@
             const item = document.createElement('div');
             item.className = 'panel-list-item';
             item.dataset.workspaceId = ws.guid;
-            item.innerHTML = `<i class="bi bi-folder me-2"></i>${this._esc(ws.name)}<span class="wf-ws-status unconfigured"></span>`;
+            const iconHtml = ws.logoUrl
+                ? `<img src="${this._esc(ws.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
+                : `<i class="bi bi-folder me-2"></i>`;
+            item.innerHTML = `${iconHtml}${this._esc(ws.name)}<span class="wf-ws-status unconfigured"></span>`;
+            item.title = ws.description || '';
             list.appendChild(item);
         },
 
@@ -193,6 +204,7 @@
                 // Load role BEFORE rendering so delete buttons appear for admins
                 if (window.workspaceRoles) await window.workspaceRoles.loadMyRole(guid);
                 this._renderHome(data);
+                if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
             } catch {
                 if (topTitle) topTitle.textContent = 'Workspace';
                 this._showLanding();
@@ -308,6 +320,7 @@
             this._wireReportActions();
             this._wireNewArtifactDropdown(data);
             this._showNewArtifactMenu(agents.length > 0);
+            if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
         },
 
         _renderCardsView(agents, datasources, wsData) {
@@ -448,6 +461,7 @@
                 btn.addEventListener('click', () => {
                     this._viewMode = btn.dataset.view;
                     if (this._wsData) this._renderHome(this._wsData);
+                    if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
                 });
             });
         },

@@ -3,7 +3,8 @@ namespace AIInsights.Models;
 public static class PlanPricing
 {
     public const decimal ProPricePerUser = 25.00m;
-    public const decimal EnterprisePricePerUser = 35.00m;
+    public const decimal EnterprisePricePerUser = 45.00m;
+    public const decimal EnterpriseTokenPackPrice = 15.00m;
 }
 
 public enum PlanType { Free, FreeTrial, Professional, Enterprise }

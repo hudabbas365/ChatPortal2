@@ -14,6 +14,7 @@
     async function updateNavAuth() {
         const authBtn = document.getElementById('navAuthBtn');
         const logoutBtn = document.getElementById('navLogoutBtn');
+        const chatLogoutBtn = document.getElementById('chatLayoutLogoutBtn');
         const dashboardBtn = document.getElementById('navDashboardBtn');
         const chatAuthBtn = document.getElementById('chatAuthBtn');
 
@@ -38,9 +39,10 @@
 
         if (user) {
             if (authBtn) authBtn.style.display = 'none';
-            if (logoutBtn && !logoutBtn._logoutWired) {
-                logoutBtn._logoutWired = true;
-                logoutBtn.addEventListener('click', function() {
+            function wireLogout(btn) {
+                if (!btn || btn._logoutWired) return;
+                btn._logoutWired = true;
+                btn.addEventListener('click', function() {
                     fetch('/api/auth/logout', { method: 'POST' }).finally(function() {
                         localStorage.removeItem('cp_user');
                         localStorage.removeItem('cp_token');
@@ -49,7 +51,10 @@
                     });
                 });
             }
+            wireLogout(logoutBtn);
+            wireLogout(chatLogoutBtn);
             if (logoutBtn) logoutBtn.style.display = '';
+            if (chatLogoutBtn) chatLogoutBtn.style.display = '';
             if (dashboardBtn) dashboardBtn.style.display = '';
             if (chatAuthBtn) {
                 chatAuthBtn.innerHTML = `<i class="bi bi-person-circle me-1"></i>${user.fullName || user.email}`;
@@ -58,7 +63,13 @@
         } else {
             if (authBtn) authBtn.style.display = '';
             if (logoutBtn) logoutBtn.style.display = 'none';
+            if (chatLogoutBtn) chatLogoutBtn.style.display = 'none';
             if (dashboardBtn) dashboardBtn.style.display = 'none';
+        }
+
+        const settingsLink = document.getElementById('orgSettingsLink');
+        if (settingsLink && user && user.role !== 'OrgAdmin' && user.role !== 'SuperAdmin') {
+            settingsLink.style.display = 'none';
         }
 
         // Update left panel org name
@@ -91,11 +102,52 @@
             if (workspaces.length) {
                 list.innerHTML = workspaces.map(w =>
                     `<div class="panel-list-item" data-workspace-id="${w.guid}">
-                        <i class="bi bi-folder me-2"></i>${_escHtml(w.name)}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
+                        ${w.logoUrl
+                            ? `<img src="${_escHtml(w.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
+                            : '<i class="bi bi-folder me-2"></i>'}${_escHtml(w.name)}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
                      </div>`
                 ).join('');
+                list.querySelectorAll('.panel-list-item').forEach(function (el, i) {
+                    el.title = workspaces[i]?.description || '';
+                });
             }
         } catch {}
+    }
+
+    function wireUpgradeButtons() {
+        document.querySelectorAll('.btn-upgrade-now, #upgradeNowBtn').forEach(function(btn) {
+            if (btn._upgradeWired) return;
+            btn._upgradeWired = true;
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                if (!user) { window.location.href = '/auth/login'; return; }
+                if (user.role !== 'OrgAdmin' && user.role !== 'SuperAdmin') {
+                    showContactAdminUpgradeModal(user);
+                } else {
+                    window.location.href = '/admin/billing';
+                }
+            });
+        });
+    }
+
+    function showContactAdminUpgradeModal(user) {
+        var existing = document.getElementById('cpUpgradeModalOverlay');
+        if (existing) existing.remove();
+        var modal = document.createElement('div');
+        modal.id = 'cpUpgradeModalOverlay';
+        modal.className = 'cp-modal-overlay';
+        modal.innerHTML = `
+            <div class="cp-modal" style="max-width:420px;background:#fff;padding:20px;border-radius:10px;box-shadow:0 10px 35px rgba(0,0,0,.2)">
+                <h5><i class="bi bi-arrow-up-circle me-2"></i>Upgrade Your Plan</h5>
+                <p>To upgrade your plan, please contact your Organisation Admin.</p>
+                ${user.orgAdminEmail ? `<p><a href="mailto:${_escHtml(user.orgAdminEmail)}" class="btn cp-btn-gradient w-100"><i class="bi bi-envelope me-2"></i>Contact Admin</a></p>` : ''}
+                <button class="btn btn-outline-secondary w-100 mt-2" id="cpUpgradeCloseBtn">Close</button>
+            </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal || e.target.id === 'cpUpgradeCloseBtn') modal.remove();
+        });
     }
 
     function _escHtml(str) {
@@ -172,6 +224,7 @@
         updateNavAuth();
         loadPlan();
         loadWorkspaces();
+        wireUpgradeButtons();
 
         // Check token budget for current user's org
         const user = JSON.parse(localStorage.getItem('cp_user') || 'null');

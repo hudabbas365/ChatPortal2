@@ -538,11 +538,12 @@
                 </div>
                 <div class="wf-setup-alert" id="wfPromptAlert"></div>
                 <div class="wf-setup-field">
-                    <label>System Prompt</label>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>System Prompt</label>
                     <div class="wfe-ai-btn-row">
                         <button class="btn btn-sm btn-outline-info wfe-ai-gen-btn" type="button" id="wfGenPromptBtn"><i class="bi bi-stars me-1"></i>Regenerate with AI</button>
                     </div>
-                    <textarea id="wfSystemPrompt" rows="6" placeholder="Generating prompt..."></textarea>
+                    <textarea id="wfSystemPrompt" rows="6" placeholder="Generating prompt..." readonly style="background:#f8f9fa;cursor:not-allowed;"></textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
                     <button class="btn btn-outline-secondary btn-sm" id="wfPromptBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
@@ -621,16 +622,19 @@
                 </div>
                 <div class="wf-setup-alert" id="wfAgentAlert"></div>
                 <div class="wf-setup-field">
-                    <label>Agent Name</label>
-                    <input type="text" id="wfAgentName" placeholder="e.g. Sales Assistant" />
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>Agent Name</label>
+                    <input type="text" id="wfAgentName" value="Data Assistant" readonly style="background:#f8f9fa;cursor:not-allowed;" />
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-field">
-                    <label>Description</label>
-                    <textarea id="wfAgentDesc" rows="2" placeholder="Brief description of what this agent does..."></textarea>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>Description</label>
+                    <textarea id="wfAgentDesc" rows="2" readonly style="background:#f8f9fa;cursor:not-allowed;">AI assistant generated from your selected datasource and tables.</textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-field">
-                    <label>System Prompt</label>
-                    <textarea id="wfAgentPrompt" rows="5">${this._esc(this._generatedPrompt || '')}</textarea>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>System Prompt</label>
+                    <textarea id="wfAgentPrompt" rows="5" readonly style="background:#f8f9fa;cursor:not-allowed;">${this._esc(this._generatedPrompt || '')}</textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
                     <button class="btn btn-outline-secondary btn-sm" id="wfAgentBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>

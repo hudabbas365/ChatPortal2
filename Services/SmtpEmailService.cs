@@ -21,7 +21,7 @@ public class SmtpEmailService : IEmailService
         var portStr = _config["Email:Port"];
         var user = _config["Email:Username"];
         var pass = _config["Email:Password"];
-        fromEmail = _config["Email:From"] ?? user;
+        fromEmail = _config["Smtp:From"] ?? _config["Email:From"] ?? user;
 
         if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(portStr)) return null;
         if (!int.TryParse(portStr, out var port)) return null;
@@ -62,7 +62,7 @@ Please change your password after first login.
 Regards,
 AIInsights Team";
 
-        var mail = new MailMessage(from ?? "noreply@AIInsights.com", toEmail)
+        var mail = new MailMessage(from ?? "sales@aiinsights.io", toEmail)
         {
             Subject = "Your AIInsights Account Credentials",
             Body = body
@@ -101,7 +101,7 @@ Please change your password after login.
 Regards,
 AIInsights Team";
 
-        var mail = new MailMessage(from ?? "noreply@AIInsights.com", toEmail)
+        var mail = new MailMessage(from ?? "sales@aiinsights.io", toEmail)
         {
             Subject = "Your AIInsights Password Has Been Reset",
             Body = body

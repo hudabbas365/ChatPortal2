@@ -1,5 +1,6 @@
 @{
     ViewData["Title"] = "Pricing";
+    var salesEmail = (Context.RequestServices.GetService(typeof(IConfiguration)) as IConfiguration)?["App:SalesEmail"] ?? "sales@aiinsights.io";
 }
 
 <section class="cp-section cp-page-hero">
@@ -42,7 +43,7 @@
                 <div class="pricing-card glass-card pricing-featured text-center">
                     <div class="pricing-badge">Popular</div>
                     <div class="pricing-tier">Professional</div>
-                    <div class="pricing-price">$49 <span class="pricing-period">/ month</span></div>
+                    <div class="pricing-price">$25 <span class="pricing-period">/ month</span></div>
                     <ul class="pricing-features">
                         <li><i class="bi bi-check-circle-fill me-2"></i>50 Workspaces</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>20 AI Agents</li>
@@ -55,14 +56,14 @@
             <div class="col-md-3">
                 <div class="pricing-card glass-card text-center">
                     <div class="pricing-tier">Enterprise</div>
-                    <div class="pricing-price">Custom</div>
+                    <div class="pricing-price">$45 <span class="pricing-period">/ month</span></div>
                     <ul class="pricing-features">
                         <li><i class="bi bi-check-circle-fill me-2"></i>Unlimited</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>SSO / SAML</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>Dedicated support</li>
                         <li><i class="bi bi-check-circle-fill me-2"></i>On-premise</li>
                     </ul>
-    <a href="mailto:sales@AIInsights.com" class="btn btn-outline-cp w-100">Contact Sales</a>
+    <a href="mailto:@salesEmail" class="btn btn-outline-cp w-100">Contact Sales</a>
                 </div>
             </div>
         </div>
@@ -74,7 +75,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="pricingPaymentModalLabel"><i class="bi bi-credit-card me-2"></i>Subscribe — Professional Plan ($49/mo)</h5>
+                <h5 class="modal-title" id="pricingPaymentModalLabel"><i class="bi bi-credit-card me-2"></i>Subscribe — Professional Plan ($25/mo)</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -91,16 +92,16 @@
                     <div class="tab-pane fade show active" id="pricingTabCC">
                         <div class="mb-3">
                             <label class="form-label">Card Number</label>
-                            <input type="text" class="form-control" id="pricingCardNumber" placeholder="4242 4242 4242 4242" maxlength="19" />
+                            <input type="text" class="form-control" id="pricingCardNumber" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
                         </div>
                         <div class="row g-3 mb-3">
                             <div class="col-6">
                                 <label class="form-label">Expiration</label>
-                                <input type="text" class="form-control" id="pricingCardExpiry" placeholder="MM / YY" maxlength="7" />
+                                <input type="text" class="form-control" id="pricingCardExpiry" placeholder="MM / YY" maxlength="7" autocomplete="cc-exp" />
                             </div>
                             <div class="col-6">
                                 <label class="form-label">CVC</label>
-                                <input type="text" class="form-control" id="pricingCardCvc" placeholder="123" maxlength="4" />
+                                <input type="text" class="form-control" id="pricingCardCvc" placeholder="123" maxlength="4" autocomplete="cc-csc" />
                             </div>
                         </div>
                         <button class="btn cp-btn-gradient w-100" id="pricingStripeBtn">

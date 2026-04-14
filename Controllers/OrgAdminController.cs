@@ -46,7 +46,7 @@ public class OrgAdminController : Controller
         if (caller == null)
             return Redirect("/auth/login");
         if (caller.Role != "OrgAdmin" && caller.Role != "SuperAdmin")
-            return StatusCode(403, new { error = "Only Organization Admins can access settings." });
+            return RedirectToAction("AccessDenied", "Home", new { statusCode = 403 });
         return View();
     }
 
@@ -59,7 +59,16 @@ public class OrgAdminController : Controller
 
         var users = await _db.Users
             .Where(u => u.OrganizationId == organizationId)
-            .Select(u => new { u.Id, u.FullName, u.Email, u.Role, u.Status, u.CreatedAt })
+            .Select(u => new
+            {
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Role,
+                u.Status,
+                u.CreatedAt,
+                assignedPlan = _db.SubscriptionPlans.Where(s => s.UserId == u.Id).Select(s => s.Plan.ToString()).FirstOrDefault()
+            })
             .ToListAsync();
         return Ok(users);
     }
@@ -204,10 +213,13 @@ public class OrgAdminController : Controller
             return BadRequest(new { error = $"Email '{req.Email}' is already taken." });
 
         // Use email as the username so login-by-email always works
-        var userName = !string.IsNullOrWhiteSpace(req.Username) ? req.Username : req.Email;
-        var existingByName = await _userManager.FindByNameAsync(userName);
-        if (existingByName != null)
-            return BadRequest(new { error = $"Username '{userName}' is already taken." });
+        var userName = !string.IsNullOrWhiteSpace(req.Username) ? req.Username.Trim() : req.Email;
+        if (!string.Equals(userName, req.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            var existingByName = await _userManager.FindByNameAsync(userName);
+            if (existingByName != null)
+                return BadRequest(new { error = $"Username '{userName}' is already taken." });
+        }
 
         var user = new ApplicationUser
         {
@@ -341,4 +353,3 @@ public class ResetPasswordRequest
     public string? NewPassword { get; set; }
     public string? ResetBy { get; set; }
 }
-
