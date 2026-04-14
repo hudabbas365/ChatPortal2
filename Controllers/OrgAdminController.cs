@@ -40,7 +40,15 @@ public class OrgAdminController : Controller
     }
 
     [HttpGet("/org/settings")]
-    public IActionResult Settings() => View();
+    public async Task<IActionResult> Settings()
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null)
+            return Redirect("/auth/login");
+        if (caller.Role != "OrgAdmin" && caller.Role != "SuperAdmin")
+            return StatusCode(403, new { error = "Only Organization Admins can access settings." });
+        return View();
+    }
 
     [HttpGet("/api/org/users")]
     public async Task<IActionResult> GetUsers([FromQuery] int organizationId)

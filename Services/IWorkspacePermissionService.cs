@@ -8,4 +8,6 @@ public interface IWorkspacePermissionService
     Task<bool> CanEditAsync(int workspaceId, string userId);
     Task<bool> CanDeleteAsync(int workspaceId, string userId);
     Task<bool> CanViewAgentsAsync(int workspaceId, string userId);
+    Task<bool> CanViewReportsAsync(int workspaceId, string userId);
+    Task<bool> BelongsToSameOrganizationAsync(int workspaceId, int organizationId);
 }
