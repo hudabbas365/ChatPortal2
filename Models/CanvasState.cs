@@ -5,6 +5,7 @@ namespace ChatPortal2.Models;
 
 public class CanvasState
 {
+    [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
     public List<ReportPage> Pages { get; set; } = new() { new ReportPage { Name = "Page 1" } };
     public string CanvasName { get; set; } = "My Report";
     public DateTime LastModified { get; set; } = DateTime.UtcNow;

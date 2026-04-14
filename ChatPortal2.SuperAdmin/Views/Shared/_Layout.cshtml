@@ -4,60 +4,282 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] – SuperAdmin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
     <style>
-        :root { --sa-bg: #0f172a; --sa-sidebar: #1e293b; --sa-primary: #60a5fa; --sa-text: #e2e8f0; --sa-muted: #94a3b8; }
-        body { background: var(--sa-bg); color: var(--sa-text); margin: 0; font-family: 'Inter', sans-serif; }
-        .sa-layout { display: flex; min-height: 100vh; }
-        .sa-sidebar { width: 240px; min-width: 240px; background: var(--sa-sidebar); padding: 1.5rem 0; display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.08); }
-        .sa-brand { font-size: 1rem; font-weight: 700; color: var(--sa-primary); padding: 0 1.5rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 1rem; }
-        .sa-nav { display: flex; flex-direction: column; gap: 0.2rem; padding: 0 0.75rem; }
-        .sa-nav-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.85rem; border-radius: 8px; color: var(--sa-muted); text-decoration: none; font-size: 0.875rem; transition: background 0.2s, color 0.2s; }
-        .sa-nav-item:hover, .sa-nav-item.active { background: rgba(96,165,250,0.15); color: var(--sa-primary); }
-        .sa-main { flex: 1; padding: 2rem; overflow: auto; }
-        .sa-stat { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; }
-        .sa-stat-val { font-size: 2rem; font-weight: 700; color: var(--sa-primary); }
-        .sa-stat-label { color: var(--sa-muted); font-size: 0.85rem; }
-        .sa-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
-        .sa-table { width: 100%; border-collapse: collapse; }
-        .sa-table th { color: var(--sa-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .sa-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.875rem; }
-        .sa-badge { display: inline-block; padding: 0.2em 0.6em; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
-        .sa-badge-blue { background: rgba(96,165,250,0.2); color: #60a5fa; }
-        .sa-badge-green { background: rgba(52,211,153,0.2); color: #34d399; }
-        .sa-badge-red { background: rgba(248,113,113,0.2); color: #f87171; }
-        .btn-sa { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; color: #fff; font-weight: 600; font-size: 0.875rem; padding: 0.4rem 1rem; border-radius: 8px; }
-        .btn-sa:hover { opacity: 0.9; color: #fff; }
+        :root {
+            --bg: #f0f4f8;
+            --surface: #ffffff;
+            --surface-hover: #e8eef6;
+            --border: #cdd8e4;
+            --border-light: rgba(0,0,0,.05);
+            --primary: #4a8ec9;
+            --primary-light: #5a9fd9;
+            --text: #2d3748;
+            --text-dim: #596d82;
+            --text-muted: #8596a9;
+            --sidebar-w: 256px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: .9rem; }
+
+        /* ---------- layout ---------- */
+        .layout { display: flex; min-height: 100vh; }
+
+        /* ---------- sidebar ---------- */
+        .sidebar {
+            width: var(--sidebar-w); min-width: var(--sidebar-w);
+            background: #e3ecf5;
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            position: sticky; top: 0; height: 100vh;
+            overflow-y: auto;
+        }
+        .sb-brand {
+            padding: 1.25rem 1.25rem 1rem;
+            display: flex; align-items: center; gap: .75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .sb-brand-icon {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: var(--primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; color: #fff; flex-shrink: 0;
+        }
+        .sb-brand-name { font-size: .9rem; font-weight: 700; color: #1e3a5f; line-height: 1.2; }
+        .sb-brand-sub { font-size: .7rem; color: var(--text-muted); font-weight: 500; }
+
+        .sb-section { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); padding: 1.25rem 1.25rem .5rem; }
+        .sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 .75rem; }
+        .sb-link {
+            display: flex; align-items: center; gap: .6rem;
+            padding: .55rem .75rem; border-radius: 8px;
+            color: var(--text-dim); text-decoration: none;
+            font-size: .84rem; font-weight: 500;
+            transition: background .15s, color .15s;
+        }
+        .sb-link i { font-size: .95rem; width: 20px; text-align: center; }
+        .sb-link:hover { background: var(--surface); color: var(--text); }
+        .sb-link.active { background: rgba(74,142,201,.12); color: var(--primary); font-weight: 600; }
+
+        .sb-footer {
+            margin-top: auto;
+            padding: 1rem 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .sb-user {
+            display: flex; align-items: center; gap: .6rem;
+            padding: .5rem .6rem; border-radius: 8px;
+            background: var(--surface); margin-bottom: .6rem;
+        }
+        .sb-avatar {
+            width: 32px; height: 32px; border-radius: 8px;
+            background: var(--primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: .7rem; font-weight: 700; color: #fff; flex-shrink: 0;
+        }
+        .sb-user-name { font-size: .8rem; font-weight: 600; color: var(--text); }
+        .sb-user-role { font-size: .65rem; color: var(--text-muted); }
+        .btn-signout {
+            width: 100%; padding: .45rem; border-radius: 8px;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-dim); font-size: .8rem; font-weight: 500;
+            font-family: inherit; cursor: pointer; transition: all .15s;
+            display: flex; align-items: center; justify-content: center; gap: .4rem;
+        }
+        .btn-signout:hover { border-color: #ef4444; color: #f87171; background: rgba(239,68,68,.06); }
+
+        /* ---------- main ---------- */
+        .main { flex: 1; padding: 2rem 2.5rem; overflow-x: hidden; }
+
+        .page-header { margin-bottom: 1.75rem; }
+        .page-title { font-size: 1.4rem; font-weight: 700; color: #1e3a5f; }
+        .page-desc { font-size: .85rem; color: var(--text-muted); margin-top: .2rem; }
+
+        /* ---------- stat cards ---------- */
+        .stat {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 1.25rem;
+            transition: border-color .2s;
+        }
+        .stat:hover { border-color: var(--primary); }
+        .stat-icon {
+            width: 38px; height: 38px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; margin-bottom: .75rem;
+        }
+        .stat-val { font-size: 1.6rem; font-weight: 700; color: #1e3a5f; line-height: 1; }
+        .stat-label { color: var(--text-muted); font-size: .78rem; font-weight: 500; margin-top: .3rem; }
+
+        /* ---------- cards ---------- */
+        .card-panel {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 1.35rem;
+            margin-bottom: 1.25rem;
+        }
+        .card-panel-title {
+            font-size: .78rem; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem;
+        }
+
+        /* ---------- tables ---------- */
+        .tbl { width: 100%; border-collapse: collapse; }
+        .tbl th {
+            color: var(--text-muted); font-size: .72rem;
+            text-transform: uppercase; letter-spacing: .05em;
+            padding: .5rem .65rem; border-bottom: 1px solid var(--border);
+            font-weight: 600; text-align: left;
+        }
+        .tbl td { padding: .6rem .65rem; border-bottom: 1px solid var(--border-light); font-size: .85rem; color: var(--text-dim); }
+        .tbl tbody tr:hover { background: rgba(74,142,201,.05); }
+        .tbl tbody tr:last-child td { border-bottom: none; }
+
+        /* ---------- badges ---------- */
+        .badge-sm {
+            display: inline-flex; align-items: center; gap: .25rem;
+            padding: .2em .6em; border-radius: 6px;
+            font-size: .75rem; font-weight: 600;
+        }
+        .badge-indigo { background: rgba(74,142,201,.12); color: #4a8ec9; }
+        .badge-emerald { background: rgba(52,211,153,.12); color: #34d399; }
+        .badge-rose { background: rgba(244,63,94,.12); color: #fb7185; }
+        .badge-amber { background: rgba(245,158,11,.12); color: #fbbf24; }
+        .badge-sky { background: rgba(14,165,233,.12); color: #38bdf8; }
+
+        /* ---------- buttons ---------- */
+        .btn-primary-sm {
+            display: inline-flex; align-items: center; gap: .35rem;
+            background: var(--primary); border: none; color: #fff;
+            font-weight: 600; font-size: .82rem; font-family: inherit;
+            padding: .5rem 1rem; border-radius: 8px;
+            cursor: pointer; transition: background .15s;
+            text-decoration: none;
+        }
+        .btn-primary-sm:hover { background: #3a7bb8; color: #fff; }
+        .btn-ghost-sm {
+            display: inline-flex; align-items: center; gap: .35rem;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-dim); font-weight: 500; font-size: .82rem; font-family: inherit;
+            padding: .5rem 1rem; border-radius: 8px;
+            cursor: pointer; transition: all .15s;
+            text-decoration: none;
+        }
+        .btn-ghost-sm:hover { border-color: var(--primary-light); color: var(--primary-light); }
+
+        /* ---------- mobile ---------- */
+        .mobile-bar {
+            display: none; position: sticky; top: 0; z-index: 100;
+            background: var(--bg); border-bottom: 1px solid var(--border);
+            padding: .65rem 1rem;
+            align-items: center; justify-content: space-between;
+        }
+        .mobile-bar .sb-brand { padding: 0; border: none; }
+        .mobile-toggle {
+            background: var(--surface); border: 1px solid var(--border);
+            color: var(--text); border-radius: 8px;
+            width: 38px; height: 38px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.15rem; cursor: pointer;
+        }
+        .overlay {
+            display: none; position: fixed; inset: 0; z-index: 199;
+            background: rgba(0,0,0,.5);
+        }
+        .overlay.show { display: block; }
+
+        @@media (max-width: 991.98px) {
+            .mobile-bar { display: flex; }
+            .sidebar {
+                position: fixed; top: 0; left: -280px; bottom: 0;
+                z-index: 200; width: 268px; min-width: 268px;
+                transition: left .25s ease;
+            }
+            .sidebar.open { left: 0; }
+            .main { padding: 1.25rem 1rem; }
+            .page-title { font-size: 1.2rem; }
+        }
+        @@media (max-width: 575.98px) {
+            .main { padding: 1rem .75rem; }
+        }
     </style>
 </head>
 <body>
-    <div class="sa-layout">
-        <aside class="sa-sidebar">
-            <div class="sa-brand"><i class="bi bi-shield-lock-fill me-2"></i>SuperAdmin</div>
-            <nav class="sa-nav">
-                <a href="/superadmin" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "dashboard" ? "active" : "")"><i class="bi bi-speedometer2"></i> Dashboard</a>
-                <a href="/superadmin/organizations" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "orgs" ? "active" : "")"><i class="bi bi-building"></i> Organizations</a>
-                <a href="/superadmin/activity" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "activity" ? "active" : "")"><i class="bi bi-activity"></i> Activity Logs</a>
-                <a href="/superadmin/aiconfig" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "aiconfig" ? "active" : "")"><i class="bi bi-cpu"></i> AI Config</a>
-                <a href="/superadmin/revenue" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "revenue" ? "active" : "")"><i class="bi bi-cash-stack"></i> Revenue</a>
-                <a href="/superadmin/seo" class="sa-nav-item @(ViewData["ActivePage"]?.ToString() == "seo" ? "active" : "")"><i class="bi bi-search"></i> SEO</a>
+    <div class="mobile-bar">
+        <div class="sb-brand">
+            <div class="sb-brand-icon"><i class="bi bi-shield-lock-fill"></i></div>
+            <div>
+                <div class="sb-brand-name">ChatPortal2</div>
+                <div class="sb-brand-sub">Super Admin</div>
+            </div>
+        </div>
+        <button class="mobile-toggle" id="sidebarToggle"><i class="bi bi-list"></i></button>
+    </div>
+    <div class="overlay" id="sidebarOverlay"></div>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sb-brand">
+                <div class="sb-brand-icon"><i class="bi bi-shield-lock-fill"></i></div>
+                <div>
+                    <div class="sb-brand-name">ChatPortal2</div>
+                    <div class="sb-brand-sub">Super Admin Console</div>
+                </div>
+            </div>
+
+            <div class="sb-section">Main</div>
+            <nav class="sb-nav">
+                <a href="/superadmin" class="sb-link @(ViewData["ActivePage"]?.ToString() == "dashboard" ? "active" : "")"><i class="bi bi-grid-1x2-fill"></i>Dashboard</a>
+                <a href="/superadmin/organizations" class="sb-link @(ViewData["ActivePage"]?.ToString() == "orgs" ? "active" : "")"><i class="bi bi-building"></i>Organizations</a>
+                <a href="/superadmin/activity" class="sb-link @(ViewData["ActivePage"]?.ToString() == "activity" ? "active" : "")"><i class="bi bi-activity"></i>Activity Logs</a>
+                <a href="/superadmin/revenue" class="sb-link @(ViewData["ActivePage"]?.ToString() == "revenue" ? "active" : "")"><i class="bi bi-wallet2"></i>Revenue</a>
             </nav>
-            <div class="mt-auto px-3 pb-2">
-                <button class="btn btn-sm btn-outline-secondary w-100" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i>Logout</button>
+
+            <div class="sb-section">System</div>
+            <nav class="sb-nav">
+                <a href="/superadmin/aiconfig" class="sb-link @(ViewData["ActivePage"]?.ToString() == "aiconfig" ? "active" : "")"><i class="bi bi-cpu"></i>AI Config</a>
+                <a href="/superadmin/seo" class="sb-link @(ViewData["ActivePage"]?.ToString() == "seo" ? "active" : "")"><i class="bi bi-search"></i>SEO Manager</a>
+            </nav>
+
+            <div class="sb-section">Content</div>
+            <nav class="sb-nav">
+                <a href="/superadmin/docs" class="sb-link @(ViewData["ActivePage"]?.ToString() == "docs" ? "active" : "")"><i class="bi bi-file-earmark-text"></i>Documentation</a>
+                <a href="/superadmin/blog" class="sb-link @(ViewData["ActivePage"]?.ToString() == "blog" ? "active" : "")"><i class="bi bi-journal-richtext"></i>Blog</a>
+                <a href="/superadmin/about" class="sb-link @(ViewData["ActivePage"]?.ToString() == "about" ? "active" : "")"><i class="bi bi-info-circle"></i>About</a>
+            </nav>
+
+            <div class="sb-footer">
+                <div class="sb-user">
+                    <div class="sb-avatar">SA</div>
+                    <div>
+                        <div class="sb-user-name">Super Admin</div>
+                        <div class="sb-user-role">Administrator</div>
+                    </div>
+                </div>
+                <button class="btn-signout" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button>
             </div>
         </aside>
-        <main class="sa-main">
+        <main class="main">
             @RenderBody()
         </main>
     </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     @RenderSection("Scripts", required: false)
     <script>
     function logout() {
         fetch('/api/superadmin/logout', { method: 'POST' })
-            .then(() => window.location.href = '/superadmin/login');
+            .then(function() { window.location.href = '/superadmin/login'; });
     }
+    (function() {
+        var toggle = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('sidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+        function open()  { sidebar.classList.add('open'); overlay.classList.add('show'); }
+        function close() { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
+        if (toggle) toggle.addEventListener('click', function() { sidebar.classList.contains('open') ? close() : open(); });
+        if (overlay) overlay.addEventListener('click', close);
+    })();
     </script>
 </body>
 </html>

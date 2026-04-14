@@ -57,7 +57,7 @@
             chartType   : pending.chartType || 'bar',
             title       : pending.title     || 'Chat Chart',
             datasourceId: pending.datasourceId || window.currentDatasourceId || null,
-            dataQuery   : pending.dataQuery  || null,   // live SQL — preferred
+            dataQuery   : pending.dataQuery  || null,   // live query (SQL or DAX) — preferred
             mapping: {
                 labelField      : pending.labelField || 'label',
                 valueField      : pending.valueField  || 'value',
@@ -168,19 +168,9 @@
         }).observe(container, { childList: true });
     }
 
-    // ── Paste button in the top navbar ───────────────────────────────
+    // ── Paste button in the top navbar (disabled) ────────────────────
     function _wirePasteBtn() {
-        var actions = document.querySelector('.navbar-actions');
-        if (!actions || document.getElementById('dct-paste-btn')) return;
-        var btn = document.createElement('button');
-        btn.id = 'dct-paste-btn';
-        btn.className = 'btn btn-sm btn-outline-secondary me-1 dct-navbar-btn';
-        btn.title = 'Paste chart (Ctrl+V)';
-        btn.innerHTML = '<i class="bi bi-clipboard-plus me-1"></i>Paste';
-        btn.addEventListener('click', pasteChart);
-        var resetBtn = actions.querySelector('.btn-danger');
-        if (resetBtn) resetBtn.insertAdjacentElement('beforebegin', btn);
-        else actions.appendChild(btn);
+        // Paste button removed from navbar
     }
 
     // ── Public API ───────────────────────────────────────────────────

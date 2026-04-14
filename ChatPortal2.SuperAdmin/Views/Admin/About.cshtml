@@ -1,0 +1,126 @@
+@{
+    ViewData["Title"] = "About";
+    ViewData["ActivePage"] = "about";
+}
+
+<div class="page-header">
+    <h1 class="page-title">About ChatPortal2</h1>
+    <p class="page-desc">Platform overview, version information, and project summary.</p>
+</div>
+
+<div class="row g-4" style="display:flex;flex-wrap:wrap;gap:1.25rem;">
+    <!-- Project Overview -->
+    <div style="flex:1;min-width:320px;">
+        <div class="card-panel" style="height:100%;">
+            <div class="card-panel-title"><i class="bi bi-lightbulb" style="margin-right:.35rem;"></i>Project Overview</div>
+            <p style="font-size:.88rem;line-height:1.7;color:var(--text-dim);">
+                <strong style="color:#1e3a5f;">ChatPortal2</strong> is an AI-powered team collaboration and analytics platform
+                that brings together real-time chat, intelligent agents, dynamic dashboards, and automated reporting
+                in a single unified workspace.
+            </p>
+            <p style="font-size:.88rem;line-height:1.7;color:var(--text-dim);margin-top:.75rem;">
+                Organizations can create workspaces, connect data sources (SQL Server, PostgreSQL, MySQL),
+                build AI agents powered by Cohere LLMs, generate interactive dashboards and reports — all through
+                natural language conversations.
+            </p>
+        </div>
+    </div>
+
+    <!-- Version Info -->
+    <div style="flex:0 0 280px;">
+        <div class="card-panel" style="height:100%;">
+            <div class="card-panel-title"><i class="bi bi-tag" style="margin-right:.35rem;"></i>Version</div>
+            <div style="text-align:center;padding:1rem 0;">
+                <div style="font-size:2rem;font-weight:700;color:#4a8ec9;">v1.0</div>
+                <div style="font-size:.78rem;color:var(--text-muted);margin-top:.3rem;">AI Insights Release</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem;">.NET 8 · ASP.NET Core</div>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:.75rem;margin-top:.5rem;">
+                <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:.4rem;">
+                    <span style="color:var(--text-muted);">Framework</span>
+                    <span style="color:var(--text);font-weight:600;">.NET 8.0</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:.4rem;">
+                    <span style="color:var(--text-muted);">Database</span>
+                    <span style="color:var(--text);font-weight:600;">SQL Server</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:.4rem;">
+                    <span style="color:var(--text-muted);">AI Engine</span>
+                    <span style="color:var(--text);font-weight:600;">Cohere</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:.8rem;">
+                    <span style="color:var(--text-muted);">Auth</span>
+                    <span style="color:var(--text);font-weight:600;">JWT + Identity</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Key Features -->
+<div class="card-panel" style="margin-top:1.25rem;">
+    <div class="card-panel-title"><i class="bi bi-stars" style="margin-right:.35rem;"></i>Key Features</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;">
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-chat-dots-fill"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">AI Chat</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Natural language queries against your connected data sources with Cohere-powered agents.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-bar-chart-fill"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">Dashboards & Reports</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Auto-generated interactive charts, shareable reports, and embedded analytics.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(244,63,94,.1);color:#fb7185;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-building"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">Multi-Tenant Orgs</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Organizations with workspaces, role-based access control, and subscription management.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-database-fill"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">Multi-DB Support</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Connect SQL Server, PostgreSQL, and MySQL data sources with encrypted credentials.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(14,165,233,.1);color:#38bdf8;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-shield-lock-fill"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">Super Admin</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Centralized admin console for orgs, revenue, SEO, AI config, docs, and blog management.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:.65rem;align-items:flex-start;">
+            <div class="stat-icon" style="background:rgba(168,85,247,.1);color:#a855f7;flex-shrink:0;width:34px;height:34px;font-size:.85rem;"><i class="bi bi-search"></i></div>
+            <div>
+                <div style="font-weight:600;font-size:.85rem;color:#1e3a5f;">SEO Management</div>
+                <div style="font-size:.78rem;color:var(--text-muted);">Per-page SEO metadata with AI-powered suggestions for optimal search ranking.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tech Stack -->
+<div class="card-panel" style="margin-top:1.25rem;">
+    <div class="card-panel-title"><i class="bi bi-gear" style="margin-right:.35rem;"></i>Technology Stack</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;">
+        <span class="badge-sm badge-indigo">.NET 8</span>
+        <span class="badge-sm badge-indigo">ASP.NET Core MVC</span>
+        <span class="badge-sm badge-indigo">Entity Framework Core 8</span>
+        <span class="badge-sm badge-emerald">SQL Server</span>
+        <span class="badge-sm badge-emerald">PostgreSQL</span>
+        <span class="badge-sm badge-emerald">MySQL</span>
+        <span class="badge-sm badge-amber">Cohere LLM</span>
+        <span class="badge-sm badge-amber">JWT Authentication</span>
+        <span class="badge-sm badge-sky">Bootstrap 5</span>
+        <span class="badge-sm badge-sky">Chart.js</span>
+        <span class="badge-sm badge-rose">ASP.NET Identity</span>
+        <span class="badge-sm badge-rose">AES Encryption</span>
+    </div>
+</div>

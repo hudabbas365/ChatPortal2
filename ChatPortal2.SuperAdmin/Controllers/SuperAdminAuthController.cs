@@ -24,6 +24,9 @@ public class SuperAdminAuthController : Controller
     [HttpGet("/superadmin/login")]
     public IActionResult Login() => View("~/Views/Login.cshtml");
 
+    [HttpGet("/superadmin/register")]
+    public IActionResult Register() => View("~/Views/Register.cshtml");
+
     [HttpPost("/api/superadmin/login")]
     public async Task<IActionResult> LoginApi([FromBody] SuperAdminLoginRequest req)
     {
@@ -50,6 +53,39 @@ public class SuperAdminAuthController : Controller
         return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role } });
     }
 
+    [HttpPost("/api/superadmin/register")]
+    public async Task<IActionResult> RegisterApi([FromBody] SuperAdminRegisterRequest req)
+    {
+        if (string.IsNullOrEmpty(req.FullName) || string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Password))
+            return BadRequest(new { error = "All fields are required." });
+
+        if (req.Password.Length < 6)
+            return BadRequest(new { error = "Password must be at least 6 characters." });
+
+        var existing = await _userManager.FindByEmailAsync(req.Email);
+        if (existing != null)
+            return BadRequest(new { error = "An account with this email already exists." });
+
+        var user = new ApplicationUser
+        {
+            UserName = req.Email,
+            Email = req.Email,
+            FullName = req.FullName,
+            Role = "SuperAdmin",
+            Status = "Active",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var result = await _userManager.CreateAsync(user, req.Password);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(" ", result.Errors.Select(e => e.Description));
+            return BadRequest(new { error = errors });
+        }
+
+        return Ok(new { success = true });
+    }
+
     [HttpPost("/api/superadmin/logout")]
     public IActionResult Logout()
     {
@@ -60,6 +96,13 @@ public class SuperAdminAuthController : Controller
 
 public class SuperAdminLoginRequest
 {
+    public string? Email { get; set; }
+    public string? Password { get; set; }
+}
+
+public class SuperAdminRegisterRequest
+{
+    public string? FullName { get; set; }
     public string? Email { get; set; }
     public string? Password { get; set; }
 }

@@ -22,9 +22,23 @@ public class QueryExecutionResult
 
 public class QueryExecutionService : IQueryExecutionService
 {
+    private readonly IEncryptionService _encryption;
+    private readonly IPowerBiService _powerBi;
+
+    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi)
+    {
+        _encryption = encryption;
+        _powerBi = powerBi;
+    }
+
     private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "SQL Server", "SqlServer", "MSSQL", "Power BI"
+        "SQL Server", "SqlServer", "MSSQL"
+    };
+
+    public static readonly HashSet<string> PowerBiTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Power BI", "PowerBI"
     };
 
     private static readonly HashSet<string> PgTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -39,6 +53,16 @@ public class QueryExecutionService : IQueryExecutionService
 
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
+        // Route Power BI datasources to the ADOMD-based service (DAX / DMV)
+        if (PowerBiTypes.Contains(ds.Type))
+        {
+            var isDmv = sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                      && sql.Contains("$SYSTEM.", StringComparison.OrdinalIgnoreCase);
+            return isDmv
+                ? await _powerBi.ExecuteDmvAsync(ds, sql, maxRows)
+                : await _powerBi.ExecuteDaxAsync(ds, sql, maxRows);
+        }
+
         DbConnection? conn = null;
         try
         {
@@ -99,11 +123,14 @@ public class QueryExecutionService : IQueryExecutionService
         }
     }
 
-    private static string BuildConnectionString(Datasource ds)
+    private string BuildConnectionString(Datasource ds)
     {
-        var connStr = ds.ConnectionString ?? "";
+        var connStr = _encryption.Decrypt(ds.ConnectionString ?? "");
 
-        if (string.IsNullOrEmpty(ds.DbUser) && string.IsNullOrEmpty(ds.DbPassword))
+        var dbUser = _encryption.Decrypt(ds.DbUser ?? "");
+        var dbPassword = _encryption.Decrypt(ds.DbPassword ?? "");
+
+        if (string.IsNullOrEmpty(dbUser) && string.IsNullOrEmpty(dbPassword))
             return connStr;
 
         // Inject credentials if not already present in the connection string
@@ -113,13 +140,13 @@ public class QueryExecutionService : IQueryExecutionService
 
         if (!hasUser)
         {
-            if (!string.IsNullOrEmpty(ds.DbUser))
+            if (!string.IsNullOrEmpty(dbUser))
             {
-                connStr = connStr.TrimEnd(';') + $";User ID={ds.DbUser}";
+                connStr = connStr.TrimEnd(';') + $";User ID={dbUser}";
             }
-            if (!string.IsNullOrEmpty(ds.DbPassword))
+            if (!string.IsNullOrEmpty(dbPassword))
             {
-                connStr = connStr.TrimEnd(';') + $";Password={ds.DbPassword}";
+                connStr = connStr.TrimEnd(';') + $";Password={dbPassword}";
             }
         }
 

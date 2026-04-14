@@ -315,12 +315,18 @@
                            'TRUNCATE','EXEC','EXECUTE','MERGE','CALL','GRANT',
                            'REVOKE','REPLACE','UPSERT','ATTACH','DETACH'];
         const firstWord = norm.split(/[\s(;]/)[0];
+
+        // DAX EVALUATE and DMV queries are read-only — allow through without body scan
+        var isDaxOrDmv = firstWord === 'EVALUATE'
+            || (firstWord === 'SELECT' && norm.indexOf('$SYSTEM.') !== -1);
+        if (isDaxOrDmv) return { valid: true };
+
         if (WRITE_OPS.includes(firstWord)) {
-            return { valid: false, reason: `"${firstWord}" is a write operation — only SELECT queries are permitted on this connection.` };
+            return { valid: false, reason: `"${firstWord}" is a write operation — only read-only queries are permitted on this connection.` };
         }
         for (const kw of WRITE_OPS) {
             if (new RegExp(`\\b${kw}\\b`).test(norm)) {
-                return { valid: false, reason: `Query contains "${kw}" which is not allowed. Only read-only SELECT queries are permitted.` };
+                return { valid: false, reason: `Query contains "${kw}" which is not allowed. Only read-only queries are permitted.` };
             }
         }
         return { valid: true };

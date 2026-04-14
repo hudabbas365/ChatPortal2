@@ -1,0 +1,167 @@
+@model List<ChatPortal2.Models.DocArticle>
+@{
+    ViewData["Title"] = "Documentation";
+    ViewData["ActivePage"] = "docs";
+}
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1 class="page-title">Documentation</h1>
+        <p class="page-desc">Manage help articles and project documentation.</p>
+    </div>
+    <button class="btn-primary-sm" onclick="openForm()"><i class="bi bi-plus-lg"></i>New Article</button>
+</div>
+
+<!-- articles list -->
+<div class="card-panel">
+    <div class="card-panel-title">All Articles</div>
+    @if (Model.Count == 0)
+    {
+        <p style="color:var(--text-muted);font-size:.85rem;">No documentation articles yet. Click <strong>New Article</strong> to create one.</p>
+    }
+    else
+    {
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Title</th>
+                    <th>Slug</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var doc in Model)
+                {
+                    <tr>
+                        <td>@doc.SortOrder</td>
+                        <td style="font-weight:600;color:#1e3a5f;">@doc.Title</td>
+                        <td><code style="color:#4a8ec9;">@doc.Slug</code></td>
+                        <td>
+                            @if (doc.IsPublished)
+                            {
+                                <span class="badge-sm badge-emerald"><i class="bi bi-check-circle-fill"></i>Published</span>
+                            }
+                            else
+                            {
+                                <span class="badge-sm badge-amber"><i class="bi bi-pencil-fill"></i>Draft</span>
+                            }
+                        </td>
+                        <td>@doc.UpdatedAt.ToString("MMM dd, yyyy")</td>
+                        <td>
+                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;" onclick='editDoc(@System.Text.Json.JsonSerializer.Serialize(doc))'><i class="bi bi-pencil"></i></button>
+                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;border-color:#ef4444;color:#ef4444;" onclick="deleteDoc(@doc.Id)"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<!-- modal overlay -->
+<div id="docModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center;">
+    <div style="background:#fff;border:1px solid var(--border);border-radius:14px;width:680px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:1.75rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+            <h3 id="formTitle" style="font-size:1.05rem;font-weight:700;color:#1e3a5f;">New Article</h3>
+            <button onclick="closeForm()" style="background:none;border:none;font-size:1.2rem;color:var(--text-muted);cursor:pointer;"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <input type="hidden" id="docId" value="0" />
+        <div style="margin-bottom:.85rem;">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Title</label>
+            <input id="docTitle" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="Getting Started" />
+        </div>
+        <div style="margin-bottom:.85rem;">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Slug</label>
+            <input id="docSlug" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="getting-started" />
+        </div>
+        <div style="display:flex;gap:.75rem;margin-bottom:.85rem;">
+            <div style="flex:1;">
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Author</label>
+                <input id="docAuthor" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="Admin" />
+            </div>
+            <div style="width:100px;">
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Sort Order</label>
+                <input id="docOrder" type="number" value="0" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" />
+            </div>
+        </div>
+        <div style="margin-bottom:.85rem;">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Summary</label>
+            <textarea id="docSummary" rows="2" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);resize:vertical;" placeholder="Brief summary..."></textarea>
+        </div>
+        <div style="margin-bottom:.85rem;">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Content (HTML or Markdown)</label>
+            <textarea id="docContent" rows="10" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);resize:vertical;" placeholder="Full article content..."></textarea>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem;">
+            <input id="docPublished" type="checkbox" checked />
+            <label for="docPublished" style="font-size:.85rem;font-weight:500;color:var(--text-dim);">Published</label>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;">
+            <button class="btn-ghost-sm" onclick="closeForm()">Cancel</button>
+            <button class="btn-primary-sm" onclick="saveDoc()"><i class="bi bi-check-lg"></i>Save Article</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openForm() {
+        document.getElementById('docId').value = '0';
+        document.getElementById('docTitle').value = '';
+        document.getElementById('docSlug').value = '';
+        document.getElementById('docAuthor').value = '';
+        document.getElementById('docOrder').value = '0';
+        document.getElementById('docSummary').value = '';
+        document.getElementById('docContent').value = '';
+        document.getElementById('docPublished').checked = true;
+        document.getElementById('formTitle').textContent = 'New Article';
+        document.getElementById('docModal').style.display = 'flex';
+    }
+
+    function editDoc(doc) {
+        document.getElementById('docId').value = doc.id;
+        document.getElementById('docTitle').value = doc.title;
+        document.getElementById('docSlug').value = doc.slug;
+        document.getElementById('docAuthor').value = doc.author || '';
+        document.getElementById('docOrder').value = doc.sortOrder;
+        document.getElementById('docSummary').value = doc.summary;
+        document.getElementById('docContent').value = doc.content;
+        document.getElementById('docPublished').checked = doc.isPublished;
+        document.getElementById('formTitle').textContent = 'Edit Article';
+        document.getElementById('docModal').style.display = 'flex';
+    }
+
+    function closeForm() { document.getElementById('docModal').style.display = 'none'; }
+
+    function saveDoc() {
+        var payload = {
+            id: parseInt(document.getElementById('docId').value),
+            title: document.getElementById('docTitle').value,
+            slug: document.getElementById('docSlug').value,
+            summary: document.getElementById('docSummary').value,
+            content: document.getElementById('docContent').value,
+            author: document.getElementById('docAuthor').value,
+            sortOrder: parseInt(document.getElementById('docOrder').value) || 0,
+            isPublished: document.getElementById('docPublished').checked
+        };
+        fetch('/api/superadmin/docs/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(r => r.json()).then(d => {
+            if (d.success) location.reload();
+            else alert(d.error || 'Save failed');
+        }).catch(() => alert('Save failed'));
+    }
+
+    function deleteDoc(id) {
+        if (!confirm('Delete this article?')) return;
+        fetch('/api/superadmin/docs/' + id, { method: 'DELETE' })
+            .then(r => r.json()).then(d => { if (d.success) location.reload(); })
+            .catch(() => alert('Delete failed'));
+    }
+</script>
+}

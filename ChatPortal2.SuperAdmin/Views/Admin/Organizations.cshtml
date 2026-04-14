@@ -5,22 +5,24 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="fw-bold"><i class="bi bi-building me-2 text-primary"></i>Organizations</h2>
-    <span class="sa-badge sa-badge-blue">@Model.Count total</span>
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1 class="page-title">Organizations</h1>
+        <p class="page-desc">@Model.Count registered organizations</p>
+    </div>
 </div>
 
-<div class="sa-card">
-    <table class="sa-table">
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
         <thead>
             <tr>
                 <th>Name</th>
-                <th>Total Users</th>
+                <th>Users</th>
                 <th>Pro</th>
                 <th>Enterprise</th>
                 <th>Trial</th>
                 <th>Workspaces</th>
-                <th>Monthly Revenue</th>
+                <th>Revenue</th>
                 <th>Created</th>
             </tr>
         </thead>
@@ -33,38 +35,38 @@
                 var revenue = proCount * ChatPortal2.Models.PlanPricing.ProPricePerUser
                             + entCount * ChatPortal2.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
-                    <td class="fw-semibold">@org.Name</td>
+                    <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
                     <td>@(org.Users?.Count ?? 0)</td>
                     <td>
                         @if (proCount > 0)
                         {
-                            <span class="sa-badge sa-badge-blue">@proCount</span>
+                            <span class="badge-sm badge-indigo">@proCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>
                         @if (entCount > 0)
                         {
-                            <span class="sa-badge sa-badge-green">@entCount</span>
+                            <span class="badge-sm badge-emerald">@entCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>
                         @if (trialCount > 0)
                         {
-                            <span class="sa-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24">@trialCount</span>
+                            <span class="badge-sm badge-amber">@trialCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>@(org.Workspaces?.Count ?? 0)</td>
                     <td>
                         @if (revenue > 0)
                         {
-                            <span class="sa-badge sa-badge-green">$@revenue.ToString("N0")/mo</span>
+                            <span class="badge-sm badge-emerald">$@revenue.ToString("N0")/mo</span>
                         }
-                        else { <span class="text-muted">$0</span> }
+                        else { <span style="color:var(--text-muted)">$0</span> }
                     </td>
-                    <td class="text-muted">@org.CreatedAt.ToString("MMM d, yyyy")</td>
+                    <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                 </tr>
             }
         </tbody>

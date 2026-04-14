@@ -220,7 +220,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     background: var(--cp-surface);
     border-top: 1px solid var(--cp-border);
     padding: 40px 0 24px;
-    margin-top: 60px;
+    margin-top: auto;
 }
 .footer-brand {
     font-size: 1.1rem;
@@ -644,6 +644,71 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     color: var(--cp-text-muted);
     margin: 0;
     line-height: 1.65;
+}
+
+/* ============================================================
+   HOW TO USE AI INSIGHTS
+   ============================================================ */
+.cp-how-to { background: var(--cp-bg); }
+.howto-card {
+    text-align: center;
+    padding: 32px 20px 28px;
+    position: relative;
+    height: 100%;
+}
+.howto-step-num {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--cp-primary), var(--cp-primary-dark));
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(91, 155, 213, 0.35);
+}
+.howto-icon {
+    font-size: 2rem;
+    color: var(--cp-primary);
+    margin-bottom: 12px;
+}
+.howto-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    margin-bottom: 8px;
+}
+.howto-desc {
+    font-size: 0.85rem;
+    color: var(--cp-text-muted);
+    line-height: 1.6;
+    margin: 0;
+}
+.howto-tips {
+    padding: 28px 32px;
+}
+.howto-tips h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cp-primary);
+    margin-bottom: 16px;
+}
+.howto-tips-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.howto-tips-list li {
+    font-size: 0.88rem;
+    color: var(--cp-text);
+    padding: 6px 0;
+    line-height: 1.55;
 }
 
 /* ============================================================

@@ -36,6 +36,7 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/about")]
     public async Task<IActionResult> About()
     {
         await SetSeoAsync("/about");
@@ -48,12 +49,14 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/docs")]
     public async Task<IActionResult> Docs()
     {
         await SetSeoAsync("/docs");
         return View();
     }
 
+    [Route("/blog")]
     public async Task<IActionResult> Blog()
     {
         await SetSeoAsync("/blog");

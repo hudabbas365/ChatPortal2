@@ -242,6 +242,40 @@ class ChartRenderer {
         document.addEventListener('filters:change', this._filterPanelListener[chartDef.id]);
     }
 
+    // ── Power BI detection helper ──
+    _isPowerBi() {
+        var dsType = (window.currentDatasourceType || '').toLowerCase();
+        return dsType.indexOf('power bi') !== -1 || dsType.indexOf('powerbi') !== -1;
+    }
+
+    // ── DAX table name: single-quoted for Power BI ──
+    _formatDaxTableName(tableName) {
+        return "'" + String(tableName).replace(/'/g, "''") + "'";
+    }
+
+    // ── Build DAX query for Power BI datasources ──
+    _buildDaxQuery(tableName, limit, labelField, valueField, agg, mvFields) {
+        var tbl = this._formatDaxTableName(tableName);
+        if (agg && agg.enabled && labelField && valueField) {
+            var aggFn = agg.function || 'SUM';
+            var mvCols = '';
+            if (mvFields && mvFields.length > 0) {
+                mvCols = mvFields.filter(function (f) { return f !== valueField; })
+                    .map(function (f) { return ', "' + f + '", ' + aggFn + '(' + tbl + '[' + f + '])'; }).join('');
+            }
+            return 'EVALUATE TOPN(' + limit + ', SUMMARIZECOLUMNS(' + tbl + '[' + labelField + '], "' + valueField + '", ' + aggFn + '(' + tbl + '[' + valueField + '])' + mvCols + '))';
+        }
+        if (labelField && valueField) {
+            var mvCols2 = '';
+            if (mvFields && mvFields.length > 0) {
+                mvCols2 = mvFields.filter(function (f) { return f !== valueField; })
+                    .map(function (f) { return ', "' + f + '", ' + tbl + '[' + f + ']'; }).join('');
+            }
+            return 'EVALUATE TOPN(' + limit + ', SELECTCOLUMNS(' + tbl + ', "' + labelField + '", ' + tbl + '[' + labelField + '], "' + valueField + '", ' + tbl + '[' + valueField + ']' + mvCols2 + '))';
+        }
+        return 'EVALUATE TOPN(' + limit + ', ' + tbl + ')';
+    }
+
     _formatTableName(tableName) {
         if (!tableName) return '[]';
         // Defensive: extract string from object (e.g. {name:'TableName'} from API)
@@ -256,6 +290,11 @@ class ChartRenderer {
     }
 
     _buildLimitQuery(columns, tableName, limit = 100, whereClause = '') {
+        // Power BI — generate DAX instead of SQL
+        if (this._isPowerBi()) {
+            return this._buildDaxQuery(tableName, limit, null, null, null, null);
+        }
+        // SQL datasources — unchanged
         const dsType = (window.currentDatasourceType || '').toLowerCase();
         const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
         const cols = columns || '*';
@@ -302,30 +341,37 @@ class ChartRenderer {
                 const fmtTable = this._formatTableName(tableName);
                 const rowLimit = chartDef.rowLimit || 100;
                 const whereClause = chartDef.filterWhere || '';
-                const whereSQL = whereClause ? ` WHERE ${whereClause}` : '';
                 const mvFields = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
-                let selectedCols;
-                if (chartDef.chartType === 'table') {
-                    selectedCols = '*';
-                } else if (labelField && valueField) {
-                    const allCols = [`[${labelField}]`, `[${valueField}]`];
-                    mvFields.forEach(f => { if (f !== valueField) allCols.push(`[${f}]`); });
-                    selectedCols = allCols.join(', ');
-                } else {
-                    selectedCols = '*';
-                }
                 let query;
-                if (agg.enabled && labelField && valueField) {
-                    const dsType = (window.currentDatasourceType || '').toLowerCase();
-                    const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
-                    const aggCols = `[${labelField}], ${agg.function || 'SUM'}([${valueField}]) as [${valueField}]`;
-                    if (isSqlServer) {
-                        query = `SELECT TOP ${rowLimit} ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}]`;
-                    } else {
-                        query = `SELECT ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}] LIMIT ${rowLimit}`;
-                    }
+
+                // ── Power BI → DAX (parallel path, SQL untouched) ──
+                if (this._isPowerBi()) {
+                    query = this._buildDaxQuery(tableName, rowLimit, labelField, valueField, agg, mvFields);
                 } else {
-                    query = this._buildLimitQuery(selectedCols, tableName, rowLimit, whereClause);
+                    // ── SQL datasources (unchanged) ──
+                    const whereSQL = whereClause ? ` WHERE ${whereClause}` : '';
+                    let selectedCols;
+                    if (chartDef.chartType === 'table') {
+                        selectedCols = '*';
+                    } else if (labelField && valueField) {
+                        const allCols = [`[${labelField}]`, `[${valueField}]`];
+                        mvFields.forEach(f => { if (f !== valueField) allCols.push(`[${f}]`); });
+                        selectedCols = allCols.join(', ');
+                    } else {
+                        selectedCols = '*';
+                    }
+                    if (agg.enabled && labelField && valueField) {
+                        const dsType = (window.currentDatasourceType || '').toLowerCase();
+                        const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
+                        const aggCols = `[${labelField}], ${agg.function || 'SUM'}([${valueField}]) as [${valueField}]`;
+                        if (isSqlServer) {
+                            query = `SELECT TOP ${rowLimit} ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}]`;
+                        } else {
+                            query = `SELECT ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}] LIMIT ${rowLimit}`;
+                        }
+                    } else {
+                        query = this._buildLimitQuery(selectedCols, tableName, rowLimit, whereClause);
+                    }
                 }
                 const r = await fetch('/api/data/execute', {
                     method: 'POST',

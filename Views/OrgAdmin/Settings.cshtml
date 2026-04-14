@@ -4,47 +4,75 @@
 }
 
 <div class="org-settings-page">
-    <div class="container-fluid py-4">
-        <div class="admin-header mb-4">
-            <h1 class="admin-title">
-                <i class="bi bi-gear me-2"></i>Organization Settings
-            </h1>
-        </div>
+    <div class="org-settings-shell">
+        <!-- Left sidebar navigation -->
+        <aside class="org-settings-nav">
+            <div class="org-settings-nav-header">
+                <i class="bi bi-gear"></i>
+                <span>Settings</span>
+            </div>
+            <button class="org-settings-nav-item active" data-tab="org">
+                <i class="bi bi-building"></i><span>Organization</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="users">
+                <i class="bi bi-people"></i><span>Users</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="ws-members">
+                <i class="bi bi-person-badge"></i><span>Workspace Members</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="billing">
+                <i class="bi bi-credit-card-2-front"></i><span>Billing</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="compliance">
+                <i class="bi bi-shield-check"></i><span>Compliance</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="activity">
+                <i class="bi bi-activity"></i><span>Activity</span>
+            </button>
+        </aside>
 
-        <ul class="nav nav-tabs cp-tabs mb-4" id="settingsTabs">
-            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-org">Organization</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-users">Users</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-ws-members">Workspace Members</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-datasources">Datasources</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-agents">Agents</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing">Billing</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-compliance">Compliance</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-custom">Customization</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-activity">Activity</a></li>
-        </ul>
-
-        <div class="tab-content">
-            <div class="tab-pane fade show active" id="tab-org">
-                <div class="glass-card p-4">
-                    <h4>Organization Profile</h4>
-                    <form>
-                        <div class="mb-3">
-                            <label class="form-label-cp">Organization Name</label>
-                            <input type="text" class="form-control cp-input" id="orgNameInput" placeholder="Acme Corp" readonly />
-                            <small class="form-text text-muted">Organization name is set during sign-up and cannot be changed.</small>
+        <!-- Right content area -->
+        <div class="org-settings-content">
+            <!-- Organization Tab -->
+            <div class="org-settings-panel active" data-panel="org">
+                <div class="org-panel-header">
+                    <h2>Organization Profile</h2>
+                    <p>Manage your organization identity and branding</p>
+                </div>
+                <div class="org-form-card">
+                    <div class="org-form-section">
+                        <div class="org-form-section-label">
+                            <i class="bi bi-building"></i>Details
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label-cp">Logo URL</label>
-                            <input type="url" class="form-control cp-input" placeholder="https://..." />
+                        <div class="org-form-group">
+                            <label class="org-form-label" for="orgNameInput">Organization Name</label>
+                            <input type="text" class="org-form-input" id="orgNameInput" placeholder="Acme Corp" readonly />
+                            <span class="org-form-hint"><i class="bi bi-lock me-1"></i>Set during sign-up and cannot be changed</span>
                         </div>
-                        <button class="btn cp-btn-gradient" disabled>Name cannot be changed</button>
-                    </form>
+                    </div>
+                    <div class="org-form-divider"></div>
+                    <div class="org-form-section">
+                        <div class="org-form-section-label">
+                            <i class="bi bi-image"></i>Branding
+                        </div>
+                        <div class="org-form-group">
+                            <label class="org-form-label">Logo URL</label>
+                            <input type="url" class="org-form-input" placeholder="https://your-logo-url.com/logo.png" />
+                            <span class="org-form-hint">Recommended: 256×256px, PNG or SVG</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="tab-users">
-                <div class="glass-card p-4">
+
+            <!-- Users Tab -->
+            <div class="org-settings-panel" data-panel="users">
+                <div class="org-panel-header">
+                    <h2>User Management</h2>
+                    <p>Manage your organization's users, roles, and permissions</p>
+                </div>
+                <div class="org-form-card">
                     <!-- Token Usage Widget -->
-                    <div class="token-budget-card mb-4" id="tokenUsageCard">
+                    <div class="token-budget-card" id="tokenUsageCard">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <strong><i class="bi bi-cpu me-2"></i>AI Token Usage (This Month)</strong>
                             <span class="small text-muted" id="tokenUsageText">Loading...</span>
@@ -54,12 +82,13 @@
                         </div>
                         <div class="token-budget-label" id="tokenUsageLabel">&nbsp;</div>
                     </div>
+                </div>
+                <div class="org-form-card" style="margin-top:16px">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
-                            <h4>User Management</h4>
-                            <p class="text-muted mb-0">Manage your organization's users, roles, and permissions.</p>
+                            <h4 style="margin:0;font-size:1rem;font-weight:600">Users</h4>
                         </div>
-                        <button class="btn cp-btn-gradient" id="createUserBtn">
+                        <button class="btn cp-btn-gradient btn-sm" id="createUserBtn">
                             <i class="bi bi-person-plus me-1"></i>Create User
                         </button>
                     </div>
@@ -71,82 +100,63 @@
                     </div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="tab-ws-members">
-                <div class="glass-card p-4">
-                    <h4>Workspace Members</h4>
-                    <p class="text-muted">Manage workspace membership and roles for your organisation's workspaces.</p>
+
+            <!-- Workspace Members Tab -->
+            <div class="org-settings-panel" data-panel="ws-members">
+                <div class="org-panel-header">
+                    <h2>Workspace Members</h2>
+                    <p>Manage workspace membership and roles for your organisation's workspaces</p>
+                </div>
+                <div class="org-form-card">
                     <div id="wsMemberWorkspaceList"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div></div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="tab-datasources">
-                <div class="glass-card p-4">
-                    <h4>Datasources</h4>
-                    <p class="text-muted">Connect your data sources. Supports 70+ source types.</p>
-                    <button class="btn cp-btn-gradient mb-3">
-                        <i class="bi bi-plus me-1"></i>Add Datasource
-                    </button>
-                    <div id="datasourcesContainer"><p class="text-muted">No datasources connected.</p></div>
+
+            <!-- Billing Tab -->
+            <div class="org-settings-panel" data-panel="billing">
+                <div class="org-panel-header">
+                    <h2>Billing &amp; Subscription</h2>
+                    <p>Manage your plan and view invoices</p>
                 </div>
-            </div>
-            <div class="tab-pane fade" id="tab-agents">
-                <div class="glass-card p-4">
-                    <h4>AI Agents</h4>
-                    <p class="text-muted">Create and configure AI agents with custom system prompts.</p>
-                    <button class="btn cp-btn-gradient mb-3">
-                        <i class="bi bi-plus me-1"></i>Create Agent
-                    </button>
-                    <div id="agentsContainer"><p class="text-muted">No agents created.</p></div>
-                </div>
-            </div>
-            <div class="tab-pane fade" id="tab-billing">
-                <div class="glass-card p-4">
-                    <h4>Billing &amp; Subscription</h4>
+                <div class="org-form-card">
                     <div id="billingInfo">
                         <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading subscription info...</div>
                     </div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="tab-compliance">
-                <div class="glass-card p-4">
-                    <h4>Compliance &amp; Privacy</h4>
-                    <div class="compliance-item mb-3">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-shield-check text-success me-2 fs-4"></i>
-                            <div>
-                                <strong>GDPR Compliance</strong>
-                                <p class="mb-0 text-muted small">All data is stored and processed in accordance with GDPR.</p>
-                            </div>
+
+            <!-- Compliance Tab -->
+            <div class="org-settings-panel" data-panel="compliance">
+                <div class="org-panel-header">
+                    <h2>Compliance &amp; Privacy</h2>
+                    <p>Your data protection and security overview</p>
+                </div>
+                <div class="org-form-card">
+                    <div class="org-compliance-item">
+                        <div class="org-compliance-icon success"><i class="bi bi-shield-check"></i></div>
+                        <div>
+                            <strong>GDPR Compliance</strong>
+                            <p>All data is stored and processed in accordance with GDPR.</p>
                         </div>
                     </div>
-                    <div class="compliance-item">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-lock-fill text-primary me-2 fs-4"></i>
-                            <div>
-                                <strong>Data Encryption</strong>
-                                <p class="mb-0 text-muted small">Data at rest and in transit is encrypted with AES-256 and TLS 1.3.</p>
-                            </div>
+                    <div class="org-form-divider"></div>
+                    <div class="org-compliance-item">
+                        <div class="org-compliance-icon primary"><i class="bi bi-lock-fill"></i></div>
+                        <div>
+                            <strong>Data Encryption</strong>
+                            <p>Data at rest and in transit is encrypted with AES-256 and TLS 1.3.</p>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="tab-custom">
-                <div class="glass-card p-4">
-                    <h4>Customization</h4>
-                    <div class="mb-3">
-                        <label class="form-label-cp">Brand Color</label>
-                        <input type="color" class="form-control form-control-color" value="#5B9BD5" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label-cp">Embed Widget Color</label>
-                        <input type="color" class="form-control form-control-color" value="#5B9BD5" />
-                    </div>
-                    <button class="btn cp-btn-gradient">Apply Branding</button>
+
+            <!-- Activity Tab -->
+            <div class="org-settings-panel" data-panel="activity">
+                <div class="org-panel-header">
+                    <h2>Activity Log</h2>
+                    <p>Recent actions performed in your organization</p>
                 </div>
-            </div>
-            <div class="tab-pane fade" id="tab-activity">
-                <div class="glass-card p-4">
-                    <h4>Activity Log</h4>
-                    <p class="text-muted">Recent actions performed in your organization.</p>
+                <div class="org-form-card">
                     <div id="activityLog"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading activity...</div></div>
                     <div id="activityPagination" class="mt-3 d-flex justify-content-between align-items-center d-none">
                         <span class="small text-muted" id="activityPagingInfo"></span>
@@ -561,24 +571,23 @@
             }).catch(() => {});
     }
 
-    // Tab activation
-    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
-        tab.addEventListener('shown.bs.tab', function(e) {
-            const target = e.target.getAttribute('href');
-            if (target === '#tab-billing') loadBilling();
-            else if (target === '#tab-activity') loadActivity();
-            else if (target === '#tab-users') { loadUsers(); loadTokenUsage(); }
-            else if (target === '#tab-ws-members') orgAdminWM.init(orgId);
-        });
+    // ---- Left sidebar tab switching ----
+    function switchSettingsTab(tab) {
+        document.querySelectorAll('.org-settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        document.querySelectorAll('.org-settings-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+        if (tab === 'billing') loadBilling();
+        else if (tab === 'activity') loadActivity();
+        else if (tab === 'users') { loadUsers(); loadTokenUsage(); }
+        else if (tab === 'ws-members' && window.orgAdminWM) orgAdminWM.init(orgId);
+    }
+    document.querySelectorAll('.org-settings-nav-item').forEach(btn => {
+        btn.addEventListener('click', () => switchSettingsTab(btn.dataset.tab));
     });
 
-    // Auto-open tab from URL hash or query param
+    // Auto-open tab from URL query param
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
-    if (tabParam) {
-        const tabEl = document.querySelector(`[href="#tab-${tabParam}"]`);
-        if (tabEl) new bootstrap.Tab(tabEl).show();
-    }
+    if (tabParam) switchSettingsTab(tabParam);
 
     // Populate org name from stored user data
     const orgNameInput = document.getElementById('orgNameInput');

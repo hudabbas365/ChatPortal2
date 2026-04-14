@@ -7,19 +7,19 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@(seoEntry?.Title ?? ViewData["Title"] ?? "ChatPortal2")</title>
+    <title>@(seoEntry?.Title ?? ViewData["Title"] ?? "AI Insights")</title>
     <meta name="description" content="@(seoEntry?.MetaDescription ?? "AI-Powered Data Conversations Portal")" />
     <meta name="keywords" content="@(seoEntry?.MetaKeywords ?? "chat, AI, data, analytics, dashboards")" />
     <meta name="robots" content="@(seoEntry?.RobotsDirective ?? "index, follow")" />
     @if (!string.IsNullOrEmpty(seoEntry?.CanonicalUrl)) {
         <link rel="canonical" href="@seoEntry.CanonicalUrl" />
     }
-    <meta property="og:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "ChatPortal2")" />
+    <meta property="og:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "AI Insights")" />
     <meta property="og:description" content="@(seoEntry?.OgDescription ?? seoEntry?.MetaDescription ?? "")" />
     <meta property="og:image" content="@(seoEntry?.OgImage ?? "")" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "ChatPortal2")" />
+    <meta name="twitter:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "AI Insights")" />
     <meta name="twitter:description" content="@(seoEntry?.OgDescription ?? seoEntry?.MetaDescription ?? "")" />
     @if (!string.IsNullOrEmpty(seoEntry?.StructuredData)) {
         <script type="application/ld+json">@Html.Raw(seoEntry.StructuredData)</script>
@@ -34,11 +34,11 @@
     @RenderSection("Head", required: false)
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='18' width='6' height='12' rx='1' fill='%236366f1'/%3E%3Crect x='11' y='10' width='6' height='20' rx='1' fill='%236366f1'/%3E%3Crect x='20' y='4' width='6' height='26' rx='1' fill='%236366f1' opacity='0.8'/%3E%3C/svg%3E">
 </head>
-<body>
+<body style="display:flex;flex-direction:column;min-height:100vh;">
     @await Html.PartialAsync("~/Views/Partials/_Navbar.cshtml")
 
     @await Html.PartialAsync("~/Views/Partials/_TrialBanner.cshtml")
-    <main>
+    <main style="flex:1;">
         @RenderBody()
     </main>
     <footer class="cp-footer">

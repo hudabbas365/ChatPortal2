@@ -33,6 +33,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    options.MapInboundClaims = false;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
@@ -59,19 +60,57 @@ builder.Services.AddAuthentication(options =>
                 context.Response.Redirect("/superadmin/login");
             }
             return Task.CompletedTask;
+        },
+        OnForbidden = context =>
+        {
+            if (!context.Response.HasStarted)
+            {
+                context.Response.Redirect("/superadmin/login");
+            }
+            return Task.CompletedTask;
         }
     };
 });
 
+builder.Services.AddHttpClient("cohere");
+builder.Services.AddScoped<ChatPortal2.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
-builder.Services.AddControllersWithViews().AddNewtonsoftJson();
+builder.Services.AddControllersWithViews()
+    .AddNewtonsoftJson()
+    .ConfigureApplicationPartManager(manager =>
+    {
+        // Remove the main ChatPortal2 assembly so its controllers are not discovered
+        var mainPart = manager.ApplicationParts
+            .FirstOrDefault(p => p.Name == "ChatPortal2");
+        if (mainPart != null)
+            manager.ApplicationParts.Remove(mainPart);
+    });
 
 var app = builder.Build();
+
+// Show detailed errors so 500 responses include the full exception.
+// Remove or guard with app.Environment.IsDevelopment() once the issue is resolved.
+app.UseDeveloperExceptionPage();
 
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseStatusCodePages(async context =>
+{
+    var response = context.HttpContext.Response;
+    if (response.StatusCode is 401 or 403 && !response.HasStarted)
+    {
+        response.Redirect("/superadmin/login");
+    }
+});
+
+app.MapGet("/", context =>
+{
+    context.Response.Redirect("/superadmin");
+    return Task.CompletedTask;
+});
 
 app.MapDefaultControllerRoute();
 

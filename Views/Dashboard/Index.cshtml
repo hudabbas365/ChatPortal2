@@ -47,19 +47,6 @@
             <button type="button" class="btn btn-sm btn-outline-cp me-2" id="filter-panel-toggle" title="Toggle Filters">
                 <i class="bi bi-funnel me-1"></i>Filters
             </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPng()" title="Export PNG">
-                <i class="bi bi-image me-1"></i>PNG
-            </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPdf()" title="Export PDF">
-                <i class="bi bi-file-pdf me-1"></i>PDF
-            </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportJson()" title="Export JSON">
-                <i class="bi bi-download me-1"></i>JSON
-            </button>
-            <label class="btn btn-sm btn-outline-secondary me-2" title="Import JSON">
-                <i class="bi bi-upload me-1"></i>Import
-                <input type="file" accept=".json" onchange="exportManager.importJson(this.files[0])" style="display:none">
-            </label>
             <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportXml()" title="Export XML">
                 <i class="bi bi-file-code me-1"></i>XML
             </button>
@@ -969,9 +956,23 @@
                 const existingGuid = window._currentReportGuid || null;
 
                 let resp;
-                if (existingGuid) {
+                // If no existing guid, check if workspace already has a report
+                let resolvedGuid = existingGuid;
+                if (!resolvedGuid && wsGuid) {
+                    try {
+                        const existing = await fetch('/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid));
+                        if (existing.ok) {
+                            const reports = await existing.json();
+                            if (reports.length > 0) {
+                                resolvedGuid = reports[0].guid;
+                                window._currentReportGuid = resolvedGuid;
+                            }
+                        }
+                    } catch { /* proceed with create */ }
+                }
+                if (resolvedGuid) {
                     // Update existing report
-                    resp = await fetch('/api/reports/' + encodeURIComponent(existingGuid), {
+                    resp = await fetch('/api/reports/' + encodeURIComponent(resolvedGuid), {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

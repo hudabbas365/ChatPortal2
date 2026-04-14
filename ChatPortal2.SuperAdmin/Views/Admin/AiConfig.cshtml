@@ -4,29 +4,32 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<h2 class="fw-bold mb-4"><i class="bi bi-cpu me-2 text-primary"></i>AI Configuration</h2>
+<div class="page-header">
+    <h1 class="page-title">AI Configuration</h1>
+    <p class="page-desc">Current AI provider settings and model configuration</p>
+</div>
 
-<div class="sa-card">
-    <h6 class="text-muted mb-3">Current AI Provider Settings</h6>
-    <table class="sa-table">
+<div class="card-panel">
+    <div class="card-panel-title">Provider Settings</div>
+    <table class="tbl">
         <tbody>
             <tr>
                 <td>Provider</td>
-                <td><span class="sa-badge sa-badge-blue">Cohere AI</span></td>
+                <td class="text-end"><span class="badge-sm badge-indigo">Cohere AI</span></td>
             </tr>
             <tr>
                 <td>API Endpoint</td>
-                <td><code>https://api.cohere.ai/v2/chat</code></td>
+                <td class="text-end"><code style="color:#4a8ec9;font-size:.82rem">https://api.cohere.ai/v2/chat</code></td>
             </tr>
             <tr>
                 <td>Model</td>
-                <td><code>command-a-03-2025</code></td>
+                <td class="text-end"><code style="color:#4a8ec9;font-size:.82rem">command-a-03-2025</code></td>
             </tr>
             <tr>
                 <td>Streaming</td>
-                <td><span class="sa-badge sa-badge-green">Enabled (SSE)</span></td>
+                <td class="text-end"><span class="badge-sm badge-emerald">Enabled (SSE)</span></td>
             </tr>
         </tbody>
     </table>
-    <p class="text-muted small mt-3">AI configuration is managed via <code>appsettings.json</code> (Cohere:ApiKey, Cohere:Model).</p>
+    <p style="color:var(--text-muted);font-size:.82rem;margin-top:1rem">Configuration is managed via <code style="color:#4a8ec9">appsettings.json</code> — keys: <code style="color:#4a8ec9">Cohere:ApiKey</code>, <code style="color:#4a8ec9">Cohere:Model</code></p>
 </div>

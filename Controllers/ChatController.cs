@@ -100,9 +100,10 @@ public class ChatController : Controller
             history = msgs.Select(m => (m.Role, m.Content)).ToList();
         }
 
-        // Look up agent ? datasource for schema context
+        // Look up agent → datasource for schema context
         string schemaContext = "";
         string datasourceIdentity = "";
+        bool connectedToPowerBi = false;
         if (!string.IsNullOrEmpty(req.AgentId))
         {
             Agent? agent = null;
@@ -113,6 +114,7 @@ public class ChatController : Controller
             if (agent?.Datasource != null)
             {
                 schemaContext = await BuildSchemaPromptAsync(agent.Datasource);
+                connectedToPowerBi = IsPowerBi(agent.Datasource.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{agent.Datasource.Name}** (Type: {agent.Datasource.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -120,11 +122,63 @@ public class ChatController : Controller
             }
         }
 
+        // Load report context when request comes from report viewer
+        string reportContext = "";
+        if (!string.IsNullOrEmpty(req.ReportGuid))
+        {
+            var report = await _db.Reports
+                .Include(r => r.Datasource)
+                .Include(r => r.Agent!).ThenInclude(a => a!.Datasource)
+                .FirstOrDefaultAsync(r => r.Guid == req.ReportGuid);
+
+            if (report != null)
+            {
+                reportContext = BuildReportContextPrompt(report);
+
+                // Use report's datasource/agent for schema if no agent was explicitly specified
+                if (string.IsNullOrEmpty(schemaContext))
+                {
+                    var ds = report.Agent?.Datasource ?? report.Datasource;
+                    if (ds != null)
+                    {
+                        schemaContext = await BuildSchemaPromptAsync(ds);
+                        connectedToPowerBi = IsPowerBi(ds.Type);
+                        datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
+                            $"All queries you generate MUST target this specific datasource. " +
+                            $"Use the exact table and column names from the schema provided below. " +
+                            $"Do NOT assume or invent table/column names that are not in the schema.";
+                    }
+                }
+            }
+        }
+
         // Inject workspace memories into system prompt
-        var defaultPrompt = @"You are ChatPortal2's AI data assistant. When a user asks a data question:
+        var defaultPrompt = connectedToPowerBi
+            ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
 
 1. **Understand Intent**: Determine what data the user wants.
-2. **Generate Query**: Based on the connected datasource, generate the appropriate SQL/query.
+2. **Generate Query**: Generate a **DAX** query for the Power BI semantic model. Do NOT use SQL.
+3. **Provide Description**: Explain what the query does in plain English.
+4. **Return Structure**: Always respond in this JSON format when a data query is involved:
+
+{
+  ""type"": ""data_response"",
+  ""prompt"": ""The original user question rephrased as a clear intent"",
+  ""query"": ""EVALUATE TOPN(10, SUMMARIZECOLUMNS('Sales'[Region], \""TotalRevenue\"", SUM('Sales'[Amount])))"",
+  ""description"": ""This DAX query retrieves total revenue grouped by region from the semantic model."",
+  ""suggestedChart"": ""bar"",
+  ""suggestedFields"": { ""label"": ""Region"", ""value"": ""TotalRevenue"" }
+}
+
+IMPORTANT: Always generate DAX — never SQL. Use EVALUATE, SUMMARIZECOLUMNS, TOPN, FILTER, CALCULATETABLE, ADDCOLUMNS, VALUES.
+Use single-quoted table names: 'TableName'. Use bracketed column names: [ColumnName].
+For non-data questions, respond normally in plain text.
+When the user asks to visualize or chart data, suggest appropriate chart types.
+Always be concise and actionable."
+            : @"You areAI Insight's AI data assistant. When a user asks a data question:
+
+1. **Understand Intent**: Determine what data the user wants.
+2. **Generate Query**: Based on the connected datasource, generate the appropriate query (SQL for relational databases, DAX for Power BI).
 3. **Provide Description**: Explain what the query does in plain English.
 4. **Return Structure**: Always respond in this JSON format when a data query is involved:
 
@@ -142,6 +196,8 @@ When the user asks to visualize or chart data, suggest appropriate chart types.
 Always be concise and actionable.";
 
         var effectiveSystemPrompt = req.SystemPrompt ?? defaultPrompt;
+        if (!string.IsNullOrEmpty(reportContext))
+            effectiveSystemPrompt += "\n\n" + reportContext;
         if (!string.IsNullOrEmpty(datasourceIdentity))
             effectiveSystemPrompt += datasourceIdentity;
         if (!string.IsNullOrEmpty(schemaContext))
@@ -214,15 +270,21 @@ Always be concise and actionable.";
                                "REVOKE","REPLACE","UPSERT","ATTACH","DETACH" };
         var firstToken = System.Text.RegularExpressions.Regex.Split(
             normalized.TrimStart(), @"[\s(;]+").FirstOrDefault() ?? "";
-        if (writeOps.Contains(firstToken) ||
+
+        // Allow DAX EVALUATE and DMV queries (read-only Power BI operations)
+        var isDaxOrDmv = firstToken == "EVALUATE"
+            || (firstToken == "SELECT" && normalized.Contains("$SYSTEM."));
+
+        if (!isDaxOrDmv &&
+            (writeOps.Contains(firstToken) ||
             writeOps.Any(kw => System.Text.RegularExpressions.Regex.IsMatch(
-                normalized, $@"\b{kw}\b")))
+                normalized, $@"\b{kw}\b"))))
         {
             return BadRequest(new
             {
                 success = false,
                 error = $"Write operation \"{firstToken}\" is not permitted. " +
-                        "Only SELECT queries are allowed on this connection."
+                        "Only read-only queries (SELECT, EVALUATE) are allowed on this connection."
             });
         }
 
@@ -252,14 +314,23 @@ Always be concise and actionable.";
                 }
             }
 
-            if (ds != null && !string.IsNullOrWhiteSpace(ds.ConnectionString))
+            if (ds != null)
             {
-                var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
-                return Ok(new { success = result.Success, data = result.Data, rowCount = result.RowCount, error = result.Error });
+                // Power BI uses XmlaEndpoint instead of ConnectionString for connectivity
+                var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
+                var hasConnection = isPbi
+                    ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+                    : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+
+                if (hasConnection)
+                {
+                    var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
+                    return Ok(new { success = result.Success, data = result.Data, rowCount = result.RowCount, error = result.Error });
+                }
             }
         }
 
-        // Fallback: no datasource connected � return informative error
+        // Fallback: no datasource connected — return informative error
         return Ok(new
         {
             success = false,
@@ -394,22 +465,45 @@ Always be concise and actionable.";
         }
     }
 
+    private static bool IsPowerBi(string? type) => QueryExecutionService.PowerBiTypes.Contains(type ?? "");
+
     private async Task<string> BuildSchemaPromptAsync(Datasource ds)
     {
+        var isPbi = IsPowerBi(ds.Type);
         var sb = new StringBuilder();
         sb.AppendLine($"## Connected Datasource: {ds.Name} ({ds.Type})");
-        sb.AppendLine("You are connected to this datasource. Generate SQL queries compatible with this database type.");
+
+        if (isPbi)
+        {
+            sb.AppendLine("You are connected to a Power BI semantic model via XMLA. Generate **DAX** queries — NOT SQL.");
+            sb.AppendLine("### DAX Query Rules:");
+            sb.AppendLine("- Always start with `EVALUATE`.");
+            sb.AppendLine("- Use single-quoted table names: `'Sales'`.");
+            sb.AppendLine("- Use square-bracketed column names: `[Amount]`.");
+            sb.AppendLine("- Use `SUMMARIZECOLUMNS`, `FILTER`, `CALCULATETABLE`, `TOPN`, `ADDCOLUMNS`, `VALUES` etc.");
+            sb.AppendLine("- Do NOT use SQL keywords (SELECT, FROM, WHERE, GROUP BY, JOIN).");
+            sb.AppendLine("- Example: `EVALUATE SUMMARIZECOLUMNS('Sales'[Region], \"TotalRevenue\", SUM('Sales'[Amount]))`");
+        }
+        else
+        {
+            sb.AppendLine("You are connected to this datasource. Generate SQL queries compatible with this database type.");
+        }
+
         sb.AppendLine("### Database Schema:");
 
-        // Try real DB schema introspection
-        if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
+        // Try real schema introspection
+        var hasConn = isPbi
+            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+
+        if (hasConn)
         {
             try
             {
-                var sql = GetSchemaIntrospectionQuery(ds.Type);
-                if (sql != null)
+                var introspectionQuery = GetSchemaIntrospectionQuery(ds.Type);
+                if (introspectionQuery != null)
                 {
-                    var result = await _queryService.ExecuteReadOnlyAsync(ds, sql);
+                    var result = await _queryService.ExecuteReadOnlyAsync(ds, introspectionQuery);
                     if (result.Success && result.Data.Count > 0)
                     {
                         var grouped = result.Data
@@ -429,7 +523,7 @@ Always be concise and actionable.";
 
                         sb.AppendLine();
                         sb.AppendLine("Always use exact table and column names from the schema above.");
-                        sb.AppendLine($"Generate SQL appropriate for {ds.Type}.");
+                        sb.AppendLine(isPbi ? "Generate DAX queries (not SQL) for this Power BI model." : $"Generate SQL appropriate for {ds.Type}.");
                         return sb.ToString();
                     }
                 }
@@ -445,9 +539,9 @@ Always be concise and actionable.";
         var schemas = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Customers"] = "Customers (Id INT PK, Name NVARCHAR, Email NVARCHAR, Region NVARCHAR, CreatedAt DATETIME)",
-            ["Orders"] = "Orders (Id INT PK, CustomerId INT FK?Customers, OrderDate DATETIME, TotalAmount DECIMAL, Status NVARCHAR, Region NVARCHAR)",
+            ["Orders"] = "Orders (Id INT PK, CustomerId INT FK→Customers, OrderDate DATETIME, TotalAmount DECIMAL, Status NVARCHAR, Region NVARCHAR)",
             ["Products"] = "Products (Id INT PK, Name NVARCHAR, Category NVARCHAR, Price DECIMAL, StockQuantity INT)",
-            ["Sales"] = "Sales (Id INT PK, ProductId INT FK?Products, CustomerId INT FK?Customers, Quantity INT, TotalRevenue DECIMAL, SaleDate DATETIME, Region NVARCHAR)",
+            ["Sales"] = "Sales (Id INT PK, ProductId INT FK→Products, CustomerId INT FK→Customers, Quantity INT, TotalRevenue DECIMAL, SaleDate DATETIME, Region NVARCHAR)",
             ["Employees"] = "Employees (Id INT PK, Name NVARCHAR, Department NVARCHAR, HireDate DATETIME, Salary DECIMAL)",
             ["vw_MonthlyRevenue"] = "vw_MonthlyRevenue (Month NVARCHAR, TotalRevenue DECIMAL, OrderCount INT)",
             ["vw_CustomerSummary"] = "vw_CustomerSummary (CustomerId INT, CustomerName NVARCHAR, TotalOrders INT, TotalSpent DECIMAL)",
@@ -465,7 +559,61 @@ Always be concise and actionable.";
 
         sb.AppendLine();
         sb.AppendLine("Always use exact table and column names from the schema above.");
-        sb.AppendLine($"Generate SQL appropriate for {ds.Type}.");
+        sb.AppendLine(isPbi ? "Generate DAX queries (not SQL) for this Power BI model." : $"Generate SQL appropriate for {ds.Type}.");
+        return sb.ToString();
+    }
+
+    private static string BuildReportContextPrompt(Report report)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Report Context: {report.Name}");
+        sb.AppendLine($"You are answering questions about a specific report named \"{report.Name}\".");
+        sb.AppendLine("The user is viewing this report right now. Use the chart information below to answer their questions.");
+
+        if (!string.IsNullOrEmpty(report.CanvasJson))
+        {
+            try
+            {
+                var canvas = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(report.CanvasJson);
+                var pages = canvas?["pages"] as Newtonsoft.Json.Linq.JArray;
+                if (pages != null && pages.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("### Report Structure");
+                    sb.AppendLine($"This report contains {pages.Count} page(s) with the following charts:");
+
+                    foreach (var page in pages)
+                    {
+                        var pageName = page["name"]?.ToString() ?? "Untitled Page";
+                        var charts = page["charts"] as Newtonsoft.Json.Linq.JArray;
+                        if (charts == null || charts.Count == 0) continue;
+
+                        sb.AppendLine($"\n**Page: {pageName}** ({charts.Count} chart(s))");
+                        foreach (var chart in charts)
+                        {
+                            var title = chart["title"]?.ToString() ?? "Untitled Chart";
+                            var chartType = chart["chartType"]?.ToString() ?? "unknown";
+                            var dataQuery = chart["dataQuery"]?.ToString() ?? chart["DataQuery"]?.ToString();
+                            var datasetName = chart["datasetName"]?.ToString() ?? chart["DatasetName"]?.ToString();
+                            var filterWhere = chart["filterWhere"]?.ToString() ?? chart["FilterWhere"]?.ToString();
+
+                            sb.AppendLine($"- **{title}** (Type: {chartType})");
+                            if (!string.IsNullOrWhiteSpace(dataQuery))
+                                sb.AppendLine($"  Query: `{dataQuery}`");
+                            if (!string.IsNullOrWhiteSpace(datasetName))
+                                sb.AppendLine($"  Dataset: {datasetName}");
+                            if (!string.IsNullOrWhiteSpace(filterWhere))
+                                sb.AppendLine($"  Filter: {filterWhere}");
+                        }
+                    }
+                }
+            }
+            catch { /* JSON parse error — skip chart details */ }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("When the user asks to summarize or explain this report, describe the charts, their purpose, and what data they display based on the queries and chart types above.");
+        sb.AppendLine("When the user asks about trends or values, use the chart queries as reference to generate new queries or explain the data.");
         return sb.ToString();
     }
 
@@ -488,7 +636,10 @@ Always be concise and actionable.";
         var tables = new List<string>();
 
         // Try real schema introspection for table names
-        if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
+        var hasDsConn = IsPowerBi(ds.Type)
+            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+        if (hasDsConn)
         {
             try
             {
@@ -543,6 +694,14 @@ Always be concise and actionable.";
             return "SELECT t.table_name, c.column_name, c.data_type FROM information_schema.tables t JOIN information_schema.columns c ON c.table_name = t.table_name AND c.table_schema = t.table_schema WHERE t.table_schema = 'public' ORDER BY t.table_name, c.ordinal_position";
         if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.TABLE_NAME as table_name, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_NAME = t.TABLE_NAME AND c.TABLE_SCHEMA = t.TABLE_SCHEMA WHERE t.TABLE_SCHEMA = DATABASE() ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
+        // Power BI — DMV schema discovery via XMLA
+        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
+            return "SELECT t.[Name] AS table_name, c.[ExplicitName] AS column_name, " +
+                   "CASE c.[DataType] WHEN 2 THEN 'String' WHEN 6 THEN 'Int64' WHEN 8 THEN 'Double' " +
+                   "WHEN 9 THEN 'DateTime' WHEN 10 THEN 'Decimal' WHEN 11 THEN 'Boolean' ELSE 'Other' END AS data_type " +
+                   "FROM $SYSTEM.TMSCHEMA_COLUMNS c " +
+                   "INNER JOIN $SYSTEM.TMSCHEMA_TABLES t ON c.[TableID] = t.[ID] " +
+                   "WHERE NOT t.[IsHidden] ORDER BY t.[Name], c.[ExplicitName]";
         return null;
     }
 }
@@ -554,6 +713,8 @@ public class SendMessageRequest
     public string? WorkspaceId { get; set; }
     public string? AgentId { get; set; }
     public string? UserId { get; set; }
+    public string? ReportGuid { get; set; }
+    public string? Context { get; set; }
 }
 
 public class PinRequest

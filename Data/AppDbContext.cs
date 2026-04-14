@@ -23,6 +23,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TokenUsage> TokenUsages => Set<TokenUsage>();
     public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
+    public DbSet<DocArticle> DocArticles => Set<DocArticle>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -78,13 +79,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(a => a.Datasource)
             .WithMany()
             .HasForeignKey(a => a.DatasourceId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Agent>()
             .HasOne(a => a.Workspace)
             .WithMany()
             .HasForeignKey(a => a.WorkspaceId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Dashboard>()
             .HasOne(d => d.Workspace)
@@ -96,13 +97,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(d => d.Agent)
             .WithMany()
             .HasForeignKey(d => d.AgentId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Dashboard>()
             .HasOne(d => d.Datasource)
             .WithMany()
             .HasForeignKey(d => d.DatasourceId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Report>()
             .HasIndex(r => r.Guid)
@@ -118,19 +119,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(r => r.Dashboard)
             .WithMany()
             .HasForeignKey(r => r.DashboardId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Report>()
             .HasOne(r => r.Datasource)
             .WithMany()
             .HasForeignKey(r => r.DatasourceId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<Report>()
             .HasOne(r => r.Agent)
             .WithMany()
             .HasForeignKey(r => r.AgentId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<TokenUsage>()
             .HasOne(t => t.Organization)
@@ -148,7 +149,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(d => d.Workspace)
             .WithMany()
             .HasForeignKey(d => d.WorkspaceId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.NoAction);
 
         builder.Entity<WorkspaceUser>()
             .HasOne(wu => wu.Workspace)

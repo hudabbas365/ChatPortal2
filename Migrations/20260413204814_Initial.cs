@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ChatPortal2.Migrations
 {
     /// <inheritdoc />
-    public partial class test4 : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -402,8 +402,7 @@ namespace ChatPortal2.Migrations
                         name: "FK_Datasources_Workspaces_WorkspaceId",
                         column: x => x.WorkspaceId,
                         principalTable: "Workspaces",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -478,8 +477,7 @@ namespace ChatPortal2.Migrations
                         name: "FK_Agents_Datasources_DatasourceId",
                         column: x => x.DatasourceId,
                         principalTable: "Datasources",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Agents_Organizations_OrganizationId",
                         column: x => x.OrganizationId,
@@ -490,8 +488,7 @@ namespace ChatPortal2.Migrations
                         name: "FK_Agents_Workspaces_WorkspaceId",
                         column: x => x.WorkspaceId,
                         principalTable: "Workspaces",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -514,14 +511,12 @@ namespace ChatPortal2.Migrations
                         name: "FK_Dashboards_Agents_AgentId",
                         column: x => x.AgentId,
                         principalTable: "Agents",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Dashboards_Datasources_DatasourceId",
                         column: x => x.DatasourceId,
                         principalTable: "Datasources",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Dashboards_Workspaces_WorkspaceId",
                         column: x => x.WorkspaceId,
@@ -557,20 +552,17 @@ namespace ChatPortal2.Migrations
                         name: "FK_Reports_Agents_AgentId",
                         column: x => x.AgentId,
                         principalTable: "Agents",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Reports_Dashboards_DashboardId",
                         column: x => x.DashboardId,
                         principalTable: "Dashboards",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Reports_Datasources_DatasourceId",
                         column: x => x.DatasourceId,
                         principalTable: "Datasources",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Reports_Workspaces_WorkspaceId",
                         column: x => x.WorkspaceId,

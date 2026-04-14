@@ -233,37 +233,16 @@
         },
 
         /* ═══════════════════════════════════════════════════
-           Feature 2 — Dashboard tab in subnav after binding
+           Feature 2 — Dashboard tab in subnav (removed)
            ═══════════════════════════════════════════════════ */
         _injectDashboardTab() {
-            var tabs = document.getElementById('chatSubnavTabs');
-            if (!tabs || tabs.querySelector('[data-tab="dashboard"]')) return;
-            var chatTab = tabs.querySelector('[data-tab="chat"]');
-            if (!chatTab) return;
-
-            var tab = document.createElement('button');
-            tab.className = 'chat-subnav-tab wfe-dash-tab';
-            tab.dataset.tab = 'dashboard';
-            tab.innerHTML = '<i class="bi bi-bar-chart-fill me-1"></i>Dashboard';
-            tab.style.display = 'none';
-            chatTab.after(tab);
-
-            tab.addEventListener('click', function () {
-                var wsId = WF._selectedWsId || '';
-                window.location.href = '/dashboard?workspace=' + encodeURIComponent(wsId);
-            });
+            // Dashboard tab removed from chat subnav
         },
 
         _updateDashboardTab(data) {
-            var tab = document.querySelector('.wfe-dash-tab');
-            if (!tab) return;
-            var agents = data.agents || [];
-            tab.style.display = agents.some(function (a) { return a.datasourceId; }) ? '' : 'none';
         },
 
         _hideDashboardTab() {
-            var tab = document.querySelector('.wfe-dash-tab');
-            if (tab) tab.style.display = 'none';
         },
 
         /* ═══════════════════════════════════════════════════

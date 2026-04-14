@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ChatPortal2.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260413203854_test4")]
-    partial class test4
+    [Migration("20260414113023_test10")]
+    partial class test10
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -383,6 +383,50 @@ namespace ChatPortal2.Migrations
                     b.HasIndex("WorkspaceId");
 
                     b.ToTable("Datasources");
+                });
+
+            modelBuilder.Entity("ChatPortal2.Models.DocArticle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Author")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DocArticles");
                 });
 
             modelBuilder.Entity("ChatPortal2.Models.Organization", b =>
@@ -902,7 +946,7 @@ namespace ChatPortal2.Migrations
                     b.HasOne("ChatPortal2.Models.Datasource", "Datasource")
                         .WithMany()
                         .HasForeignKey("DatasourceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Organization", "Organization")
                         .WithMany("Agents")
@@ -913,7 +957,7 @@ namespace ChatPortal2.Migrations
                     b.HasOne("ChatPortal2.Models.Workspace", "Workspace")
                         .WithMany()
                         .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("Datasource");
 
@@ -937,12 +981,12 @@ namespace ChatPortal2.Migrations
                     b.HasOne("ChatPortal2.Models.Agent", "Agent")
                         .WithMany()
                         .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Datasource", "Datasource")
                         .WithMany()
                         .HasForeignKey("DatasourceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Workspace", "Workspace")
                         .WithMany()
@@ -968,7 +1012,7 @@ namespace ChatPortal2.Migrations
                     b.HasOne("ChatPortal2.Models.Workspace", "Workspace")
                         .WithMany()
                         .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("Organization");
 
@@ -980,17 +1024,17 @@ namespace ChatPortal2.Migrations
                     b.HasOne("ChatPortal2.Models.Agent", "Agent")
                         .WithMany()
                         .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Dashboard", "Dashboard")
                         .WithMany()
                         .HasForeignKey("DashboardId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Datasource", "Datasource")
                         .WithMany()
                         .HasForeignKey("DatasourceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ChatPortal2.Models.Workspace", "Workspace")
                         .WithMany()
