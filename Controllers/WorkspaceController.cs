@@ -87,13 +87,17 @@ public class WorkspaceController : Controller
 
         if (appUser?.Role == "SuperAdmin")
         {
-            // SuperAdmins have unrestricted access
+            // SuperAdmins are blocked from AI Insights portal
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
         }
-        else if (appUser?.Role == "OrgAdmin")
+
+        // Prevent Workspace Admin of Org A from reading Workspace B
+        if (callerOrgId > 0 && workspace.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
+
+        if (appUser?.Role == "OrgAdmin")
         {
-            // OrgAdmins can only access workspaces within their own org
-            if (callerOrgId <= 0 || workspace.OrganizationId != callerOrgId)
-                return StatusCode(403, new { error = "You do not have access to this workspace." });
+            // OrgAdmins can only access workspaces within their own org (already checked above)
         }
         else if (workspace.OwnerId != userId)
         {
@@ -194,6 +198,15 @@ public class WorkspaceController : Controller
             w.Name.ToLower() == trimmedName.ToLower());
         if (nameExists)
             return Conflict(new { error = "A workspace with this name already exists." });
+
+        // Enforce workspace limit based on plan
+        var callerOrg = await _db.Organizations.FindAsync(orgId);
+        if (callerOrg != null && callerOrg.MaxWorkspaces > 0)
+        {
+            var wsCount = await _db.Workspaces.CountAsync(w => w.OrganizationId == orgId);
+            if (wsCount >= callerOrg.MaxWorkspaces)
+                return StatusCode(403, new { error = $"Your plan allows a maximum of {callerOrg.MaxWorkspaces} workspace(s). Upgrade to Enterprise for unlimited workspaces." });
+        }
 
         var workspace = new Workspace
         {
@@ -315,6 +328,14 @@ public class WorkspaceController : Controller
         if (workspace == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var callerUser2 = await _db.Users.FindAsync(userId);
+        if (callerUser2?.Role != "SuperAdmin")
+        {
+            var callerOrg2 = callerUser2?.OrganizationId ?? 0;
+            if (callerOrg2 > 0 && workspace.OrganizationId != callerOrg2)
+                return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
+        }
+
         if (!await _permissions.CanDeleteAsync(workspace.Id, userId))
             return StatusCode(403, new { error = "Only Admins can delete AI Insights." });
 

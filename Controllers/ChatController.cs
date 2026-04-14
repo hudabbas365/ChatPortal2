@@ -55,10 +55,18 @@ public class ChatController : Controller
 
         // Workspace permission check
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var callerUser = await _db.Users.FindAsync(userId);
+        if (callerUser?.Role == "SuperAdmin")
+        {
+            await Response.WriteAsync("data: {\"text\":\"SuperAdmin does not have access to the AI Insights portal.\"}\n\n");
+            await Response.WriteAsync("data: [DONE]\n\n");
+            await Response.Body.FlushAsync();
+            return;
+        }
+
         if (wsId > 0 && !await _permissions.CanViewAsync(wsId, userId))
         {
-            var appUser = await _db.Users.FindAsync(userId);
-            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            if (callerUser?.Role != "OrgAdmin")
             {
                 await Response.WriteAsync("data: {\"text\":\"Access denied — you do not have access to this workspace.\"}\n\n");
                 await Response.WriteAsync("data: [DONE]\n\n");
@@ -175,7 +183,7 @@ Use single-quoted table names: 'TableName'. Use bracketed column names: [ColumnN
 For non-data questions, respond normally in plain text.
 When the user asks to visualize or chart data, suggest appropriate chart types.
 Always be concise and actionable."
-            : @"You areAI Insight's AI data assistant. When a user asks a data question:
+            : @"You are AI Insight's AI data assistant. When a user asks a data question:
 
 1. **Understand Intent**: Determine what data the user wants.
 2. **Generate Query**: Based on the connected datasource, generate the appropriate query (SQL for relational databases, DAX for Power BI).
@@ -260,6 +268,10 @@ Always be concise and actionable.";
     [HttpPost("/api/data/execute")]
     public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteQueryRequest req)
     {
+        var execUser2 = await _db.Users.FindAsync(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "");
+        if (execUser2?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
         var query = (req.Query ?? "").Trim();
 
         // Server-side read-only guard — block all write operations
@@ -397,10 +409,18 @@ Always be concise and actionable.";
         // Workspace permission check
         var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        var analyzeUser = await _db.Users.FindAsync(userId);
+        if (analyzeUser?.Role == "SuperAdmin")
+        {
+            await Response.WriteAsync("data: {\"text\":\"SuperAdmin does not have access to the AI Insights portal.\"}\n\n");
+            await Response.WriteAsync("data: [DONE]\n\n");
+            await Response.Body.FlushAsync();
+            return;
+        }
+
         if (wsId > 0 && !await _permissions.CanViewAsync(wsId, userId))
         {
-            var appUser = await _db.Users.FindAsync(userId);
-            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            if (analyzeUser?.Role != "OrgAdmin")
             {
                 await Response.WriteAsync("data: {\"text\":\"Access denied — you do not have access to this workspace.\"}\n\n");
                 await Response.WriteAsync("data: [DONE]\n\n");

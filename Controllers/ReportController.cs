@@ -38,15 +38,20 @@ public class ReportController : Controller
             return Redirect("/access-denied?statusCode=401");
 
         // Authenticated users must have workspace access (or report must be Published)
-        if (User.Identity?.IsAuthenticated == true && report.Status != "Published" && report.WorkspaceId > 0)
+        string? workspaceRole = null;
+        if (User.Identity?.IsAuthenticated == true && report.WorkspaceId > 0)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+            if (report.Status != "Published")
             {
-                var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
-                    return Redirect("/access-denied?statusCode=403");
+                if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+                {
+                    var appUser = await _db.Users.FindAsync(userId);
+                    if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                        return Redirect("/access-denied?statusCode=403");
+                }
             }
+            workspaceRole = await _permissions.GetRoleAsync(report.WorkspaceId, userId);
         }
 
         ViewBag.ReportGuid = report.Guid;
@@ -60,6 +65,7 @@ public class ReportController : Controller
         ViewBag.AgentName = report.Agent?.Name;
         ViewBag.Status = report.Status;
         ViewBag.UpdatedAt = report.UpdatedAt ?? report.CreatedAt;
+        ViewBag.WorkspaceRole = workspaceRole;
 
         return View("~/Views/Report/View.cshtml");
     }
@@ -129,11 +135,23 @@ public class ReportController : Controller
         if (ws == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-        if (!await _permissions.CanViewAsync(ws.Id, userId))
+        if (!await _permissions.CanViewReportsAsync(ws.Id, userId))
         {
             var appUser = await _db.Users.FindAsync(userId);
-            if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            if (appUser?.Role == "SuperAdmin")
+            {
+                return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+            }
+            if (appUser?.Role == "OrgAdmin")
+            {
+                if ((appUser.OrganizationId ?? 0) != ws.OrganizationId)
+                    return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
+                // OrgAdmin within own org can proceed
+            }
+            else
+            {
                 return StatusCode(403, new { error = "You do not have access to this workspace." });
+            }
         }
 
         var reports = await _db.Reports
@@ -171,11 +189,24 @@ public class ReportController : Controller
         if (report.WorkspaceId > 0)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+            if (!await _permissions.CanViewReportsAsync(report.WorkspaceId, userId))
             {
                 var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                if (appUser?.Role == "SuperAdmin")
+                {
+                    return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+                }
+                if (appUser?.Role == "OrgAdmin")
+                {
+                    var ws = await _db.Workspaces.FindAsync(report.WorkspaceId);
+                    if ((appUser.OrganizationId ?? 0) != (ws?.OrganizationId ?? 0))
+                        return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
+                    // OrgAdmin within own org can proceed
+                }
+                else
+                {
                     return StatusCode(403, new { error = "You do not have access to this report." });
+                }
             }
         }
 

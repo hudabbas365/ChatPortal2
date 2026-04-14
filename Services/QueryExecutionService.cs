@@ -51,8 +51,42 @@ public class QueryExecutionService : IQueryExecutionService
         "MySQL", "MariaDB"
     };
 
+    private static readonly string[] BlockedSqlPatterns = new[]
+    {
+        @"(/\*[\s\S]*?\*/)",       // Block inline comments used to break keywords
+        @"(--[^\r\n]*)",           // Block line comments
+        @"\bXP_\w+",               // xp_ extended procs
+        @"\bSP_\w+",               // sp_ system procs
+        @"\bOPENROWSET\b",
+        @"\bOPENDATASOURCE\b",
+        @"\bBULK\s+INSERT\b",
+        @"\bSHUTDOWN\b",
+        @"\bSYSTEM_USER\b",
+        @"\bCONVERT\s*\(",         // Often used in blind injections
+    };
+
+    public static bool IsSafeQuery(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql)) return false;
+        var upper = sql.ToUpperInvariant().Trim();
+        // Must start with SELECT, WITH (CTE), or EVALUATE (DAX)
+        if (!upper.StartsWith("SELECT") && !upper.StartsWith("WITH") && !upper.StartsWith("EVALUATE"))
+            return false;
+        // Block stacked queries
+        if (sql.Contains(';') && !upper.StartsWith("EVALUATE"))
+            return false;
+        foreach (var pattern in BlockedSqlPatterns)
+            if (System.Text.RegularExpressions.Regex.IsMatch(sql, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return false;
+        return true;
+    }
+
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
+        // Safety gate: only allow safe read-only queries
+        if (!IsSafeQuery(sql))
+            return new QueryExecutionResult { Success = false, Error = "Query blocked by security policy. Only read-only SELECT/EVALUATE queries are allowed." };
+
         // Route Power BI datasources to the ADOMD-based service (DAX / DMV)
         if (PowerBiTypes.Contains(ds.Type))
         {

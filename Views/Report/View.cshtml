@@ -11,6 +11,8 @@
     var status = ViewBag.Status as string ?? "Draft";
     var reportGuid = ViewBag.ReportGuid as string;
     var savedAt = ViewBag.UpdatedAt as DateTime?;
+    var workspaceRole = ViewBag.WorkspaceRole as string;
+    var isViewOnly = workspaceRole == "Viewer";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -43,6 +45,10 @@
             }
             <span class="rv-current">@reportName</span>
             <span class="rv-badge @(status == "Published" ? "rv-badge-published" : "rv-badge-draft")">@status</span>
+            @if (isViewOnly)
+            {
+                <span class="rv-badge" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;margin-left:6px;"><i class="bi bi-eye me-1"></i>View Only</span>
+            }
         </div>
         <div class="rv-meta" style="margin-left: 16px;">
             @if (!string.IsNullOrEmpty(datasourceName))
@@ -60,9 +66,12 @@
                 <a class="btn" href="/chat?workspace=@workspaceGuid" title="Back to Workspace">
                     <i class="bi bi-arrow-left"></i> Workspace
                 </a>
-                <a class="btn" href="/dashboard?workspace=@workspaceGuid&report=@reportGuid" title="Edit in Dashboard">
-                    <i class="bi bi-pencil-square"></i> Edit
-                </a>
+                @if (!isViewOnly)
+                {
+                    <a class="btn" href="/dashboard?workspace=@workspaceGuid&report=@reportGuid" title="Edit in Dashboard">
+                        <i class="bi bi-pencil-square"></i> Edit
+                    </a>
+                }
             }
             <button class="btn" onclick="openShareModal()" title="Share Report">
                 <i class="bi bi-share"></i> Share

@@ -46,7 +46,13 @@ public class TokenBudgetService : ITokenBudgetService
     {
         var now = DateTime.UtcNow;
         var org = await _db.Organizations.FindAsync(organizationId);
-        var budget = org?.MonthlyTokenBudget ?? 2_000_000;
+        if (org == null)
+            return new TokenBudgetStatus { Used = 0, Budget = 0, Remaining = 0, IsExceeded = true };
+
+        var budget = org.MonthlyTokenBudget; // Now plan-aware
+
+        if (budget == 0)
+            return new TokenBudgetStatus { Used = 0, Budget = 0, Remaining = 0, IsExceeded = true };
 
         var used = await GetUsedTokensAsync(organizationId, now.Year, now.Month);
         var remaining = Math.Max(0, budget - used);

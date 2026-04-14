@@ -437,15 +437,18 @@ namespace ChatPortal2.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("EnterpriseExtraTokenPacks")
+                        .HasColumnType("int");
+
                     b.Property<string>("LogoUrl")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("MonthlyTokenBudget")
-                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Plan")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
