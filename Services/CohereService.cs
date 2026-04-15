@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class CohereService
 {
@@ -16,8 +16,42 @@ public class CohereService
         _httpClient = httpClientFactory.CreateClient("cohere");
     }
 
+    private static string SanitizeUserInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return input;
+        // Truncate to 4000 chars to prevent token stuffing
+        if (input.Length > 4000) input = input[..4000];
+        var injectionPatterns = new[]
+        {
+            @"ignore\s+(all\s+)?(previous\s+|above\s+|prior\s+)?instructions?",
+            @"you\s+are\s+now\s+",
+            @"act\s+as\s+(a\s+|an\s+)?",
+            @"forget\s+(all\s+|your\s+|previous\s+)?",
+            @"system\s*:",
+            @"<\s*script",
+            @"jailbreak",
+            @"bypass\s+(all\s+|your\s+|the\s+)?(restrictions?|rules?|guidelines?|filters?)"
+        };
+        foreach (var pattern in injectionPatterns)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(input, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                throw new InvalidOperationException("Unsafe prompt detected.");
+        }
+        return input;
+    }
+
     public async IAsyncEnumerable<string> StreamChatAsync(string userMessage, List<(string role, string content)> history, string systemPrompt = "You are a helpful data assistant.")
     {
+        bool unsafePrompt = false;
+        try { userMessage = SanitizeUserInput(userMessage); }
+        catch (InvalidOperationException) { unsafePrompt = true; }
+
+        if (unsafePrompt)
+        {
+            yield return "I'm sorry, I cannot process that request. Please rephrase your question.";
+            yield break;
+        }
+
         var apiKey = _config["Cohere:ApiKey"];
         if (string.IsNullOrEmpty(apiKey) || apiKey == "YOUR_COHERE_API_KEY_HERE")
         {

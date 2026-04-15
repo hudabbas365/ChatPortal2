@@ -1,12 +1,12 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 public class HomeController : Controller
 {
@@ -36,6 +36,7 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/about")]
     public async Task<IActionResult> About()
     {
         await SetSeoAsync("/about");
@@ -48,12 +49,14 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/docs")]
     public async Task<IActionResult> Docs()
     {
         await SetSeoAsync("/docs");
         return View();
     }
 
+    [Route("/blog")]
     public async Task<IActionResult> Blog()
     {
         await SetSeoAsync("/blog");

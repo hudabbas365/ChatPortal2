@@ -3,55 +3,155 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SuperAdmin Login – ChatPortal2</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <title>SuperAdmin Login – AIInsights</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
     <style>
-        body { background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .login-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2.5rem; width: 100%; max-width: 400px; }
-        .login-title { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
-        .form-control { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; }
-        .form-control:focus { background: rgba(255,255,255,0.12); border-color: #3b82f6; color: #e2e8f0; box-shadow: none; }
-        .btn-sa { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; color: #fff; font-weight: 600; }
-        .btn-sa:hover { opacity: 0.9; color: #fff; }
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f0f4f8;color:#2d3748;min-height:100vh;display:flex}
+
+        .auth-split{display:flex;width:100%;min-height:100vh}
+
+        /* left branding panel */
+        .auth-brand{
+            flex:0 0 44%;display:flex;flex-direction:column;justify-content:center;align-items:center;
+            background:linear-gradient(160deg,#d6e4f0 0%,#e3ecf5 100%);
+            padding:3rem;position:relative;overflow:hidden;
+        }
+        .auth-brand::before{
+            content:'';position:absolute;width:360px;height:360px;
+            background:radial-gradient(circle,rgba(74,142,201,.15) 0%,transparent 70%);
+            top:10%;right:-80px;pointer-events:none;
+        }
+        .auth-brand::after{
+            content:'';position:absolute;width:280px;height:280px;
+            background:radial-gradient(circle,rgba(74,142,201,.1) 0%,transparent 70%);
+            bottom:15%;left:-60px;pointer-events:none;
+        }
+        .brand-content{position:relative;z-index:1;text-align:center;max-width:320px}
+        .brand-icon{
+            width:64px;height:64px;border-radius:16px;
+            background:linear-gradient(135deg,#4a8ec9,#5aaee0);
+            display:inline-flex;align-items:center;justify-content:center;
+            font-size:1.5rem;color:#fff;margin-bottom:1.5rem;
+        }
+        .brand-content h2{font-size:1.5rem;font-weight:700;color:#1e3a5f;margin-bottom:.5rem}
+        .brand-content p{color:#596d82;font-size:.9rem;line-height:1.6}
+        .brand-features{margin-top:2rem;text-align:left}
+        .brand-features .feat{display:flex;align-items:center;gap:.75rem;padding:.5rem 0;color:#596d82;font-size:.85rem}
+        .brand-features .feat i{color:#4a8ec9;font-size:1rem;width:20px;text-align:center}
+
+        /* right form panel */
+        .auth-form-wrap{
+            flex:1;display:flex;align-items:center;justify-content:center;
+            padding:2rem;background:#f0f4f8;
+        }
+        .auth-form{width:100%;max-width:400px}
+        .auth-form h1{font-size:1.75rem;font-weight:700;color:#1e3a5f;margin-bottom:.35rem}
+        .auth-form .subtitle{color:#596d82;font-size:.9rem;margin-bottom:2rem}
+
+        .field-group{margin-bottom:1.25rem}
+        .field-group label{display:block;font-size:.8rem;font-weight:500;color:#596d82;margin-bottom:.4rem;letter-spacing:.02em}
+        .field-input{position:relative}
+        .field-input i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#8596a9;font-size:.9rem}
+        .field-input input{
+            width:100%;padding:.75rem .75rem .75rem 40px;
+            background:#ffffff;border:1px solid #cdd8e4;border-radius:10px;
+            color:#2d3748;font-size:.9rem;font-family:inherit;
+            transition:border-color .2s,box-shadow .2s;outline:none;
+        }
+        .field-input input::placeholder{color:#8596a9}
+        .field-input input:focus{border-color:#4a8ec9;box-shadow:0 0 0 3px rgba(74,142,201,.15)}
+
+        .btn-submit{
+            width:100%;padding:.8rem;border:none;border-radius:10px;
+            background:#4a8ec9;color:#fff;font-size:.9rem;font-weight:600;
+            font-family:inherit;cursor:pointer;transition:background .2s,transform .1s;
+        }
+        .btn-submit:hover{background:#3a7bb8}
+        .btn-submit:active{transform:scale(.99)}
+        .btn-submit:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+        .auth-alert{
+            background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);
+            color:#fca5a5;border-radius:10px;font-size:.85rem;padding:.7rem 1rem;
+            margin-bottom:1rem;display:none;
+        }
+        .auth-alert.show{display:block}
+
+        .auth-footer{text-align:center;margin-top:1.5rem;font-size:.85rem;color:#596d82}
+        .auth-footer a{color:#4a8ec9;text-decoration:none;font-weight:600}
+        .auth-footer a:hover{color:#3a7bb8;text-decoration:underline}
+
+        @@media(max-width:768px){
+            .auth-brand{display:none}
+            .auth-form-wrap{padding:1.5rem}
+        }
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <div class="text-center mb-4">
-            <div style="font-size:2.5rem;color:#60a5fa"><i class="bi bi-shield-lock-fill"></i></div>
-            <h1 class="login-title mt-2">SuperAdmin Portal</h1>
-            <p class="text-muted small">ChatPortal2 System Administration</p>
+    <div class="auth-split">
+        <div class="auth-brand">
+            <div class="brand-content">
+                <div class="brand-icon"><i class="bi bi-shield-lock-fill"></i></div>
+                <h2>AIInsights</h2>
+                <p>Super Admin Console — manage organizations, users, revenue, and platform configuration from one place.</p>
+                <div class="brand-features">
+                    <div class="feat"><i class="bi bi-graph-up-arrow"></i> Real-time analytics &amp; metrics</div>
+                    <div class="feat"><i class="bi bi-building"></i> Multi-org management</div>
+                    <div class="feat"><i class="bi bi-cpu"></i> AI provider configuration</div>
+                    <div class="feat"><i class="bi bi-shield-check"></i> Role-based access control</div>
+                </div>
+            </div>
         </div>
-        <div id="loginAlert" class="alert d-none"></div>
-        <form id="loginForm">
-            <div class="mb-3">
-                <label class="form-label">Email</label>
-                <input type="email" class="form-control" id="email" placeholder="superadmin@example.com" required />
+        <div class="auth-form-wrap">
+            <div class="auth-form">
+                <h1>Welcome back</h1>
+                <p class="subtitle">Sign in to your SuperAdmin account</p>
+
+                <div id="loginAlert" class="auth-alert"></div>
+
+                <form id="loginForm" autocomplete="off">
+                    <div class="field-group">
+                        <label>Email address</label>
+                        <div class="field-input">
+                            <i class="bi bi-envelope"></i>
+                            <input type="email" id="email" placeholder="admin@example.com" required autofocus />
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label>Password</label>
+                        <div class="field-input">
+                            <i class="bi bi-lock"></i>
+                            <input type="password" id="password" placeholder="Enter your password" required />
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit" id="loginBtn">Sign in</button>
+                </form>
+
+                <div class="auth-footer">
+                    Don't have an account? <a href="/superadmin/register">Create one</a>
+                </div>
             </div>
-            <div class="mb-4">
-                <label class="form-label">Password</label>
-                <input type="password" class="form-control" id="password" placeholder="••••••••" required />
-            </div>
-            <button type="submit" class="btn btn-sa w-100" id="loginBtn">
-                <i class="bi bi-shield-lock me-2"></i>Sign In as SuperAdmin
-            </button>
-        </form>
+        </div>
     </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script>
     $('#loginForm').on('submit', function(e) {
         e.preventDefault();
-        const btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
+        var btn = $('#loginBtn');
+        btn.prop('disabled', true).text('Signing in…');
+        $('#loginAlert').removeClass('show');
         $.ajax({
             url: '/api/superadmin/login',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({ email: $('#email').val(), password: $('#password').val() }),
             success: function() { window.location.href = '/superadmin'; },
-            error: function(e) {
-                $('#loginAlert').removeClass('d-none').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');
-                btn.prop('disabled', false).html('<i class="bi bi-shield-lock me-2"></i>Sign In as SuperAdmin');
+            error: function(xhr) {
+                $('#loginAlert').addClass('show').html('<i class="bi bi-exclamation-triangle me-1"></i>' + (xhr.responseJSON?.error || 'Login failed. Please try again.'));
+                btn.prop('disabled', false).text('Sign in');
             }
         });
     });

@@ -1,9 +1,8 @@
 using System.Text;
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -32,6 +31,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 // JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("JWT key 'Jwt:Key' is not configured in appsettings.json.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"];
+var jwtAudience = builder.Configuration["Jwt:Audience"];
+var jwtLegacyIssuer = builder.Configuration["Jwt:LegacyIssuer"] ?? "ChatPortal2";
+var jwtLegacyAudience = builder.Configuration["Jwt:LegacyAudience"] ?? "ChatPortal2Users";
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -44,9 +47,9 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ValidateIssuer = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidIssuers = new[] { jwtIssuer, jwtLegacyIssuer }.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToArray()!,
         ValidateAudience = true,
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidAudiences = new[] { jwtAudience, jwtLegacyAudience }.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToArray()!,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
@@ -92,17 +95,15 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Data Protection for encrypting datasource credentials
-builder.Services.AddDataProtection();
-builder.Services.AddScoped<IDataProtectionService, DataProtectionService>();
-
 // Service DI registrations
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<CohereService>();
 builder.Services.AddScoped<ISeoService, SeoService>();
 builder.Services.AddSingleton<IChartService, ChartService>();
 builder.Services.AddSingleton<IDataService, DataService>();
-builder.Services.AddScoped<IQueryExecutionService, QueryExecutionService>();
+builder.Services.AddSingleton<IPowerBiService, PowerBiService>();
+builder.Services.AddSingleton<IQueryExecutionService, QueryExecutionService>();
+builder.Services.AddSingleton<IEncryptionService, AesEncryptionService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -129,14 +130,17 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         await db.Database.MigrateAsync();
+        var applied = db.Database.GetAppliedMigrations().ToList();
+        var pending = db.Database.GetPendingMigrations().ToList();
+        startupLogger.LogInformation("EF migrations applied: {AppliedCount}, pending: {PendingCount}", applied.Count, pending.Count);
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "MigrateAsync failed (no migrations may exist yet). Falling back to EnsureCreated.");
+        startupLogger.LogWarning(ex, "MigrateAsync failed (no migrations may exist yet). Falling back to EnsureCreated.");
         db.Database.EnsureCreated();
     }
 

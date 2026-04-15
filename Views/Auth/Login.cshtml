@@ -3,10 +3,6 @@
     Layout = "_Layout";
 }
 
-@section Head {
-<script src="https://www.google.com/recaptcha/api.js" async defer></script>
-}
-
 <div class="auth-page">
     <div class="container">
         <div class="row justify-content-center min-vh-100 align-items-center">
@@ -17,7 +13,7 @@
                             <i class="bi bi-bar-chart-fill"></i>
                         </div>
                         <h2 class="auth-title">Welcome back</h2>
-                        <p class="auth-subtitle">Sign in to your ChatPortal2 account</p>
+                        <p class="auth-subtitle">Sign in to your AIInsights account</p>
                     </div>
                     <div id="authAlert" class="alert d-none"></div>
                     <form id="loginForm">
@@ -25,18 +21,29 @@
                             <label class="form-label-cp">Email Address</label>
                             <div class="input-group-cp">
                                 <i class="bi bi-envelope input-icon"></i>
-                                <input type="email" class="form-control cp-input" id="loginEmail" placeholder="you@example.com" required />
+                                <input type="email" class="form-control cp-input" id="loginEmail" placeholder="you@example.com" required autocomplete="off" />
                             </div>
                         </div>
                         <div class="mb-4">
                             <label class="form-label-cp">Password</label>
                             <div class="input-group-cp">
                                 <i class="bi bi-lock input-icon"></i>
-                                <input type="password" class="form-control cp-input" id="loginPassword" placeholder="••••••••" required />
+                                <input type="password" class="form-control cp-input" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" />
                             </div>
                         </div>
                         <div class="mb-3">
-                            <div class="g-recaptcha" data-sitekey="@ViewBag.RecaptchaSiteKey"></div>
+                            <label class="form-label-cp">Security Check</label>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <img id="captchaImg" alt="CAPTCHA" style="height:48px;border-radius:8px;border:1px solid #e2e8f0;" />
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="captchaRefresh" title="New challenge" style="height:38px;width:38px;padding:0;">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            </div>
+                            <div class="input-group-cp">
+                                <i class="bi bi-shield-lock input-icon"></i>
+                                <input type="text" class="form-control cp-input" id="captchaAnswer" placeholder="Enter the answer" required autocomplete="off" />
+                            </div>
+                            <input type="hidden" id="captchaId" />
                         </div>
                         <button type="submit" class="btn cp-btn-gradient w-100 btn-lg" id="loginBtn">
                             <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
@@ -53,21 +60,36 @@
 
 @section Scripts {
 <script>
+function loadCaptcha() {
+    $.getJSON('/api/auth/captcha', function(data) {
+        $('#captchaImg').attr('src', data.image);
+        $('#captchaId').val(data.captchaId);
+        $('#captchaAnswer').val('');
+    });
+}
+loadCaptcha();
+$('#captchaRefresh').on('click', loadCaptcha);
+
 $('#loginForm').on('submit', function(e) {
     e.preventDefault();
 
-    const captchaToken = typeof grecaptcha !== 'undefined' ? grecaptcha.getResponse() : '';
-    if (typeof grecaptcha !== 'undefined' && !captchaToken) {
-        $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text('Please complete the CAPTCHA verification.');
+    var answer = $('#captchaAnswer').val().trim();
+    if (!answer) {
+        $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text('Please solve the CAPTCHA.');
         return;
     }
 
-    const btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
+    var btn = $('#loginBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Signing in...');
     $.ajax({
         url: '/api/auth/login',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ email: $('#loginEmail').val(), password: $('#loginPassword').val(), captchaToken: captchaToken }),
+        data: JSON.stringify({
+            email: $('#loginEmail').val(),
+            password: $('#loginPassword').val(),
+            captchaId: $('#captchaId').val(),
+            captchaAnswer: answer
+        }),
         success: function(r) {
             localStorage.setItem('cp_user', JSON.stringify(r.user));
             localStorage.setItem('cp_token', r.token);
@@ -76,7 +98,7 @@ $('#loginForm').on('submit', function(e) {
         error: function(e) {
             $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');
             btn.prop('disabled', false).html('<i class="bi bi-box-arrow-in-right me-2"></i>Sign In');
-            if (typeof grecaptcha !== 'undefined') grecaptcha.reset();
+            loadCaptcha();
         }
     });
 });

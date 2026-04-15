@@ -1,72 +1,100 @@
-@model List<ChatPortal2.Models.Organization>
+@model List<AIInsights.Models.Organization>
 @{
     ViewData["Title"] = "Organizations";
     ViewData["ActivePage"] = "orgs";
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="fw-bold"><i class="bi bi-building me-2 text-primary"></i>Organizations</h2>
-    <span class="sa-badge sa-badge-blue">@Model.Count total</span>
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1 class="page-title">Organizations</h1>
+        <p class="page-desc">@Model.Count registered organizations</p>
+    </div>
 </div>
 
-<div class="sa-card">
-    <table class="sa-table">
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
         <thead>
             <tr>
                 <th>Name</th>
-                <th>Total Users</th>
+                <th>Users</th>
                 <th>Pro</th>
                 <th>Enterprise</th>
                 <th>Trial</th>
                 <th>Workspaces</th>
-                <th>Monthly Revenue</th>
+                <th>Revenue</th>
+                <th>Plan Tier</th>
                 <th>Created</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var org in Model)
             {
-                var proCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Professional) ?? 0;
-                var entCount = org.Users?.Count(u => u.Subscription?.Plan == ChatPortal2.Models.PlanType.Enterprise) ?? 0;
+                var proCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Professional) ?? 0;
+                var entCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Enterprise) ?? 0;
                 var trialCount = org.Users?.Count(u => u.Subscription?.IsTrialActive == true) ?? 0;
-                var revenue = proCount * ChatPortal2.Models.PlanPricing.ProPricePerUser
-                            + entCount * ChatPortal2.Models.PlanPricing.EnterprisePricePerUser;
+                var revenue = proCount * AIInsights.Models.PlanPricing.ProPricePerUser
+                            + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
-                    <td class="fw-semibold">@org.Name</td>
+                    <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
                     <td>@(org.Users?.Count ?? 0)</td>
                     <td>
                         @if (proCount > 0)
                         {
-                            <span class="sa-badge sa-badge-blue">@proCount</span>
+                            <span class="badge-sm badge-indigo">@proCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>
                         @if (entCount > 0)
                         {
-                            <span class="sa-badge sa-badge-green">@entCount</span>
+                            <span class="badge-sm badge-emerald">@entCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>
                         @if (trialCount > 0)
                         {
-                            <span class="sa-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24">@trialCount</span>
+                            <span class="badge-sm badge-amber">@trialCount</span>
                         }
-                        else { <span class="text-muted">—</span> }
+                        else { <span style="color:var(--text-muted)">—</span> }
                     </td>
                     <td>@(org.Workspaces?.Count ?? 0)</td>
                     <td>
                         @if (revenue > 0)
                         {
-                            <span class="sa-badge sa-badge-green">$@revenue.ToString("N0")/mo</span>
+                            <span class="badge-sm badge-emerald">$@revenue.ToString("N0")/mo</span>
                         }
-                        else { <span class="text-muted">$0</span> }
+                        else { <span style="color:var(--text-muted)">$0</span> }
                     </td>
-                    <td class="text-muted">@org.CreatedAt.ToString("MMM d, yyyy")</td>
+                    <td>
+                        <div class="d-flex gap-1 align-items-center">
+                            <select class="form-select form-select-sm" id="orgPlan_@org.Id" style="min-width:140px">
+                                <option value="Free" selected="@(org.Plan == AIInsights.Models.PlanType.Free)">Free</option>
+                                <option value="FreeTrial" selected="@(org.Plan == AIInsights.Models.PlanType.FreeTrial)">FreeTrial</option>
+                                <option value="Professional" selected="@(org.Plan == AIInsights.Models.PlanType.Professional)">Professional</option>
+                                <option value="Enterprise" selected="@(org.Plan == AIInsights.Models.PlanType.Enterprise)">Enterprise</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" onclick="saveOrgPlan(@org.Id)">Save</button>
+                        </div>
+                    </td>
+                    <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                 </tr>
             }
         </tbody>
     </table>
 </div>
+
+<script>
+async function saveOrgPlan(id) {
+    const plan = document.getElementById('orgPlan_' + id)?.value;
+    const r = await fetch('/api/admin/super/orgs/' + id + '/plan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(data.error || 'Failed to update plan.'); return; }
+    alert('Organization plan updated.');
+}
+</script>

@@ -1,4 +1,4 @@
-@model ChatPortal2.Models.CanvasState
+@model AIInsights.Models.CanvasState
 @{
     ViewData["Title"] = "Report Designer";
     Layout = null;
@@ -47,19 +47,6 @@
             <button type="button" class="btn btn-sm btn-outline-cp me-2" id="filter-panel-toggle" title="Toggle Filters">
                 <i class="bi bi-funnel me-1"></i>Filters
             </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPng()" title="Export PNG">
-                <i class="bi bi-image me-1"></i>PNG
-            </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPdf()" title="Export PDF">
-                <i class="bi bi-file-pdf me-1"></i>PDF
-            </button>
-            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportJson()" title="Export JSON">
-                <i class="bi bi-download me-1"></i>JSON
-            </button>
-            <label class="btn btn-sm btn-outline-secondary me-2" title="Import JSON">
-                <i class="bi bi-upload me-1"></i>Import
-                <input type="file" accept=".json" onchange="exportManager.importJson(this.files[0])" style="display:none">
-            </label>
             <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportXml()" title="Export XML">
                 <i class="bi bi-file-code me-1"></i>XML
             </button>
@@ -963,15 +950,35 @@
                     pages: canvasManager.pages,
                     activePageIndex: canvasManager.activePageIndex
                 });
-                const reportName = document.getElementById('canvas-name-display')?.textContent || 'Report';
+                const defaultReportName = document.getElementById('canvas-name-display')?.textContent || ('Report — ' + new Date().toLocaleDateString());
+                const reportName = prompt('Enter a name for this report:', defaultReportName);
+                if (!reportName) {
+                    btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
+                    btn.disabled = false;
+                    return;
+                }
                 const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
                 const wsData = window._dashboardWsData || {};
                 const existingGuid = window._currentReportGuid || null;
 
                 let resp;
-                if (existingGuid) {
+                // If no existing guid, check if workspace already has a report
+                let resolvedGuid = existingGuid;
+                if (!resolvedGuid && wsGuid) {
+                    try {
+                        const existing = await fetch('/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid));
+                        if (existing.ok) {
+                            const reports = await existing.json();
+                            if (reports.length > 0) {
+                                resolvedGuid = reports[0].guid;
+                                window._currentReportGuid = resolvedGuid;
+                            }
+                        }
+                    } catch { /* proceed with create */ }
+                }
+                if (resolvedGuid) {
                     // Update existing report
-                    resp = await fetch('/api/reports/' + encodeURIComponent(existingGuid), {
+                    resp = await fetch('/api/reports/' + encodeURIComponent(resolvedGuid), {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1007,6 +1014,7 @@
                     viewBtn.onclick = () => window.open('/report/view/' + report.guid, '_blank');
                 }
                 btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Saved!';
+                alert(`Report "${reportName}" saved successfully!`);
                 setTimeout(() => {
                     btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
                     btn.disabled = false;

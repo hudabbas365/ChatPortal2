@@ -1,13 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 [Route("api/agents")]
@@ -59,10 +59,13 @@ public class AgentController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var appUser = await _db.Users.FindAsync(userId);
 
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
         // Every request is scoped to the caller's own organization — ignore any organizationId param
         // for non-SuperAdmins to prevent cross-org data leakage.
         var callerOrgId = appUser?.OrganizationId ?? 0;
-        if (appUser?.Role != "SuperAdmin" && callerOrgId <= 0)
+        if (callerOrgId <= 0)
             return StatusCode(403, new { error = "User is not assigned to an organization." });
 
         // If workspace context provided, block Viewers from seeing agents
@@ -74,20 +77,11 @@ public class AgentController : ControllerBase
 
         var query = _db.Agents.AsQueryable();
 
-        if (appUser?.Role == "SuperAdmin")
-        {
-            // SuperAdmins may optionally filter by org
-            if (organizationId.HasValue && organizationId.Value > 0)
-                query = query.Where(a => a.OrganizationId == organizationId.Value);
-        }
-        else
-        {
-            // All other roles are hard-scoped to their own org only
-            query = query.Where(a => a.OrganizationId == callerOrgId);
-        }
+        // All roles are hard-scoped to their own org only
+        query = query.Where(a => a.OrganizationId == callerOrgId);
 
         // Non-OrgAdmin users only see agents from workspaces they own or are a member of
-        var isOrgLevel = appUser?.Role == "OrgAdmin" || appUser?.Role == "SuperAdmin";
+        var isOrgLevel = appUser?.Role == "OrgAdmin";
         if (!isOrgLevel)
         {
             query = query.Where(a =>
@@ -107,6 +101,9 @@ public class AgentController : ControllerBase
         var appUser = await _db.Users.FindAsync(userId);
         var callerOrgId = appUser?.OrganizationId ?? 0;
 
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
         if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
         {
             if (!await _permissions.CanEditAsync(req.WorkspaceId.Value, userId))
@@ -116,8 +113,15 @@ public class AgentController : ControllerBase
         var orgId = await ResolveOrganizationIdAsync(req.OrganizationId, userId);
 
         // Enforce org sandbox: non-SuperAdmins can only create agents in their own org
-        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && orgId != callerOrgId)
+        if (callerOrgId > 0 && orgId != callerOrgId)
             return StatusCode(403, new { error = "You cannot create agents in another organization." });
+
+        // Validate that workspace belongs to caller's org
+        if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
+        {
+            if (!await _permissions.BelongsToSameOrganizationAsync(req.WorkspaceId.Value, orgId))
+                return StatusCode(403, new { error = "Workspace does not belong to your organization." });
+        }
 
         var agent = new Agent
         {
@@ -152,12 +156,17 @@ public class AgentController : ControllerBase
         var appUser = await _db.Users.FindAsync(userId);
         var callerOrgId = appUser?.OrganizationId ?? 0;
 
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
         // Org sandbox: non-SuperAdmins cannot modify agents from a different organization
-        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && agent.OrganizationId != callerOrgId)
+        if (callerOrgId > 0 && agent.OrganizationId != callerOrgId)
             return StatusCode(403, new { error = "You do not have access to this agent." });
 
-        var wsId = agent.WorkspaceId ?? req.WorkspaceId ?? 0;
-        if (wsId > 0 && !await _permissions.CanEditAsync(wsId, userId))
+        var wsId = agent.WorkspaceId ?? req.WorkspaceId;
+        if (wsId == null || wsId == 0)
+            return StatusCode(403, new { error = "Agent must be associated with a workspace." });
+        if (!await _permissions.CanEditAsync(wsId.Value, userId))
             return StatusCode(403, new { error = "You need Editor or Admin role to update agents." });
 
         if (req.Name != null) agent.Name = req.Name;
@@ -182,8 +191,11 @@ public class AgentController : ControllerBase
         var appUser = await _db.Users.FindAsync(userId);
         var callerOrgId = appUser?.OrganizationId ?? 0;
 
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
         // Org sandbox: non-SuperAdmins cannot delete agents from a different organization
-        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && agent.OrganizationId != callerOrgId)
+        if (callerOrgId > 0 && agent.OrganizationId != callerOrgId)
             return StatusCode(403, new { error = "You do not have access to this agent." });
 
         var wsId = agent.WorkspaceId ?? 0;
@@ -200,31 +212,57 @@ public class AgentController : ControllerBase
     }
 
     [HttpPost("generate-prompt")]
-    public IActionResult GeneratePrompt([FromBody] GeneratePromptRequest req)
+    public async Task<IActionResult> GeneratePrompt([FromBody] GeneratePromptRequest req)
     {
-        var agentName = req.AgentName ?? "Data Assistant";
-        var workspaceName = req.WorkspaceName ?? "the workspace";
-        var dsName = req.DatasourceName;
-        var dsType = req.DatasourceType;
-        var tables = req.SelectedTables;
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
+        // Org validation — workspace must belong to caller's org
+        if (req.WorkspaceId.HasValue && req.WorkspaceId.Value > 0)
+        {
+            var ws = await _db.Workspaces.FindAsync(req.WorkspaceId.Value);
+            if (ws == null || ws.OrganizationId != (appUser?.OrganizationId ?? 0))
+                return StatusCode(403, new { error = "Workspace does not belong to your organization." });
+        }
+
+        var dsType = req.DatasourceType ?? "";
+        bool isPowerBi = Services.QueryExecutionService.PowerBiTypes.Contains(dsType);
+        string queryLang = isPowerBi ? "DAX" : "SQL";
 
         var sb = new System.Text.StringBuilder();
-        sb.Append($"You are {agentName}, an AI data assistant for the \"{workspaceName}\" workspace. ");
+        sb.Append($"You are {req.AgentName ?? "Data Assistant"}, an AI data assistant for the \"{req.WorkspaceName ?? "the workspace"}\" workspace. ");
 
-        if (!string.IsNullOrEmpty(dsName))
-            sb.Append($"You are connected to the \"{dsName}\" datasource ({dsType ?? "database"}). ");
+        if (!string.IsNullOrEmpty(req.DatasourceName))
+            sb.Append($"You are connected to the \"{req.DatasourceName}\" datasource ({dsType}). ");
 
-        if (!string.IsNullOrEmpty(tables))
-            sb.Append($"Available tables and views: {tables}. ");
+        if (!string.IsNullOrEmpty(req.SelectedTables))
+        {
+            var tableLabel = isPowerBi ? "Available tables/measures" : "Available tables and views";
+            sb.Append($"{tableLabel}: {req.SelectedTables}. ");
+        }
 
         sb.AppendLine("Your responsibilities include:");
-        sb.AppendLine("1. Answering data-related questions by generating accurate SQL queries");
+        sb.AppendLine($"1. Answering data-related questions by generating accurate {queryLang} queries");
         sb.AppendLine("2. Analyzing query results and providing clear, actionable insights");
         sb.AppendLine("3. Suggesting appropriate chart types and visualizations for the data");
         sb.AppendLine("4. Explaining data patterns, trends, and anomalies");
         sb.AppendLine("5. Helping users explore and understand their data effectively");
         sb.AppendLine();
-        sb.Append("Always validate your SQL syntax, explain your reasoning, and format results clearly. ");
+
+        if (isPowerBi)
+        {
+            sb.AppendLine("IMPORTANT: Always generate DAX queries (not SQL) for this Power BI semantic model.");
+            sb.AppendLine("Use EVALUATE, SUMMARIZECOLUMNS, CALCULATETABLE, TOPN, ADDCOLUMNS, VALUES, FILTER.");
+            sb.AppendLine("Use single-quoted table names: 'TableName'[ColumnName]. Never use SELECT/FROM/WHERE.");
+        }
+        else
+        {
+            sb.Append($"Always generate valid {dsType} SQL syntax, explain your reasoning, and format results clearly. ");
+        }
+
         sb.Append("When suggesting visualizations, specify the recommended chart type and which fields to use.");
 
         return Ok(new { prompt = sb.ToString() });
@@ -248,4 +286,5 @@ public class GeneratePromptRequest
     public string? DatasourceName { get; set; }
     public string? DatasourceType { get; set; }
     public string? SelectedTables { get; set; }
+    public int? WorkspaceId { get; set; }
 }

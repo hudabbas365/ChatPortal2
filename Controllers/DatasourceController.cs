@@ -1,13 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 [Route("api/datasources")]
@@ -43,14 +43,14 @@ public class DatasourceController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IQueryExecutionService _queryService;
     private readonly IWorkspacePermissionService _permissions;
-    private readonly IDataProtectionService _dataProtection;
+    private readonly IEncryptionService _encryption;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IDataProtectionService dataProtection)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption)
     {
         _db = db;
         _queryService = queryService;
         _permissions = permissions;
-        _dataProtection = dataProtection;
+        _encryption = encryption;
     }
 
     private async Task<int> ResolveOrganizationIdAsync(int supplied, string? userId)
@@ -112,7 +112,22 @@ public class DatasourceController : ControllerBase
         }
 
         var datasources = await query.ToListAsync();
-        return Ok(datasources);
+        var result = datasources.Select(d => new
+        {
+            d.Id,
+            d.Guid,
+            d.Name,
+            d.Type,
+            ConnectionString = MaskConnectionString(_encryption.Decrypt(d.ConnectionString)),
+            DbUser = !string.IsNullOrEmpty(d.DbUser) ? "••••••" : null,
+            DbPassword = !string.IsNullOrEmpty(d.DbPassword) ? "••••••" : null,
+            d.SelectedTables,
+            XmlaEndpoint = !string.IsNullOrEmpty(d.XmlaEndpoint) ? "••••••" : null,
+            d.OrganizationId,
+            d.WorkspaceId,
+            d.CreatedAt
+        });
+        return Ok(result);
     }
 
     [HttpPost]
@@ -136,11 +151,11 @@ public class DatasourceController : ControllerBase
         {
             Name = req.Name ?? "New Datasource",
             Type = req.Type ?? "SQL Server",
-            ConnectionString = !string.IsNullOrEmpty(req.ConnectionString) ? _dataProtection.Protect(req.ConnectionString) : "",
-            DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : null,
-            DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : null,
-            XmlaEndpoint = req.XmlaEndpoint,
-            MicrosoftAccountTenantId = req.MicrosoftAccountTenantId,
+            ConnectionString = _encryption.Encrypt(req.ConnectionString ?? ""),
+            DbUser = _encryption.Encrypt(req.DbUser ?? ""),
+            DbPassword = _encryption.Encrypt(req.DbPassword ?? ""),
+            XmlaEndpoint = _encryption.Encrypt(req.XmlaEndpoint ?? ""),
+            MicrosoftAccountTenantId = _encryption.Encrypt(req.MicrosoftAccountTenantId ?? ""),
             OrganizationId = orgId,
             WorkspaceId = req.WorkspaceId
         };
@@ -470,8 +485,11 @@ public class DatasourceController : ControllerBase
             return StatusCode(403, new { error = "You need Editor or Admin role to update datasources." });
 
         if (req.Name != null) ds.Name = req.Name;
-        if (req.DbUser != null) ds.DbUser = !string.IsNullOrEmpty(req.DbUser) ? _dataProtection.Protect(req.DbUser) : null;
-        if (req.DbPassword != null) ds.DbPassword = !string.IsNullOrEmpty(req.DbPassword) ? _dataProtection.Protect(req.DbPassword) : null;
+        if (req.ConnectionString != null) ds.ConnectionString = _encryption.Encrypt(req.ConnectionString);
+        if (req.DbUser != null) ds.DbUser = _encryption.Encrypt(req.DbUser);
+        if (req.DbPassword != null) ds.DbPassword = _encryption.Encrypt(req.DbPassword);
+        if (req.XmlaEndpoint != null) ds.XmlaEndpoint = _encryption.Encrypt(req.XmlaEndpoint);
+        if (req.MicrosoftAccountTenantId != null) ds.MicrosoftAccountTenantId = _encryption.Encrypt(req.MicrosoftAccountTenantId);
         if (req.SelectedTables != null) ds.SelectedTables = req.SelectedTables;
 
         await _db.SaveChangesAsync();
@@ -507,6 +525,18 @@ public class DatasourceController : ControllerBase
         _db.Datasources.Remove(ds);
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
+    }
+
+    private static string MaskConnectionString(string connStr)
+    {
+        if (string.IsNullOrEmpty(connStr)) return "";
+        // Mask password values in the connection string
+        var masked = System.Text.RegularExpressions.Regex.Replace(
+            connStr,
+            @"(Password|Pwd)\s*=\s*[^;]+",
+            "$1=••••••",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return masked;
     }
 }
 

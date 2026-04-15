@@ -1,7 +1,7 @@
-using ChatPortal2.Data;
+using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class WorkspacePermissionService : IWorkspacePermissionService
 {
@@ -60,5 +60,18 @@ public class WorkspacePermissionService : IWorkspacePermissionService
     {
         var role = await GetRoleAsync(workspaceId, userId);
         return role == "Admin" || role == "Editor";
+    }
+
+    public async Task<bool> CanViewReportsAsync(int workspaceId, string userId)
+    {
+        var role = await GetRoleAsync(workspaceId, userId);
+        // Viewer, Editor, and Admin can all view reports
+        return role == "Admin" || role == "Editor" || role == "Viewer";
+    }
+
+    public async Task<bool> BelongsToSameOrganizationAsync(int workspaceId, int organizationId)
+    {
+        var workspace = await _db.Workspaces.FindAsync(workspaceId);
+        return workspace?.OrganizationId == organizationId;
     }
 }

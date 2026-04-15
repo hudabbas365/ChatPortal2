@@ -1,10 +1,10 @@
-using ChatPortal2.Data;
+using AIInsights.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 [Route("api/activity")]

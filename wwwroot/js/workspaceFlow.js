@@ -137,7 +137,14 @@
                     }
                     return;
                 }
-                if (!r.ok) throw new Error('Create failed');
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    if (alert) {
+                        alert.textContent = err.error || 'Failed to create workspace.';
+                        alert.style.display = 'block';
+                    }
+                    return;
+                }
                 const ws = await r.json();
                 // Update local user org if server resolved it
                 if (ws.organizationId && user) {
@@ -164,7 +171,11 @@
             const item = document.createElement('div');
             item.className = 'panel-list-item';
             item.dataset.workspaceId = ws.guid;
-            item.innerHTML = `<i class="bi bi-folder me-2"></i>${this._esc(ws.name)}<span class="wf-ws-status unconfigured"></span>`;
+            const iconHtml = ws.logoUrl
+                ? `<img src="${this._esc(ws.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
+                : `<i class="bi bi-folder me-2"></i>`;
+            item.innerHTML = `${iconHtml}${this._esc(ws.name)}<span class="wf-ws-status unconfigured"></span>`;
+            item.title = ws.description || '';
             list.appendChild(item);
         },
 
@@ -190,9 +201,10 @@
                 if (topTitle) topTitle.textContent = data.name || 'Workspace';
                 if (subName) subName.textContent = data.name || 'Workspace';
                 this._updateWorkspaceStatus(guid, data);
+                // Load role BEFORE rendering so delete buttons appear for admins
+                if (window.workspaceRoles) await window.workspaceRoles.loadMyRole(guid);
                 this._renderHome(data);
-                // Load role for this workspace
-                if (window.workspaceRoles) window.workspaceRoles.loadMyRole(guid);
+                if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
             } catch {
                 if (topTitle) topTitle.textContent = 'Workspace';
                 this._showLanding();
@@ -308,6 +320,7 @@
             this._wireReportActions();
             this._wireNewArtifactDropdown(data);
             this._showNewArtifactMenu(agents.length > 0);
+            if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
         },
 
         _renderCardsView(agents, datasources, wsData) {
@@ -448,6 +461,7 @@
                 btn.addEventListener('click', () => {
                     this._viewMode = btn.dataset.view;
                     if (this._wsData) this._renderHome(this._wsData);
+                    if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
                 });
             });
         },
@@ -633,6 +647,28 @@
                             <label>Connection String / URL</label>
                             <input type="text" id="wfDsConnStr" placeholder="Server=...;Database=..." />
                         </div>
+                        <div id="wfDsPbiFields" style="display:none">
+                            <div class="wf-setup-field">
+                                <label>XMLA Endpoint</label>
+                                <input type="text" id="wfDsXmlaEndpoint" placeholder="powerbi://api.powerbi.com/v1.0/myorg/WorkspaceName" />
+                            </div>
+                            <div class="wf-setup-field">
+                                <label>Semantic Model (Catalog)</label>
+                                <input type="text" id="wfDsCatalog" placeholder="e.g. SalesModel" />
+                            </div>
+                            <div class="wf-setup-field">
+                                <label>Azure AD Tenant ID</label>
+                                <input type="text" id="wfDsTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                            </div>
+                            <div class="wf-setup-field">
+                                <label>Client ID (App Registration)</label>
+                                <input type="text" id="wfDsClientId" placeholder="App (client) ID" />
+                            </div>
+                            <div class="wf-setup-field">
+                                <label>Client Secret</label>
+                                <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
+                            </div>
+                        </div>
                         <div id="wfDsFieldsPreview" style="display:none">
                             <label style="font-size:0.75rem;font-weight:600;margin-bottom:4px;display:block;">Available Fields</label>
                             <div class="wf-fields-preview" id="wfDsFieldsList"></div>
@@ -685,6 +721,13 @@
                     document.getElementById('wfDsSelectedType').textContent = this._selectedDsType;
                     document.getElementById('wfDsTypeSelector').style.display = 'none';
                     document.getElementById('wfDsConfigForm').style.display = 'block';
+
+                    // Toggle Power BI vs standard fields
+                    const isPbi = /power\s*bi/i.test(this._selectedDsType);
+                    const connStrField = document.getElementById('wfDsConnStr')?.closest('.wf-setup-field');
+                    const pbiFields = document.getElementById('wfDsPbiFields');
+                    if (connStrField) connStrField.style.display = isPbi ? 'none' : '';
+                    if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
                 });
             }
             if (search) {
@@ -714,20 +757,32 @@
         async _testDatasource(agent) {
             const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
             const name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
-            const connStr = document.getElementById('wfDsConnStr')?.value.trim() || '';
             const alertEl = document.getElementById('wfDsAlert');
+            const isPbi = /power\s*bi/i.test(this._selectedDsType);
+
+            // Build payload based on datasource type
+            const payload = {
+                name,
+                type: this._selectedDsType,
+                organizationId: user?.organizationId || 0,
+                userId: user?.id || ''
+            };
+
+            if (isPbi) {
+                payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
+                payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
+                payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
+                payload.dbUser = document.getElementById('wfDsClientId')?.value.trim() || '';
+                payload.dbPassword = document.getElementById('wfDsClientSecret')?.value.trim() || '';
+            } else {
+                payload.connectionString = document.getElementById('wfDsConnStr')?.value.trim() || '';
+            }
 
             try {
                 const r = await fetch('/api/datasources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name,
-                        type: this._selectedDsType,
-                        connectionString: connStr,
-                        organizationId: user?.organizationId || 0,
-                        userId: user?.id || ''
-                    })
+                    body: JSON.stringify(payload)
                 });
                 if (!r.ok) throw new Error();
                 const ds = await r.json();
@@ -854,7 +909,7 @@
             panel.innerHTML = `
                 <div class="wf-empty-state">
                     <div class="wf-empty-icon"><i class="bi bi-folder-plus"></i></div>
-                    <h4>Welcome to ChatPortal2</h4>
+                    <h4>Welcome to AIInsights</h4>
                     <p>Select a workspace from the left panel or create a new one to get started.</p>
                     <button class="btn cp-btn-gradient" id="wfLandingCreateBtn">
                         <i class="bi bi-plus-lg me-1"></i>New Workspace

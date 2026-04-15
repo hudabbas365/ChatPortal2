@@ -4,84 +4,199 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<h2 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2 text-primary"></i>System Dashboard</h2>
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-desc">System overview and key metrics</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:.75rem">
+        <span id="refreshStatus" style="font-size:.75rem;color:var(--text-muted)"></span>
+        <button id="refreshBtn" class="btn-primary-sm" onclick="refreshDashboard()">
+            <i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh
+        </button>
+    </div>
+</div>
 
 <div class="row g-3 mb-4">
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.TotalOrgs</div>
-            <div class="sa-stat-label"><i class="bi bi-building me-1"></i>Organizations</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-building"></i></div>
+            <div class="stat-val" data-stat="totalOrgs">@ViewBag.TotalOrgs</div>
+            <div class="stat-label">Organizations</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.TotalUsers</div>
-            <div class="sa-stat-label"><i class="bi bi-people me-1"></i>Total Users</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(14,165,233,.1);color:#38bdf8"><i class="bi bi-people-fill"></i></div>
+            <div class="stat-val" data-stat="totalUsers">@ViewBag.TotalUsers</div>
+            <div class="stat-label">Total Users</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.TotalWorkspaces</div>
-            <div class="sa-stat-label"><i class="bi bi-folder me-1"></i>Workspaces</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-folder-fill"></i></div>
+            <div class="stat-val" data-stat="totalWorkspaces">@ViewBag.TotalWorkspaces</div>
+            <div class="stat-label">Workspaces</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
-            <div class="sa-stat-label"><i class="bi bi-cash-stack me-1"></i>Total Revenue / Month</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24"><i class="bi bi-currency-dollar"></i></div>
+            <div class="stat-val" data-stat="totalIncome">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="stat-label">Monthly Revenue</div>
         </div>
     </div>
 </div>
 
-<div class="row g-3 mb-3">
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.ProUsers</div>
-            <div class="sa-stat-label"><i class="bi bi-award me-1"></i>Professional Users</div>
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(168,85,247,.1);color:#c084fc"><i class="bi bi-award-fill"></i></div>
+            <div class="stat-val" data-stat="proUsers">@ViewBag.ProUsers</div>
+            <div class="stat-label">Professional Users</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.EnterpriseUsers</div>
-            <div class="sa-stat-label"><i class="bi bi-building-fill-gear me-1"></i>Enterprise Users</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(244,114,182,.1);color:#f472b6"><i class="bi bi-building-fill-gear"></i></div>
+            <div class="stat-val" data-stat="enterpriseUsers">@ViewBag.EnterpriseUsers</div>
+            <div class="stat-label">Enterprise Users</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.ActiveTrials</div>
-            <div class="sa-stat-label"><i class="bi bi-clock me-1"></i>Active Trials</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(251,146,60,.1);color:#fb923c"><i class="bi bi-hourglass-split"></i></div>
+            <div class="stat-val" data-stat="activeTrials">@ViewBag.ActiveTrials</div>
+            <div class="stat-label">Active Trials</div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.TotalMessages</div>
-            <div class="sa-stat-label"><i class="bi bi-chat-dots me-1"></i>Chat Messages</div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(56,189,248,.1);color:#38bdf8"><i class="bi bi-chat-dots-fill"></i></div>
+            <div class="stat-val" data-stat="totalMessages">@ViewBag.TotalMessages</div>
+            <div class="stat-label">Chat Messages</div>
         </div>
     </div>
 </div>
 
 <div class="row g-3">
-    <div class="col-md-4">
-        <div class="sa-card">
-            <h6 class="text-muted mb-3">Quick Links</h6>
+    <div class="col-lg-4">
+        <div class="card-panel">
+            <div class="card-panel-title">Quick Actions</div>
             <div class="d-flex flex-column gap-2">
-                <a href="/superadmin/organizations" class="btn btn-sa"><i class="bi bi-building me-2"></i>View Organizations</a>
-                <a href="/superadmin/activity" class="btn btn-sa"><i class="bi bi-activity me-2"></i>Activity Logs</a>
-                <a href="/superadmin/revenue" class="btn btn-sa"><i class="bi bi-cash-stack me-2"></i>Revenue & Income</a>
+                <a href="/superadmin/organizations" class="btn-primary-sm"><i class="bi bi-building"></i>Manage Organizations</a>
+                <a href="/superadmin/activity" class="btn-ghost-sm"><i class="bi bi-activity"></i>View Activity Logs</a>
+                <a href="/superadmin/revenue" class="btn-ghost-sm"><i class="bi bi-wallet2"></i>Revenue Report</a>
+                <a href="/superadmin/seo" class="btn-ghost-sm"><i class="bi bi-search"></i>SEO Manager</a>
             </div>
         </div>
     </div>
-    <div class="col-md-8">
-        <div class="sa-card">
-            <h6 class="text-muted mb-3">System Status</h6>
-            <table class="sa-table">
+    <div class="col-lg-8">
+        <div class="card-panel">
+            <div class="card-panel-title">System Status</div>
+            <table class="tbl">
                 <tbody>
-                    <tr><td>Database</td><td><span class="sa-badge sa-badge-green">SQL Server</span></td></tr>
-                    <tr><td>AI Provider</td><td><span class="sa-badge sa-badge-blue">Cohere AI</span></td></tr>
-                    <tr><td>Authentication</td><td><span class="sa-badge sa-badge-green">JWT + ASP.NET Identity</span></td></tr>
-                    <tr><td>Payment Gateway</td><td><span class="sa-badge sa-badge-blue">Stripe</span></td></tr>
+                    <tr>
+                        <td>Database</td>
+                        <td class="text-end"><span class="badge-sm badge-emerald"><i class="bi bi-circle-fill" style="font-size:.4rem"></i> SQL Server</span></td>
+                    </tr>
+                    <tr>
+                        <td>AI Provider</td>
+                        <td class="text-end"><span class="badge-sm badge-indigo"><i class="bi bi-circle-fill" style="font-size:.4rem"></i> Cohere AI</span></td>
+                    </tr>
+                    <tr>
+                        <td>Authentication</td>
+                        <td class="text-end"><span class="badge-sm badge-emerald"><i class="bi bi-circle-fill" style="font-size:.4rem"></i> JWT + Identity</span></td>
+                    </tr>
+                    <tr>
+                        <td>Payment Gateway</td>
+                        <td class="text-end"><span class="badge-sm badge-sky"><i class="bi bi-circle-fill" style="font-size:.4rem"></i> Stripe</span></td>
+                    </tr>
+                    <tr>
+                        <td>Platform</td>
+                        <td class="text-end"><span class="badge-sm badge-indigo"><i class="bi bi-circle-fill" style="font-size:.4rem"></i> .NET 8</span></td>
+                    </tr>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
+
+@section Scripts {
+<script>
+var refreshInterval = 5 * 60 * 1000;
+var countdownSec = 300;
+var timerId = null;
+var countdownId = null;
+
+function formatTime(date) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function updateStatus(text) {
+    document.getElementById('refreshStatus').textContent = text;
+}
+
+function startCountdown() {
+    countdownSec = 300;
+    if (countdownId) clearInterval(countdownId);
+    countdownId = setInterval(function () {
+        countdownSec--;
+        if (countdownSec <= 0) {
+            clearInterval(countdownId);
+            return;
+        }
+        var m = Math.floor(countdownSec / 60);
+        var s = countdownSec % 60;
+        updateStatus('Next refresh in ' + m + ':' + (s < 10 ? '0' : '') + s);
+    }, 1000);
+}
+
+function refreshDashboard() {
+    var btn = document.getElementById('refreshBtn');
+    var icon = document.getElementById('refreshIcon');
+    btn.disabled = true;
+    icon.style.animation = 'spin .6s linear infinite';
+    updateStatus('Refreshing\u2026');
+
+    fetch('/api/superadmin/dashboard-stats')
+        .then(function (res) {
+            if (!res.ok) throw new Error('Failed');
+            return res.json();
+        })
+        .then(function (d) {
+            var map = {
+                totalOrgs: d.totalOrgs,
+                totalUsers: d.totalUsers,
+                totalWorkspaces: d.totalWorkspaces,
+                totalMessages: d.totalMessages,
+                proUsers: d.proUsers,
+                enterpriseUsers: d.enterpriseUsers,
+                activeTrials: d.activeTrials,
+                totalIncome: '$' + Number(d.totalIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            };
+            for (var key in map) {
+                var el = document.querySelector('[data-stat="' + key + '"]');
+                if (el) el.textContent = map[key];
+            }
+            updateStatus('Updated ' + formatTime(new Date()));
+            startCountdown();
+        })
+        .catch(function () {
+            updateStatus('Refresh failed — retrying in 30s');
+        })
+        .finally(function () {
+            btn.disabled = false;
+            icon.style.animation = '';
+        });
+}
+
+updateStatus('Updated ' + formatTime(new Date()));
+startCountdown();
+timerId = setInterval(refreshDashboard, refreshInterval);
+</script>
+<style>
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    #refreshIcon { display: inline-block; }
+</style>
+}

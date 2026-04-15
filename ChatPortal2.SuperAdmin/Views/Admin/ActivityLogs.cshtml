@@ -1,35 +1,75 @@
-@model List<ChatPortal2.Models.ActivityLog>
+@model List<AIInsights.SuperAdmin.Controllers.SuperAdminController.ActivityLogViewModel>
 @{
     ViewData["Title"] = "Activity Logs";
     ViewData["ActivePage"] = "activity";
     Layout = "~/Views/Shared/_Layout.cshtml";
+    var search = ViewBag.Search as string ?? "";
+    var page = (int)ViewBag.Page;
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="fw-bold"><i class="bi bi-activity me-2 text-primary"></i>Activity Logs</h2>
-    <a href="?page=@(ViewBag.Page + 1)" class="btn btn-sa btn-sm">Next Page →</a>
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Activity Logs</h1>
+        <p class="page-desc">Recent platform activity across all users</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <form method="get" action="/superadmin/activity" style="display:flex;gap:.5rem;align-items:center">
+            <input type="text" name="search" value="@search" placeholder="Search name, email, org…"
+                   style="background:#ffffff;border:1px solid #cdd8e4;color:#2d3748;border-radius:8px;padding:.4rem .75rem;font-size:.82rem;font-family:'Inter',sans-serif;width:220px"
+                   autocomplete="off" />
+            <button type="submit" class="btn-primary-sm" style="padding:.4rem .75rem"><i class="bi bi-search"></i></button>
+            @if (!string.IsNullOrEmpty(search))
+            {
+                <a href="/superadmin/activity" class="btn-ghost-sm" style="padding:.4rem .65rem;font-size:.78rem"><i class="bi bi-x-lg"></i> Clear</a>
+            }
+        </form>
+        <a href="?page=@(page + 1)@(string.IsNullOrEmpty(search) ? "" : "&search=" + Uri.EscapeDataString(search))" class="btn-primary-sm"><i class="bi bi-arrow-right"></i> Next</a>
+    </div>
 </div>
 
-<div class="sa-card">
-    <table class="sa-table">
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
         <thead>
             <tr>
                 <th>Time</th>
                 <th>Action</th>
                 <th>Description</th>
-                <th>User ID</th>
-                <th>Org ID</th>
+                <th>User</th>
+                <th>Organization</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var log in Model)
             {
                 <tr>
-                    <td class="text-muted" style="white-space:nowrap">@log.CreatedAt.ToString("MMM d HH:mm")</td>
-                    <td><span class="sa-badge sa-badge-blue">@log.Action</span></td>
+                    <td style="white-space:nowrap;color:var(--text-muted)">@log.CreatedAt.ToString("MMM d HH:mm")</td>
+                    <td><span class="badge-sm badge-indigo">@log.Action</span></td>
                     <td>@log.Description</td>
-                    <td class="text-muted" style="font-size:0.75rem">@(log.UserId?.Length > 12 ? log.UserId[..12] + "…" : log.UserId)</td>
-                    <td>@log.OrganizationId</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(log.UserName))
+                        {
+                            <div style="color:#1e3a5f;font-size:.84rem;font-weight:500">@log.UserName</div>
+                            <div style="color:#596d82;font-size:.75rem">@log.UserEmail</div>
+                        }
+                        else
+                        {
+                            <span style="font-size:.75rem;color:var(--text-muted)">@(log.UserId.Length > 12 ? log.UserId[..12] + "…" : log.UserId)</span>
+                        }
+                    </td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(log.OrganizationName))
+                        {
+                            <span style="color:#1e3a5f;font-size:.84rem">@log.OrganizationName</span>
+                        }
+                        else if (log.OrganizationId.HasValue)
+                        {
+                            <span style="font-size:.75rem;color:var(--text-muted)">#@log.OrganizationId</span>
+                        }
+                        else
+                        {
+                            <span style="font-size:.75rem;color:var(--text-muted)">—</span>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>

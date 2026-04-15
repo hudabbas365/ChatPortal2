@@ -1,12 +1,12 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 public class SeoController : Controller
 {
@@ -65,7 +65,7 @@ public class SeoController : Controller
 
     [Authorize]
     [HttpPost("/api/seo")]
-    public async Task<IActionResult> Create([FromBody] ChatPortal2.Models.SeoEntry entry)
+    public async Task<IActionResult> Create([FromBody] AIInsights.Models.SeoEntry entry)
     {
         if (!await IsAdminCallerAsync()) return Forbid();
         entry.Id = 0;
@@ -75,7 +75,7 @@ public class SeoController : Controller
 
     [Authorize]
     [HttpPut("/api/seo/{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] ChatPortal2.Models.SeoEntry entry)
+    public async Task<IActionResult> Update(int id, [FromBody] AIInsights.Models.SeoEntry entry)
     {
         if (!await IsAdminCallerAsync()) return Forbid();
         entry.Id = id;

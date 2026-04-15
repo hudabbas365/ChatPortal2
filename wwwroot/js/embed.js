@@ -1,4 +1,4 @@
-// ChatPortal2 - Embedded Chat Widget
+// AIInsights - Embedded Chat Widget
 (function() {
     'use strict';
 

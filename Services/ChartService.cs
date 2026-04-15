@@ -1,6 +1,6 @@
-using ChatPortal2.Models;
+using AIInsights.Models;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public class ChartService : IChartService
 {

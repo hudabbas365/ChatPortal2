@@ -169,19 +169,8 @@
         });
     };
 
-    // ── Show / hide New Artifact dropdown in topbar ──────────
-    WF._showNewArtifactMenu = function (visible) {
-        var menu = document.getElementById('newArtifactDropdown');
-        if (!menu) return;
-        menu.classList.toggle('d-none', !visible);
-        if (!menu._wired) {
-            menu._wired = true;
-            document.getElementById('newDashboardBtn')?.addEventListener('click', function (e) {
-                e.preventDefault();
-                window.location.href = '/dashboard';
-            });
-        }
-    };
+    // ── Show / hide New Artifact dropdown in topbar (removed) ──
+    WF._showNewArtifactMenu = function () { };
 
     // ── Schema Explorer (loads into Thinking Panel) ─────────
     WF._loadSchemaExplorer = async function (dsId) {
@@ -308,6 +297,28 @@
                         <label>Connection String / URL</label>
                         <input type="text" id="wfDsConnStr" placeholder="Server=...;Database=..." />
                     </div>
+                    <div id="wfDsPbiFields" style="display:none">
+                        <div class="wf-setup-field">
+                            <label>XMLA Endpoint</label>
+                            <input type="text" id="wfDsXmlaEndpoint" placeholder="powerbi://api.powerbi.com/v1.0/myorg/WorkspaceName" />
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>Semantic Model (Catalog)</label>
+                            <input type="text" id="wfDsCatalog" placeholder="e.g. SalesModel" />
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>Azure AD Tenant ID</label>
+                            <input type="text" id="wfDsTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>Client ID (App Registration)</label>
+                            <input type="text" id="wfDsClientId" placeholder="App (client) ID" />
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>Client Secret</label>
+                            <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
+                        </div>
+                    </div>
                     <div class="wfe-cred-row">
                         <div class="wf-setup-field">
                             <label>Database User <span class="wfe-opt">(optional)</span></label>
@@ -345,6 +356,15 @@
                 document.getElementById('wfDsSelectedType').textContent = self._selectedDsType;
                 document.getElementById('wfDsTypeSelector').style.display = 'none';
                 document.getElementById('wfDsConfigForm').style.display = 'block';
+
+                // Toggle Power BI vs standard fields
+                var isPbi = /power\s*bi/i.test(self._selectedDsType);
+                var connStrField = document.getElementById('wfDsConnStr');
+                if (connStrField) connStrField.closest('.wf-setup-field').style.display = isPbi ? 'none' : '';
+                var credRow = document.querySelector('.wfe-cred-row');
+                if (credRow) credRow.style.display = isPbi ? 'none' : '';
+                var pbiFields = document.getElementById('wfDsPbiFields');
+                if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
             });
         }
         if (search) {
@@ -372,26 +392,36 @@
     WF._testDatasourceConnection = async function (wsData) {
         var user = JSON.parse(localStorage.getItem('cp_user') || 'null');
         var name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
-        var connStr = document.getElementById('wfDsConnStr')?.value.trim() || '';
-        var dbUser = document.getElementById('wfDsUser')?.value.trim() || '';
-        var dbPwd = document.getElementById('wfDsPassword')?.value.trim() || '';
         var alertEl = document.getElementById('wfDsAlert');
+        var isPbi = /power\s*bi/i.test(this._selectedDsType);
+
+        var payload = {
+            name: name,
+            type: this._selectedDsType,
+            organizationId: user?.organizationId || 0,
+            workspaceId: wsData?.id || null,
+            userId: user?.id || ''
+        };
+
+        if (isPbi) {
+            payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
+            payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
+            payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
+            payload.dbUser = document.getElementById('wfDsClientId')?.value.trim() || '';
+            payload.dbPassword = document.getElementById('wfDsClientSecret')?.value.trim() || '';
+        } else {
+            payload.connectionString = document.getElementById('wfDsConnStr')?.value.trim() || '';
+            payload.dbUser = document.getElementById('wfDsUser')?.value.trim() || null;
+            payload.dbPassword = document.getElementById('wfDsPassword')?.value.trim() || null;
+        }
+
         try {
             // Skip creation if datasource was already created (e.g. user clicked back)
             if (!this._createdDsId) {
                 var r = await fetch('/api/datasources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: name,
-                        type: this._selectedDsType,
-                        connectionString: connStr,
-                        dbUser: dbUser || null,
-                        dbPassword: dbPwd || null,
-                        organizationId: user?.organizationId || 0,
-                        workspaceId: wsData?.id || null,
-                        userId: user?.id || ''
-                    })
+                    body: JSON.stringify(payload)
                 });
                 if (!r.ok) throw new Error();
                 var ds = await r.json();
@@ -508,11 +538,12 @@
                 </div>
                 <div class="wf-setup-alert" id="wfPromptAlert"></div>
                 <div class="wf-setup-field">
-                    <label>System Prompt</label>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>System Prompt</label>
                     <div class="wfe-ai-btn-row">
                         <button class="btn btn-sm btn-outline-info wfe-ai-gen-btn" type="button" id="wfGenPromptBtn"><i class="bi bi-stars me-1"></i>Regenerate with AI</button>
                     </div>
-                    <textarea id="wfSystemPrompt" rows="6" placeholder="Generating prompt..."></textarea>
+                    <textarea id="wfSystemPrompt" rows="6" placeholder="Generating prompt..." readonly style="background:#f8f9fa;cursor:not-allowed;"></textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
                     <button class="btn btn-outline-secondary btn-sm" id="wfPromptBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
@@ -591,16 +622,19 @@
                 </div>
                 <div class="wf-setup-alert" id="wfAgentAlert"></div>
                 <div class="wf-setup-field">
-                    <label>Agent Name</label>
-                    <input type="text" id="wfAgentName" placeholder="e.g. Sales Assistant" />
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>Agent Name</label>
+                    <input type="text" id="wfAgentName" value="Data Assistant" readonly style="background:#f8f9fa;cursor:not-allowed;" />
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-field">
-                    <label>Description</label>
-                    <textarea id="wfAgentDesc" rows="2" placeholder="Brief description of what this agent does..."></textarea>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>Description</label>
+                    <textarea id="wfAgentDesc" rows="2" readonly style="background:#f8f9fa;cursor:not-allowed;">AI assistant generated from your selected datasource and tables.</textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-field">
-                    <label>System Prompt</label>
-                    <textarea id="wfAgentPrompt" rows="5">${this._esc(this._generatedPrompt || '')}</textarea>
+                    <label><i class="bi bi-lock-fill text-warning me-1"></i>System Prompt</label>
+                    <textarea id="wfAgentPrompt" rows="5" readonly style="background:#f8f9fa;cursor:not-allowed;">${this._esc(this._generatedPrompt || '')}</textarea>
+                    <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
                     <button class="btn btn-outline-secondary btn-sm" id="wfAgentBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>

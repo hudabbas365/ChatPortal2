@@ -4,95 +4,103 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<h2 class="fw-bold mb-4"><i class="bi bi-cash-stack me-2 text-primary"></i>Revenue &amp; Income</h2>
+<div class="page-header">
+    <h1 class="page-title">Revenue &amp; Income</h1>
+    <p class="page-desc">Subscription revenue breakdown and payment details</p>
+</div>
 
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
-            <div class="sa-stat-label"><i class="bi bi-cash-stack me-1"></i>Total Monthly Revenue</div>
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-cash-stack"></i></div>
+            <div class="stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="stat-label">Total Monthly Revenue</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.ProCount</div>
-            <div class="sa-stat-label"><i class="bi bi-award me-1"></i>Professional ($@ChatPortal2.Models.PlanPricing.ProPricePerUser/user)</div>
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-award"></i></div>
+            <div class="stat-val">@ViewBag.ProCount</div>
+            <div class="stat-label">Professional ($@AIInsights.Models.PlanPricing.ProPricePerUser/user)</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.EnterpriseCount</div>
-            <div class="sa-stat-label"><i class="bi bi-building-fill-gear me-1"></i>Enterprise ($@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser/user)</div>
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(14,165,233,.1);color:#38bdf8"><i class="bi bi-building-fill-gear"></i></div>
+            <div class="stat-val">@ViewBag.EnterpriseCount</div>
+            <div class="stat-label">Enterprise ($@AIInsights.Models.PlanPricing.EnterprisePricePerUser/user)</div>
         </div>
     </div>
     <div class="col-sm-6 col-lg-3">
-        <div class="sa-stat">
-            <div class="sa-stat-val">@ViewBag.ActiveTrials</div>
-            <div class="sa-stat-label"><i class="bi bi-clock me-1"></i>Active Free Trials</div>
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24"><i class="bi bi-clock"></i></div>
+            <div class="stat-val">@ViewBag.ActiveTrials</div>
+            <div class="stat-label">Active Free Trials</div>
         </div>
     </div>
 </div>
 
 <div class="row g-3 mb-4">
     <div class="col-md-6">
-        <div class="sa-card">
-            <h6 class="text-muted mb-3">Revenue Breakdown</h6>
-            <table class="sa-table">
+        <div class="card-panel">
+            <div class="card-panel-title">Revenue Breakdown</div>
+            <table class="tbl">
                 <thead>
                     <tr>
                         <th>Plan</th>
                         <th>Users</th>
                         <th>Price/User</th>
-                        <th>Monthly Revenue</th>
+                        <th>Monthly</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><span class="sa-badge sa-badge-blue">Professional</span></td>
+                        <td><span class="badge-sm badge-indigo">Professional</span></td>
                         <td>@ViewBag.ProCount</td>
-                        <td>$@ChatPortal2.Models.PlanPricing.ProPricePerUser</td>
-                        <td class="fw-semibold">$@ViewBag.ProRevenue.ToString("N2")</td>
+                        <td>$@AIInsights.Models.PlanPricing.ProPricePerUser</td>
+                        <td style="color:#1e3a5f;font-weight:600">$@ViewBag.ProRevenue.ToString("N2")</td>
                     </tr>
                     <tr>
-                        <td><span class="sa-badge sa-badge-green">Enterprise</span></td>
+                        <td><span class="badge-sm badge-emerald">Enterprise</span></td>
                         <td>@ViewBag.EnterpriseCount</td>
-                        <td>$@ChatPortal2.Models.PlanPricing.EnterprisePricePerUser</td>
-                        <td class="fw-semibold">$@ViewBag.EnterpriseRevenue.ToString("N2")</td>
+                        <td>$@AIInsights.Models.PlanPricing.EnterprisePricePerUser</td>
+                        <td style="color:#1e3a5f;font-weight:600">$@ViewBag.EnterpriseRevenue.ToString("N2")</td>
                     </tr>
                     <tr>
-                        <td><span class="sa-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24">Free Trial</span></td>
+                        <td><span class="badge-sm badge-amber">Free Trial</span></td>
                         <td>@ViewBag.ActiveTrials</td>
                         <td>—</td>
-                        <td class="text-muted">$0.00</td>
+                        <td style="color:var(--text-muted)">$0.00</td>
                     </tr>
                     <tr>
-                        <td colspan="3" class="fw-bold">Total</td>
-                        <td class="fw-bold" style="color:var(--sa-primary)">$@ViewBag.TotalIncome.ToString("N2")</td>
+                        <td colspan="3" style="color:#1e3a5f;font-weight:700">Total</td>
+                        <td style="color:#4a8ec9;font-weight:700">$@ViewBag.TotalIncome.ToString("N2")</td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="sa-card">
-            <h6 class="text-muted mb-3">Plan Distribution</h6>
+        <div class="card-panel">
+            <div class="card-panel-title">Plan Distribution</div>
             <canvas id="planChart" height="160"></canvas>
         </div>
     </div>
 </div>
 
-<div class="sa-card">
-    <h6 class="text-muted mb-3">Users with Payment Methods on File <span class="sa-badge sa-badge-blue ms-2">Read-only</span></h6>
+<div class="card-panel">
+    <div class="card-panel-title">Users with Payment Methods</div>
     @{
         var paidUsers = ViewBag.PaidUsers as IEnumerable<dynamic>;
     }
     @if (paidUsers == null || !paidUsers.Any())
     {
-        <p class="text-muted">No payment methods on file yet.</p>
+        <p style="color:var(--text-muted);font-size:.85rem">No payment methods on file yet.</p>
     }
     else
     {
-        <table class="sa-table">
+        <div style="overflow-x:auto">
+        <table class="tbl">
             <thead>
                 <tr>
                     <th>User</th>
@@ -105,14 +113,15 @@
                 @foreach (var user in paidUsers)
                 {
                     <tr>
-                        <td>@user.FullName</td>
-                        <td class="text-muted">@user.Email</td>
-                        <td><span class="sa-badge sa-badge-blue">@user.CardBrand</span></td>
+                        <td style="color:#1e3a5f;font-weight:500">@user.FullName</td>
+                        <td>@user.Email</td>
+                        <td><span class="badge-sm badge-indigo">@user.CardBrand</span></td>
                         <td>**** **** **** @user.CardLast4</td>
                     </tr>
                 }
             </tbody>
         </table>
+        </div>
     }
 </div>
 
@@ -128,12 +137,12 @@
             labels: ['Professional', 'Enterprise', 'Free Trial'],
             datasets: [{
                 data: [@ViewBag.ProCount, @ViewBag.EnterpriseCount, @ViewBag.ActiveTrials],
-                backgroundColor: ['rgba(96,165,250,0.7)', 'rgba(52,211,153,0.7)', 'rgba(251,191,36,0.6)'],
+                backgroundColor: ['rgba(74,142,201,0.7)', 'rgba(52,211,153,0.7)', 'rgba(245,158,11,0.6)'],
                 borderWidth: 0
             }]
         },
         options: {
-            plugins: { legend: { labels: { color: '#e2e8f0', font: { size: 12 } } } },
+            plugins: { legend: { labels: { color: '#596d82', font: { size: 12, family: 'Inter' } } } },
             cutout: '65%'
         }
     });

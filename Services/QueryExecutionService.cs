@@ -1,13 +1,11 @@
 using System.Data;
 using System.Data.Common;
-using System.Text.RegularExpressions;
-using ChatPortal2.Models;
-using Microsoft.AspNetCore.DataProtection;
+using AIInsights.Models;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using MySqlConnector;
 
-namespace ChatPortal2.Services;
+namespace AIInsights.Services;
 
 public interface IQueryExecutionService
 {
@@ -24,9 +22,23 @@ public class QueryExecutionResult
 
 public class QueryExecutionService : IQueryExecutionService
 {
+    private readonly IEncryptionService _encryption;
+    private readonly IPowerBiService _powerBi;
+
+    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi)
+    {
+        _encryption = encryption;
+        _powerBi = powerBi;
+    }
+
     private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "SQL Server", "SqlServer", "MSSQL", "Power BI"
+        "SQL Server", "SqlServer", "MSSQL"
+    };
+
+    public static readonly HashSet<string> PowerBiTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Power BI", "PowerBI"
     };
 
     private static readonly HashSet<string> PgTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -39,28 +51,50 @@ public class QueryExecutionService : IQueryExecutionService
         "MySQL", "MariaDB"
     };
 
-    private static readonly string[] WriteKeywords =
+    private static readonly string[] BlockedSqlPatterns = new[]
     {
-        "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
-        "TRUNCATE", "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE",
-        "REPLACE", "UPSERT", "ATTACH", "DETACH", "CALL"
+        @"(/\*[\s\S]*?\*/)",       // Block inline comments used to break keywords
+        @"(--[^\r\n]*)",           // Block line comments
+        @"\bXP_\w+",               // xp_ extended procs
+        @"\bSP_\w+",               // sp_ system procs
+        @"\bOPENROWSET\b",
+        @"\bOPENDATASOURCE\b",
+        @"\bBULK\s+INSERT\b",
+        @"\bSHUTDOWN\b",
+        @"\bSYSTEM_USER\b",
+        @"\bCONVERT\s*\(",         // Often used in blind injections
     };
 
-    private readonly IDataProtectionService _dataProtection;
-
-    public QueryExecutionService(IDataProtectionService dataProtection)
+    public static bool IsSafeQuery(string sql)
     {
-        _dataProtection = dataProtection;
+        if (string.IsNullOrWhiteSpace(sql)) return false;
+        var upper = sql.ToUpperInvariant().Trim();
+        // Must start with SELECT, WITH (CTE), or EVALUATE (DAX)
+        if (!upper.StartsWith("SELECT") && !upper.StartsWith("WITH") && !upper.StartsWith("EVALUATE"))
+            return false;
+        // Block stacked queries
+        if (sql.Contains(';') && !upper.StartsWith("EVALUATE"))
+            return false;
+        foreach (var pattern in BlockedSqlPatterns)
+            if (System.Text.RegularExpressions.Regex.IsMatch(sql, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return false;
+        return true;
     }
 
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
-        // Block write operations before executing
-        var normalized = Regex.Replace(sql.ToUpperInvariant(), @"\s+", " ").Trim();
-        foreach (var keyword in WriteKeywords)
+        // Safety gate: only allow safe read-only queries
+        if (!IsSafeQuery(sql))
+            return new QueryExecutionResult { Success = false, Error = "Query blocked by security policy. Only read-only SELECT/EVALUATE queries are allowed." };
+
+        // Route Power BI datasources to the ADOMD-based service (DAX / DMV)
+        if (PowerBiTypes.Contains(ds.Type))
         {
-            if (Regex.IsMatch(normalized, $@"\b{keyword}\b"))
-                return new QueryExecutionResult { Success = false, Error = $"Write operation '{keyword}' is not permitted. Only SELECT queries are allowed." };
+            var isDmv = sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                      && sql.Contains("$SYSTEM.", StringComparison.OrdinalIgnoreCase);
+            return isDmv
+                ? await _powerBi.ExecuteDmvAsync(ds, sql, maxRows)
+                : await _powerBi.ExecuteDaxAsync(ds, sql, maxRows);
         }
 
         DbConnection? conn = null;
@@ -125,9 +159,10 @@ public class QueryExecutionService : IQueryExecutionService
 
     private string BuildConnectionString(Datasource ds)
     {
-        var connStr = _dataProtection.Unprotect(ds.ConnectionString ?? "");
-        var dbUser = string.IsNullOrEmpty(ds.DbUser) ? null : _dataProtection.Unprotect(ds.DbUser);
-        var dbPassword = string.IsNullOrEmpty(ds.DbPassword) ? null : _dataProtection.Unprotect(ds.DbPassword);
+        var connStr = _encryption.Decrypt(ds.ConnectionString ?? "");
+
+        var dbUser = _encryption.Decrypt(ds.DbUser ?? "");
+        var dbPassword = _encryption.Decrypt(ds.DbPassword ?? "");
 
         if (string.IsNullOrEmpty(dbUser) && string.IsNullOrEmpty(dbPassword))
             return connStr;
@@ -163,15 +198,15 @@ public class QueryExecutionService : IQueryExecutionService
         // SQL Server does not support LIMIT — convert to TOP
         if (SqlTypes.Contains(type))
         {
-            var limitMatch = Regex.Match(
-                sql, @"\bLIMIT\s+(\d+)\s*$", RegexOptions.IgnoreCase);
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(
+                sql, @"\bLIMIT\s+(\d+)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (limitMatch.Success)
             {
                 var n = limitMatch.Groups[1].Value;
                 sql = sql[..limitMatch.Index].TrimEnd();
-                sql = Regex.Replace(
+                sql = System.Text.RegularExpressions.Regex.Replace(
                     sql, @"^\s*SELECT\b", $"SELECT TOP {n}",
-                    RegexOptions.IgnoreCase);
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             }
         }
         // MySQL does not support square-bracket quoting — strip brackets

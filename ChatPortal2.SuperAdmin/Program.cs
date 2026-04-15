@@ -1,7 +1,7 @@
 using System.Text;
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.SuperAdmin.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +28,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("JWT key 'Jwt:Key' is not configured.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"];
+var jwtAudience = builder.Configuration["Jwt:Audience"];
+var jwtLegacyIssuer = builder.Configuration["Jwt:LegacyIssuer"] ?? "ChatPortal2";
+var jwtLegacyAudience = builder.Configuration["Jwt:LegacyAudience"] ?? "ChatPortal2Users";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -36,14 +40,15 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    options.MapInboundClaims = false;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ValidateIssuer = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidIssuers = new[] { jwtIssuer, jwtLegacyIssuer }.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToArray()!,
         ValidateAudience = true,
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidAudiences = new[] { jwtAudience, jwtLegacyAudience }.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToArray()!,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
@@ -62,19 +67,57 @@ builder.Services.AddAuthentication(options =>
                 context.Response.Redirect("/superadmin/login");
             }
             return Task.CompletedTask;
+        },
+        OnForbidden = context =>
+        {
+            if (!context.Response.HasStarted)
+            {
+                context.Response.Redirect("/superadmin/login");
+            }
+            return Task.CompletedTask;
         }
     };
 });
 
+builder.Services.AddHttpClient("cohere");
+builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
-builder.Services.AddControllersWithViews().AddNewtonsoftJson();
+builder.Services.AddControllersWithViews()
+    .AddNewtonsoftJson()
+    .ConfigureApplicationPartManager(manager =>
+    {
+        // Remove the main AIInsights assembly so its controllers are not discovered
+        var mainPart = manager.ApplicationParts
+            .FirstOrDefault(p => p.Name == "AIInsights");
+        if (mainPart != null)
+            manager.ApplicationParts.Remove(mainPart);
+    });
 
 var app = builder.Build();
+
+// Show detailed errors so 500 responses include the full exception.
+// Remove or guard with app.Environment.IsDevelopment() once the issue is resolved.
+app.UseDeveloperExceptionPage();
 
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseStatusCodePages(async context =>
+{
+    var response = context.HttpContext.Response;
+    if (response.StatusCode is 401 or 403 && !response.HasStarted)
+    {
+        response.Redirect("/superadmin/login");
+    }
+});
+
+app.MapGet("/", context =>
+{
+    context.Response.Redirect("/superadmin");
+    return Task.CompletedTask;
+});
 
 app.MapDefaultControllerRoute();
 

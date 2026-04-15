@@ -1,11 +1,13 @@
-using ChatPortal2.Data;
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Data;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 public class AuthController : Controller
 {
@@ -14,8 +16,10 @@ public class AuthController : Controller
     private readonly JwtService _jwtService;
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AuthController> _logger;
+
+    // In-memory store for captcha answers: captchaId -> (answer, expiry)
+    private static readonly ConcurrentDictionary<string, (string Answer, DateTime Expiry)> _captchaStore = new();
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
@@ -23,7 +27,6 @@ public class AuthController : Controller
         JwtService jwtService,
         AppDbContext db,
         IConfiguration config,
-        IHttpClientFactory httpClientFactory,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -31,15 +34,97 @@ public class AuthController : Controller
         _jwtService = jwtService;
         _db = db;
         _config = config;
-        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
     [HttpGet("/auth/login")]
-    public IActionResult Login()
+    public IActionResult Login() => View();
+
+    [HttpGet("/api/auth/captcha")]
+    public IActionResult GenerateCaptcha()
     {
-        ViewBag.RecaptchaSiteKey = _config["Recaptcha:SiteKey"] ?? "";
-        return View();
+        // Purge expired entries
+        var now = DateTime.UtcNow;
+        foreach (var key in _captchaStore.Keys)
+        {
+            if (_captchaStore.TryGetValue(key, out var entry) && entry.Expiry < now)
+                _captchaStore.TryRemove(key, out _);
+        }
+
+        // Generate a random math problem
+        var rng = RandomNumberGenerator.Create();
+        var bytes = new byte[2];
+        rng.GetBytes(bytes);
+        var a = (bytes[0] % 20) + 1; // 1-20
+        var b = (bytes[1] % 10) + 1; // 1-10
+
+        // Randomly pick + or ×
+        rng.GetBytes(bytes);
+        var useMultiply = bytes[0] % 3 == 0;
+        var op = useMultiply ? "×" : "+";
+        var answer = useMultiply ? (a * b) : (a + b);
+        var question = $"{a} {op} {b} = ?";
+
+        // Store answer with 3-minute expiry
+        var captchaId = Guid.NewGuid().ToString("N");
+        _captchaStore[captchaId] = (answer.ToString(), now.AddMinutes(3));
+
+        // Render to SVG image (no System.Drawing dependency needed)
+        var svg = GenerateCaptchaSvg(question);
+        var svgBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
+
+        return Ok(new { captchaId, image = $"data:image/svg+xml;base64,{svgBase64}" });
+    }
+
+    private static string GenerateCaptchaSvg(string text)
+    {
+        var rng = RandomNumberGenerator.Create();
+        var bytes = new byte[10];
+        rng.GetBytes(bytes);
+
+        var width = 180;
+        var height = 60;
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>");
+        sb.Append($"<rect width='{width}' height='{height}' fill='#f0f4f8' rx='8'/>");
+
+        // Noise lines
+        for (int i = 0; i < 5; i++)
+        {
+            rng.GetBytes(bytes);
+            var x1 = bytes[0] % width;
+            var y1 = bytes[1] % height;
+            var x2 = bytes[2] % width;
+            var y2 = bytes[3] % height;
+            var colors = new[] { "#c4d3e0", "#a8c0d4", "#d0dce6", "#b5c9db" };
+            var color = colors[bytes[4] % colors.Length];
+            sb.Append($"<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='{color}' stroke-width='1'/>");
+        }
+
+        // Noise dots
+        for (int i = 0; i < 20; i++)
+        {
+            rng.GetBytes(bytes);
+            var cx = bytes[0] % width;
+            var cy = bytes[1] % height;
+            sb.Append($"<circle cx='{cx}' cy='{cy}' r='1.5' fill='#bcc8d4' opacity='0.5'/>");
+        }
+
+        // Render each character with slight random rotation/offset
+        var startX = 20;
+        foreach (var ch in text)
+        {
+            rng.GetBytes(bytes);
+            var yOff = 38 + (bytes[0] % 7) - 3;
+            var rot = (bytes[1] % 15) - 7;
+            var fontColors = new[] { "#1e3a5f", "#2c5282", "#2b4c7e", "#34495e", "#1a365d" };
+            var fc = fontColors[bytes[2] % fontColors.Length];
+            sb.Append($"<text x='{startX}' y='{yOff}' font-family='monospace,sans-serif' font-size='24' font-weight='bold' fill='{fc}' transform='rotate({rot},{startX},{yOff})'>{System.Net.WebUtility.HtmlEncode(ch.ToString())}</text>");
+            startX += 20;
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
     }
 
     [HttpGet("/auth/register")]
@@ -93,12 +178,15 @@ public class AuthController : Controller
         if (string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Password))
             return BadRequest(new { error = "Email and password are required." });
 
-        // Verify CAPTCHA if secret key is configured
-        var recaptchaSecret = _config["Recaptcha:SecretKey"];
-        if (!string.IsNullOrEmpty(recaptchaSecret) && !recaptchaSecret.StartsWith("YOUR_"))
+        // Verify local CAPTCHA
+        if (!string.IsNullOrEmpty(req.CaptchaId) && !string.IsNullOrEmpty(req.CaptchaAnswer))
         {
-            if (string.IsNullOrEmpty(req.CaptchaToken) || !await VerifyCaptchaAsync(req.CaptchaToken))
-                return BadRequest(new { error = "CAPTCHA verification failed." });
+            if (!VerifyLocalCaptcha(req.CaptchaId, req.CaptchaAnswer))
+                return BadRequest(new { error = "Incorrect CAPTCHA answer. Please try again." });
+        }
+        else
+        {
+            return BadRequest(new { error = "Please complete the CAPTCHA." });
         }
 
         var user = await _userManager.FindByEmailAsync(req.Email);
@@ -174,34 +262,13 @@ public class AuthController : Controller
         });
     }
 
-    private async Task<bool> VerifyCaptchaAsync(string token)
+    private static bool VerifyLocalCaptcha(string captchaId, string userAnswer)
     {
-        var secretKey = _config["Recaptcha:SecretKey"];
-        // CAPTCHA verification is skipped in dev mode when the secret key is not configured.
-        // In production, always set Recaptcha:SecretKey to enforce CAPTCHA.
-        if (string.IsNullOrEmpty(secretKey))
-        {
-            _logger.LogWarning("Recaptcha:SecretKey is not configured. CAPTCHA verification is being skipped.");
-            return true;
-        }
-
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("secret", secretKey),
-                new KeyValuePair<string, string>("response", token)
-            });
-            var response = await client.PostAsync("https://www.google.com/recaptcha/api/siteverify", content);
-            var body = await response.Content.ReadAsStringAsync();
-            var result = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(body);
-            return result?.success == true;
-        }
-        catch
-        {
-            return false;
-        }
+        if (!_captchaStore.TryRemove(captchaId, out var entry))
+            return false; // unknown or already used
+        if (entry.Expiry < DateTime.UtcNow)
+            return false; // expired
+        return string.Equals(entry.Answer.Trim(), userAnswer.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -217,5 +284,6 @@ public class LoginRequest
 {
     public string? Email { get; set; }
     public string? Password { get; set; }
-    public string? CaptchaToken { get; set; }
+    public string? CaptchaId { get; set; }
+    public string? CaptchaAnswer { get; set; }
 }

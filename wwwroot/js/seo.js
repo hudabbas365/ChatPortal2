@@ -1,4 +1,4 @@
-// ChatPortal2 - SEO Management JS
+// AIInsights - SEO Management JS
 const seoManager = {
     modal: null,
     previewModal: null,

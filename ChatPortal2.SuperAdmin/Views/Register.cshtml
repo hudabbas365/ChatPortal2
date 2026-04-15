@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Account – SuperAdmin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f0f4f8;color:#2d3748;min-height:100vh;display:flex}
+
+        .auth-split{display:flex;width:100%;min-height:100vh}
+
+        .auth-brand{
+            flex:0 0 44%;display:flex;flex-direction:column;justify-content:center;align-items:center;
+            background:linear-gradient(160deg,#d6e4f0 0%,#e3ecf5 100%);
+            padding:3rem;position:relative;overflow:hidden;
+        }
+        .auth-brand::before{
+            content:'';position:absolute;width:360px;height:360px;
+            background:radial-gradient(circle,rgba(74,142,201,.12) 0%,transparent 70%);
+            top:10%;right:-80px;pointer-events:none;
+        }
+        .auth-brand::after{
+            content:'';position:absolute;width:280px;height:280px;
+            background:radial-gradient(circle,rgba(74,142,201,.1) 0%,transparent 70%);
+            bottom:15%;left:-60px;pointer-events:none;
+        }
+        .brand-content{position:relative;z-index:1;text-align:center;max-width:320px}
+        .brand-icon{
+            width:64px;height:64px;border-radius:16px;
+            background:linear-gradient(135deg,#5aaee0,#4a8ec9);
+            display:inline-flex;align-items:center;justify-content:center;
+            font-size:1.5rem;color:#fff;margin-bottom:1.5rem;
+        }
+        .brand-content h2{font-size:1.5rem;font-weight:700;color:#1e3a5f;margin-bottom:.5rem}
+        .brand-content p{color:#596d82;font-size:.9rem;line-height:1.6}
+        .brand-steps{margin-top:2rem;text-align:left}
+        .brand-steps .step{display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;color:#596d82;font-size:.85rem}
+        .brand-steps .step-num{
+            flex-shrink:0;width:28px;height:28px;border-radius:8px;
+            background:rgba(74,142,201,.15);color:#4a8ec9;
+            display:flex;align-items:center;justify-content:center;
+            font-size:.75rem;font-weight:700;
+        }
+
+        .auth-form-wrap{
+            flex:1;display:flex;align-items:center;justify-content:center;
+            padding:2rem;background:#f0f4f8;
+        }
+        .auth-form{width:100%;max-width:400px}
+        .auth-form h1{font-size:1.75rem;font-weight:700;color:#1e3a5f;margin-bottom:.35rem}
+        .auth-form .subtitle{color:#596d82;font-size:.9rem;margin-bottom:2rem}
+
+        .field-group{margin-bottom:1.25rem}
+        .field-group label{display:block;font-size:.8rem;font-weight:500;color:#596d82;margin-bottom:.4rem;letter-spacing:.02em}
+        .field-input{position:relative}
+        .field-input i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#8596a9;font-size:.9rem}
+        .field-input input{
+            width:100%;padding:.75rem .75rem .75rem 40px;
+            background:#ffffff;border:1px solid #cdd8e4;border-radius:10px;
+            color:#2d3748;font-size:.9rem;font-family:inherit;
+            transition:border-color .2s,box-shadow .2s;outline:none;
+        }
+        .field-input input::placeholder{color:#8596a9}
+        .field-input input:focus{border-color:#4a8ec9;box-shadow:0 0 0 3px rgba(74,142,201,.15)}
+
+        .pwd-meter{height:3px;border-radius:2px;background:#cdd8e4;margin-top:.5rem;overflow:hidden}
+        .pwd-meter-fill{height:100%;border-radius:2px;width:0;transition:width .3s,background .3s}
+
+        .btn-submit{
+            width:100%;padding:.8rem;border:none;border-radius:10px;
+            background:#4a8ec9;color:#fff;font-size:.9rem;font-weight:600;
+            font-family:inherit;cursor:pointer;transition:background .2s,transform .1s;
+        }
+        .btn-submit:hover{background:#3a7bb8}
+        .btn-submit:active{transform:scale(.99)}
+        .btn-submit:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+        .auth-alert{
+            border-radius:10px;font-size:.85rem;padding:.7rem 1rem;
+            margin-bottom:1rem;display:none;
+        }
+        .auth-alert.show{display:block}
+        .auth-alert.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#fca5a5}
+        .auth-alert.success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);color:#86efac}
+
+        .auth-footer{text-align:center;margin-top:1.5rem;font-size:.85rem;color:#596d82}
+        .auth-footer a{color:#4a8ec9;text-decoration:none;font-weight:600}
+        .auth-footer a:hover{color:#3a7bb8;text-decoration:underline}
+
+        @@media(max-width:768px){
+            .auth-brand{display:none}
+            .auth-form-wrap{padding:1.5rem}
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-split">
+        <div class="auth-brand">
+            <div class="brand-content">
+                <div class="brand-icon"><i class="bi bi-person-plus-fill"></i></div>
+                <h2>Get Started</h2>
+                <p>Create your SuperAdmin account and start managing the entire AIInsights platform.</p>
+                <div class="brand-steps">
+                    <div class="step"><div class="step-num">1</div><span>Create your admin credentials</span></div>
+                    <div class="step"><div class="step-num">2</div><span>Sign in to the admin console</span></div>
+                    <div class="step"><div class="step-num">3</div><span>Manage orgs, users &amp; config</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="auth-form-wrap">
+            <div class="auth-form">
+                <h1>Create account</h1>
+                <p class="subtitle">Register a new SuperAdmin account</p>
+
+                <div id="regAlert" class="auth-alert"></div>
+
+                <form id="registerForm" autocomplete="off">
+                    <div class="field-group">
+                        <label>Full name</label>
+                        <div class="field-input">
+                            <i class="bi bi-person"></i>
+                            <input type="text" id="fullName" placeholder="John Doe" required autofocus />
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label>Email address</label>
+                        <div class="field-input">
+                            <i class="bi bi-envelope"></i>
+                            <input type="email" id="email" placeholder="admin@example.com" required />
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label>Password</label>
+                        <div class="field-input">
+                            <i class="bi bi-lock"></i>
+                            <input type="password" id="password" placeholder="Min 6 characters" required minlength="6" />
+                        </div>
+                        <div class="pwd-meter"><div class="pwd-meter-fill" id="pwdBar"></div></div>
+                    </div>
+                    <div class="field-group">
+                        <label>Confirm password</label>
+                        <div class="field-input">
+                            <i class="bi bi-lock-fill"></i>
+                            <input type="password" id="confirmPassword" placeholder="Re-enter password" required minlength="6" />
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit" id="regBtn">Create account</button>
+                </form>
+
+                <div class="auth-footer">
+                    Already have an account? <a href="/superadmin/login">Sign in</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script>
+    $('#password').on('input', function() {
+        var v = $(this).val(), bar = $('#pwdBar'), s = 0;
+        if (v.length >= 6) s++;
+        if (v.length >= 10) s++;
+        if (/[A-Z]/.test(v) && /[a-z]/.test(v)) s++;
+        if (/\d/.test(v)) s++;
+        if (/[^A-Za-z0-9]/.test(v)) s++;
+        var pct = Math.min(s / 5 * 100, 100);
+        var colors = ['#ef4444','#f97316','#eab308','#22c55e','#10b981'];
+        bar.css({ width: pct + '%', background: colors[Math.min(s, 4)] });
+    });
+
+    $('#registerForm').on('submit', function(e) {
+        e.preventDefault();
+        var alert$ = $('#regAlert');
+        alert$.removeClass('show error success');
+
+        if ($('#password').val() !== $('#confirmPassword').val()) {
+            alert$.addClass('show error').html('<i class="bi bi-exclamation-triangle me-1"></i>Passwords do not match.');
+            return;
+        }
+
+        var btn = $('#regBtn');
+        btn.prop('disabled', true).text('Creating account…');
+
+        $.ajax({
+            url: '/api/superadmin/register',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                fullName: $('#fullName').val(),
+                email: $('#email').val(),
+                password: $('#password').val()
+            }),
+            success: function() {
+                alert$.removeClass('error').addClass('show success').html('<i class="bi bi-check-circle me-1"></i>Account created! Redirecting…');
+                setTimeout(function() { window.location.href = '/superadmin/login'; }, 1200);
+            },
+            error: function(xhr) {
+                alert$.removeClass('success').addClass('show error').html('<i class="bi bi-exclamation-triangle me-1"></i>' + (xhr.responseJSON?.error || 'Registration failed.'));
+                btn.prop('disabled', false).text('Create account');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 
-namespace ChatPortal2.Models;
+namespace AIInsights.Models;
 
 public class ApplicationUser : IdentityUser
 {

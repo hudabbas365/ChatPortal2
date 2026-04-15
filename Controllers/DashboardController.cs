@@ -1,15 +1,15 @@
-using ChatPortal2.Models;
-using ChatPortal2.Services;
+using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
-using ChatPortal2.Data;
+using AIInsights.Data;
 using System.Security.Claims;
 
-namespace ChatPortal2.Controllers;
+namespace AIInsights.Controllers;
 
 [Authorize]
 public class DashboardController : Controller
@@ -53,6 +53,13 @@ public class DashboardController : Controller
                 {
                     var appUser = await _db.Users.FindAsync(currentUserId);
                     if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                        return Redirect("/access-denied?statusCode=403");
+                }
+                if (rpt.WorkspaceId > 0)
+                {
+                    var appUser2 = await _db.Users.FindAsync(currentUserId);
+                    var wsRole = await _permissions.GetRoleAsync(rpt.WorkspaceId, currentUserId);
+                    if (wsRole == "Viewer" && appUser2?.Role != "OrgAdmin" && appUser2?.Role != "SuperAdmin")
                         return Redirect("/access-denied?statusCode=403");
                 }
 
@@ -100,6 +107,10 @@ public class DashboardController : Controller
                     if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
                         return Redirect("/access-denied?statusCode=403");
                 }
+                var appUser2 = await _db.Users.FindAsync(currentUserId);
+                var wsRole = await _permissions.GetRoleAsync(ws.Id, currentUserId);
+                if (wsRole == "Viewer" && appUser2?.Role != "OrgAdmin" && appUser2?.Role != "SuperAdmin")
+                    return Redirect("/access-denied?statusCode=403");
 
                 // Find the most recent report in this workspace
                 var latestReport = await _db.Reports
