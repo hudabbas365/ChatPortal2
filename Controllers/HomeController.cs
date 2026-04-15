@@ -53,7 +53,12 @@ public class HomeController : Controller
     public async Task<IActionResult> Docs()
     {
         await SetSeoAsync("/docs");
-        return View();
+        var articles = await _db.DocArticles
+            .Where(d => d.IsPublished)
+            .OrderBy(d => d.SortOrder)
+            .ThenByDescending(d => d.UpdatedAt)
+            .ToListAsync();
+        return View(articles);
     }
 
     [Route("/blog")]
@@ -65,6 +70,26 @@ public class HomeController : Controller
             .OrderByDescending(p => p.PublishedAt)
             .ToListAsync();
         return View(posts);
+    }
+
+    [Route("/blog/{slug}")]
+    public async Task<IActionResult> BlogPost(string slug)
+    {
+        var post = await _db.BlogPosts
+            .FirstOrDefaultAsync(p => p.Slug == slug && p.IsPublished);
+        if (post == null) return NotFound();
+        await SetSeoAsync($"/blog/{slug}");
+        return View(post);
+    }
+
+    [Route("/docs/{slug}")]
+    public async Task<IActionResult> DocArticle(string slug)
+    {
+        var article = await _db.DocArticles
+            .FirstOrDefaultAsync(d => d.Slug == slug && d.IsPublished);
+        if (article == null) return NotFound();
+        await SetSeoAsync($"/docs/{slug}");
+        return View(article);
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
