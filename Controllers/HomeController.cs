@@ -54,9 +54,19 @@ public class HomeController : Controller
     {
         await SetSeoAsync("/docs");
         var articles = await _db.DocArticles
+            .AsNoTracking()
             .Where(d => d.IsPublished)
             .OrderBy(d => d.SortOrder)
             .ThenByDescending(d => d.UpdatedAt)
+            .Select(d => new DocArticle
+            {
+                Id = d.Id,
+                Title = d.Title,
+                Slug = d.Slug,
+                Summary = d.Summary,
+                SortOrder = d.SortOrder,
+                UpdatedAt = d.UpdatedAt
+            })
             .ToListAsync();
         return View(articles);
     }
