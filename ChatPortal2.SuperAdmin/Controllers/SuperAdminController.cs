@@ -9,6 +9,7 @@ using System.Text;
 
 namespace AIInsights.SuperAdmin.Controllers;
 
+[Authorize]
 public class SuperAdminController : Controller
 {
     private readonly AppDbContext _db;
@@ -452,6 +453,8 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             existing.Content = post.Content;
             existing.Author = post.Author;
             existing.ImageUrl = post.ImageUrl;
+            if (!existing.IsPublished && post.IsPublished)
+                existing.PublishedAt = DateTime.UtcNow;
             existing.IsPublished = post.IsPublished;
         }
         else

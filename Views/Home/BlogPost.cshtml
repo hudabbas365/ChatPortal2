@@ -1,0 +1,32 @@
+@model AIInsights.Models.BlogPost
+@{
+    ViewData["Title"] = Model.Title;
+}
+
+<section class="cp-section cp-page-hero">
+    <div class="container">
+        <h1 class="page-title">@Model.Title</h1>
+        <p class="page-subtitle">
+            @if (!string.IsNullOrWhiteSpace(Model.Author))
+            {
+                <span>By @Model.Author · </span>
+            }
+            <span>@Model.PublishedAt.ToString("MMMM dd, yyyy")</span>
+        </p>
+    </div>
+</section>
+
+<section class="cp-section">
+    <div class="container">
+        <div class="glass-card p-4 p-md-5">
+            @if (!string.IsNullOrWhiteSpace(Model.ImageUrl))
+            {
+                <img src="@Model.ImageUrl" alt="@Model.Title" class="img-fluid rounded mb-4" />
+            }
+            @Html.Raw(Model.Content)
+            <div class="mt-4">
+                <a href="/blog" class="blog-read-more">← Back to Blog</a>
+            </div>
+        </div>
+    </div>
+</section>
