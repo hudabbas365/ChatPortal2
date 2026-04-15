@@ -14,3 +14,9 @@ obj/
 
 ## Publish output
 publish/
+
+## Environment-specific appsettings — never commit real secrets
+appsettings.Development.json
+appsettings.Production.json
+appsettings.*.json
+!appsettings.json

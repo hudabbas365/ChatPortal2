@@ -193,7 +193,7 @@ public class AuthController : Controller
         if (user == null)
             return Unauthorized(new { error = "Invalid credentials." });
 
-        var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, false);
+        var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, true);
         if (!result.Succeeded)
             return Unauthorized(new { error = "Invalid credentials." });
 

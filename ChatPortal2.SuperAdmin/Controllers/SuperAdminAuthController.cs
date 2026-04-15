@@ -37,7 +37,7 @@ public class SuperAdminAuthController : Controller
         if (user == null || user.Role != "SuperAdmin")
             return Unauthorized(new { error = "Access denied. SuperAdmin credentials required." });
 
-        var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, false);
+        var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, true);
         if (!result.Succeeded)
             return Unauthorized(new { error = "Invalid credentials." });
 
