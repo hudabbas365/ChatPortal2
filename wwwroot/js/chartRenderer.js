@@ -33,6 +33,12 @@ class ChartRenderer {
             forest:  ['#2D6A4F','#40916C','#52B788','#74C69D','#95D5B2','#B7E4C7','#D8F3DC','#1B4332'],
             rainbow: ['#E63946','#E76F51','#F4A261','#2A9D8F','#457B9D','#6A4C93','#BC4749','#264653'],
             pastel:  ['#FFB3BA','#FFDFBA','#FFFFBA','#BAFFC9','#BAE1FF','#D4BAFF','#FFBAF0','#C9F0FF'],
+            midnight: ['#0f172a','#1e293b','#334155','#475569','#64748b','#0ea5e9','#6366f1','#a855f7'],
+            corporate: ['#1f2937','#374151','#4b5563','#6b7280','#9ca3af','#2563eb','#0f766e','#7c3aed'],
+            retro: ['#8c564b','#bcbd22','#17becf','#ff7f0e','#d62728','#9467bd','#2ca02c','#1f77b4'],
+            neon: ['#00f5d4','#00bbf9','#9b5de5','#f15bb5','#fee440','#38bdf8','#22d3ee','#a3e635'],
+            earth: ['#7f5539','#9c6644','#b08968','#ddb892','#a98467','#6c584c','#adc178','#588157'],
+            monochrome: ['#111827','#1f2937','#374151','#4b5563','#6b7280','#9ca3af','#d1d5db','#e5e7eb'],
         };
         this._customRenderTypes = new Set([
             'treemap','heatmap','sankey','sunburst',
@@ -43,7 +49,7 @@ class ChartRenderer {
             'waffleChart','pictograph',
             'kpiCard','metricTile','card',
             'marimekko','dumbbell',
-            'table','slicer'
+            'table','slicer','navigation'
         ]);
     }
 
@@ -57,7 +63,10 @@ class ChartRenderer {
 
     getColors(palette, count) {
         let colors;
-        if (palette && palette.startsWith('#')) {
+        if (palette && palette.startsWith('custom:')) {
+            const custom = palette.substring('custom:'.length).split(',').map(c => c.trim()).filter(c => /^#([0-9a-fA-F]{6})$/.test(c));
+            colors = custom.length ? custom : this.colorPalettes.default;
+        } else if (palette && palette.startsWith('#')) {
             // Hex color provided — use it as the first color, then append distinct palette colors
             const base = this.colorPalettes.default;
             colors = [palette, ...base.filter(c => c !== palette)];
@@ -142,7 +151,9 @@ class ChartRenderer {
         if (sk) sk.remove();
 
         // Show empty-data overlay when no data is available
-        if ((!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
+        const hasRawRows = Array.isArray(data.rawData) && data.rawData.length > 0;
+        const skipNoData = chartDef.chartType === 'navigation';
+        if (!skipNoData && !hasRawRows && (!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
             canvasEl.style.display = 'none';
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
@@ -1286,6 +1297,7 @@ class ChartRenderer {
             case 'dumbbell':     this.renderDumbbell(chartDef, container, data, colors, h); break;
             case 'table':        this.renderTableChart(chartDef, container, data, colors, h); break;
             case 'slicer':       this.renderSlicer(chartDef, container, data, colors, h); break;
+            case 'navigation':   this.renderNavigationWidget(chartDef, container, colors, h); break;
             default:             this.renderPlaceholder(chartDef, container, colors, h); break;
         }
     }
@@ -2018,6 +2030,7 @@ class ChartRenderer {
         const MAX_ROWS = 50;
         const rawData = (data.rawData || []).slice(0, MAX_ROWS);
         const mapping = chartDef.mapping || {};
+        const tableFields = (mapping.tableFields || []).filter(f => f && f.fieldName);
         const primaryColor = (chartDef.style && chartDef.style.colorPalette && chartDef.style.colorPalette.startsWith('#'))
             ? chartDef.style.colorPalette : colors[0];
 
@@ -2025,19 +2038,29 @@ class ChartRenderer {
 
         // Use all columns from rawData when available
         if (rawData.length > 0) {
-            const columns = Object.keys(rawData[0]);
+            const allColumns = Object.keys(rawData[0]);
+            const columns = tableFields.length
+                ? tableFields
+                    .map(f => ({
+                        key: allColumns.find(c => c.toLowerCase() === String(f.fieldName || '').toLowerCase()) || f.fieldName,
+                        label: f.label || f.fieldName,
+                        width: f.width || null,
+                        visible: f.visible !== false
+                    }))
+                    .filter(f => f.key && f.visible)
+                : allColumns.map(c => ({ key: c, label: c, width: null, visible: true }));
             const headerCells = columns.map(col =>
-                `<th style="color:${this._esc(primaryColor)}">${this._esc(col)}</th>`
+                `<th style="color:${this._esc(primaryColor)};${col.width ? `width:${Number(col.width)}px;` : ''}">${this._esc(col.label)}</th>`
             ).join('');
             const bodyRows = rawData.map(row =>
                 '<tr>' + columns.map(col => {
-                    const val = row[col];
+                    const val = row[col.key];
                     const isNum = typeof val === 'number';
                     return `<td${isNum ? ' class="text-end"' : ''}>${this._esc(String(val ?? ''))}</td>`;
                 }).join('') + '</tr>'
             ).join('');
             container.innerHTML = `
-                <table class="table table-sm table-striped mb-0" style="font-size:12px;">
+                <table class="table table-sm table-striped table-bordered mb-0" style="font-size:12px;">
                     <thead style="position:sticky;top:0;background:#fff;">
                         <tr>${headerCells}</tr>
                     </thead>
@@ -2055,7 +2078,7 @@ class ChartRenderer {
             `<tr><td>${this._esc(String(lbl))}</td><td class="text-end">${this._esc(String(values[i] ?? ''))}</td></tr>`
         ).join('');
         container.innerHTML = `
-            <table class="table table-sm table-striped mb-0" style="font-size:12px;">
+            <table class="table table-sm table-striped table-bordered mb-0" style="font-size:12px;">
                 <thead style="position:sticky;top:0;background:#fff;">
                     <tr>
                         <th style="color:${this._esc(primaryColor)}">${this._esc(labelField)}</th>
@@ -2099,6 +2122,39 @@ class ChartRenderer {
 
         container.appendChild(titleEl);
         container.appendChild(wrap);
+    }
+
+    renderNavigationWidget(chartDef, container, colors) {
+        const nav = chartDef.navigation || {};
+        const primaryColor = (chartDef.style && chartDef.style.colorPalette && chartDef.style.colorPalette.startsWith('#'))
+            ? chartDef.style.colorPalette : colors[0];
+        const borderEnabled = nav.borderEnabled !== false;
+        const target = nav.target || 'current';
+        const href = target === 'url' ? (nav.customUrl || '#') : '#';
+        const borderColor = nav.borderColor || primaryColor;
+        const borderRadius = Number(nav.borderRadius ?? 8);
+        const backgroundColor = nav.backgroundColor || '#ffffff';
+        const label = nav.label || chartDef.title || 'Open Link';
+
+        container.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;';
+        container.innerHTML = `
+            <a href="${this._esc(href)}" ${target === 'url' ? 'target="_blank" rel="noopener noreferrer"' : ''}
+               style="
+                    display:inline-flex;
+                    align-items:center;
+                    justify-content:center;
+                    gap:6px;
+                    text-decoration:none;
+                    font-size:13px;
+                    font-weight:600;
+                    color:${this._esc(primaryColor)};
+                    background:${this._esc(backgroundColor)};
+                    border:${borderEnabled ? `1px solid ${this._esc(borderColor)}` : '1px solid transparent'};
+                    border-radius:${borderRadius}px;
+                    padding:8px 14px;
+                    min-width:120px;">
+                <i class="bi bi-link-45deg"></i>${this._esc(label)}
+            </a>`;
     }
 }
 

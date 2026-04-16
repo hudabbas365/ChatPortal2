@@ -162,6 +162,15 @@
         return d.innerHTML;
     }
 
+    function _renderMarkdown(text) {
+        const raw = String(text || '');
+        if (global.marked && global.DOMPurify) {
+            const html = global.marked.parse(raw, { breaks: true, gfm: true });
+            return global.DOMPurify.sanitize(html);
+        }
+        return _esc(raw).replace(/\n/g, '<br>');
+    }
+
     // ── Send message ───────────────────────────────────────────────────────────
     async function sendMessage(text) {
         if (_isBusy || !text) return;
@@ -212,14 +221,16 @@
                 // Stream tokens via aiStream helper
                 const streamHelper = global.aiStream;
                 if (streamHelper && streamHelper.readSseText) {
+                    let fullText = '';
                     await streamHelper.readSseText(resp, chunk => {
-                        aiBubble.textContent += chunk;
+                        fullText += chunk;
+                        aiBubble.innerHTML = _renderMarkdown(fullText);
                         _scrollToBottom();
                     });
                 } else {
                     // Fallback: read full body
                     const body = await resp.text();
-                    aiBubble.textContent = body;
+                    aiBubble.innerHTML = _renderMarkdown(body);
                 }
                 aiBubble.classList.remove('streaming');
                 _scrollToBottom();

@@ -9,7 +9,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"]</title>
+    <title>@ViewData["Title"] — AI Insights</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
@@ -41,6 +41,43 @@
             </button>
         </div>
         <div class="navbar-actions ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="change-background-btn" title="Change canvas background">
+                <i class="bi bi-palette me-1"></i>Change Background
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="add-navigation-widget-btn" title="Add navigation hyperlink widget">
+                <i class="bi bi-link-45deg me-1"></i>Navigation
+            </button>
+            <div class="dropdown me-2">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-droplet-half me-1"></i>Theme
+                </button>
+                <div class="dropdown-menu dropdown-menu-end p-2" style="min-width:280px">
+                    <label class="form-label mb-1 small">Chart Theme</label>
+                    <select class="form-select form-select-sm mb-2" id="dashboard-theme-select">
+                        <option value="ocean">Ocean</option>
+                        <option value="sunset">Sunset</option>
+                        <option value="forest">Forest</option>
+                        <option value="midnight">Midnight</option>
+                        <option value="pastel">Pastel</option>
+                        <option value="corporate">Corporate</option>
+                        <option value="retro">Retro</option>
+                        <option value="neon">Neon</option>
+                        <option value="earth">Earth</option>
+                        <option value="monochrome">Monochrome</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <div id="dashboard-theme-custom-colors" class="d-none">
+                        <div class="d-flex gap-1 mb-2">
+                            <input type="color" class="form-control form-control-color" data-custom-theme-color value="#4A90D9" style="width:36px;height:30px">
+                            <input type="color" class="form-control form-control-color" data-custom-theme-color value="#E87C3E" style="width:36px;height:30px">
+                            <input type="color" class="form-control form-control-color" data-custom-theme-color value="#4CAF50" style="width:36px;height:30px">
+                            <input type="color" class="form-control form-control-color" data-custom-theme-color value="#9C27B0" style="width:36px;height:30px">
+                            <input type="color" class="form-control form-control-color" data-custom-theme-color value="#FFC107" style="width:36px;height:30px">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm cp-btn-gradient w-100" id="dashboard-theme-apply-btn">Apply Theme</button>
+                </div>
+            </div>
             <button type="button" class="btn btn-sm btn-outline-cp me-2" id="dcpToggleBtn" title="Open AI Report Assistant">
                 <i class="bi bi-chat-dots me-1"></i>Chat
             </button>
@@ -181,6 +218,25 @@
                                     <input type="text" id="canvas-prop-bg-text" class="form-control form-control-sm" value="#ffffff" style="flex:1">
                                 </div>
                             </div>
+                            <div class="mb-2">
+                                <label class="form-label" style="font-size:0.72rem">Background Style</label>
+                                <select id="canvas-prop-bg-mode" class="form-select form-select-sm">
+                                    <option value="solid">Solid Color</option>
+                                    <option value="gradient">Gradient Preset</option>
+                                    <option value="pattern">Subtle Pattern</option>
+                                </select>
+                            </div>
+                            <div class="mb-2 d-none" id="canvas-prop-bg-preset-wrap">
+                                <label class="form-label" style="font-size:0.72rem">Preset</label>
+                                <select id="canvas-prop-bg-preset" class="form-select form-select-sm">
+                                    <option value="linear-gradient(135deg, #f8fafc 0%, #dbeafe 100%)">Sky</option>
+                                    <option value="linear-gradient(135deg, #fef3c7 0%, #fed7aa 100%)">Warm</option>
+                                    <option value="linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%)">Ocean Mist</option>
+                                    <option value="radial-gradient(circle at top, #ede9fe 0%, #e0e7ff 60%, #dbeafe 100%)">Aurora</option>
+                                    <option value="repeating-linear-gradient(45deg, #f8fafc, #f8fafc 12px, #eef2ff 12px, #eef2ff 24px)">Diagonal Weave</option>
+                                    <option value="repeating-radial-gradient(circle at 10px 10px, #f8fafc 0, #f8fafc 5px, #e2e8f0 5px, #e2e8f0 10px)">Dot Pattern</option>
+                                </select>
+                            </div>
                         </div>
                         <div id="properties-empty" class="empty-state-small">
                             <i class="bi bi-cursor" style="font-size:2.2rem;opacity:0.4"></i>
@@ -291,6 +347,7 @@
                                                 <optgroup label="Data / Interactive">
                                                     <option value="table">Table Chart</option>
                                                     <option value="slicer">Slicer</option>
+                                                    <option value="navigation">Navigation Link</option>
                                                 </optgroup>
                                             </select>
                                         </div>
@@ -326,12 +383,23 @@
                                                 </select>
                                             </div>
                                             <div class="mb-2">
-                                                <label class="form-label">Label Field</label>
+                                                <label class="form-label">Legend Field</label>
                                                 <select id="prop-label-field" class="form-select form-select-sm field-select"></select>
                                             </div>
                                             <div class="mb-2">
-                                                <label class="form-label">Value Field</label>
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <label class="form-label mb-0">Value Field <span class="text-muted" id="agg-selected-label">(None)</span></label>
+                                                    <button type="button" class="btn btn-xs btn-outline-secondary" id="value-agg-menu-btn" title="Aggregation suggestions">▾</button>
+                                                </div>
                                                 <select id="prop-value-field" class="form-select form-select-sm field-select"></select>
+                                                <div class="dropdown-menu mt-1 p-1" id="value-agg-menu" style="position:static;display:none">
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="None">None</button>
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="SUM">SUM</button>
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="AVG">AVG</button>
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="COUNT">COUNT</button>
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="MIN">MIN</button>
+                                                    <button type="button" class="dropdown-item py-1" data-agg-value="MAX">MAX</button>
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="prop-subgroup" id="multi-value-fields-section">
@@ -363,19 +431,27 @@
                                             <label class="form-label">Group By Field</label>
                                             <select id="prop-group-by-field" class="form-select form-select-sm field-select"></select>
                                         </div>
-                                        <div class="mb-2 form-check">
+                                        <div class="mb-2 form-check d-none">
                                             <input type="checkbox" id="prop-agg-enabled" class="form-check-input">
                                             <label class="form-check-label" for="prop-agg-enabled">Enable Aggregation</label>
                                         </div>
-                                        <div class="mb-2">
+                                        <div class="mb-2 d-none">
                                             <label class="form-label">Aggregation</label>
                                             <select id="prop-agg-function" class="form-select form-select-sm">
+                                                <option value="None">None</option>
                                                 <option value="SUM">SUM</option>
                                                 <option value="AVG">AVG</option>
                                                 <option value="COUNT">COUNT</option>
                                                 <option value="MAX">MAX</option>
                                                 <option value="MIN">MIN</option>
                                             </select>
+                                        </div>
+                                        <div class="prop-subgroup chart-type-field" data-chart-types="table" id="table-fields-section" style="display:none">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="form-label mb-0">Fields</label>
+                                                <button type="button" class="btn btn-xs btn-outline-primary" id="add-table-field-btn">Add Field</button>
+                                            </div>
+                                            <div id="table-fields-container"></div>
                                         </div>
                                         <div class="mb-2">
                                             <label class="form-label">Row Limit</label>
@@ -455,6 +531,43 @@
                                                 <label class="form-label">Border Radius</label>
                                                 <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="prop-section" id="navigation-props-section" style="display:none">
+                                        <div class="prop-section-title">Navigation Link</div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Label Text</label>
+                                            <input type="text" id="prop-nav-label" class="form-control form-control-sm" placeholder="Open report section">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Target</label>
+                                            <select id="prop-nav-target" class="form-select form-select-sm">
+                                                <option value="current">Current Page</option>
+                                                <option value="url">Custom URL</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2 d-none" id="prop-nav-url-wrap">
+                                            <label class="form-label">Custom URL</label>
+                                            <input type="url" id="prop-nav-url" class="form-control form-control-sm" placeholder="https://...">
+                                        </div>
+                                        <div class="mb-2 form-check">
+                                            <input type="checkbox" id="prop-nav-border-enabled" class="form-check-input">
+                                            <label class="form-check-label" for="prop-nav-border-enabled">Show Border</label>
+                                        </div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Border Color</label>
+                                                <input type="color" id="prop-nav-border-color" class="form-control form-control-sm">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Border Radius</label>
+                                                <input type="number" id="prop-nav-border-radius" class="form-control form-control-sm" min="0" max="32" value="8">
+                                            </div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">Background</label>
+                                            <input type="color" id="prop-nav-bg-color" class="form-control form-control-sm" value="#ffffff">
                                         </div>
                                     </div>
 
@@ -771,6 +884,9 @@
             const heightInput = document.getElementById('canvas-prop-height');
             const bgColor = document.getElementById('canvas-prop-bg');
             const bgText = document.getElementById('canvas-prop-bg-text');
+            const bgMode = document.getElementById('canvas-prop-bg-mode');
+            const bgPreset = document.getElementById('canvas-prop-bg-preset');
+            const bgPresetWrap = document.getElementById('canvas-prop-bg-preset-wrap');
             const canvas = document.getElementById('chart-canvas-drop');
 
             function applyCanvasSize() {
@@ -785,11 +901,19 @@
             }
             function applyCanvasBg() {
                 if (!canvas) return;
-                const c = bgColor?.value || '#ffffff';
-                canvas.style.background = c;
-                if (bgText) bgText.value = c;
+                const mode = bgMode?.value || 'solid';
+                let backgroundValue = bgColor?.value || '#ffffff';
+                if (mode === 'gradient' || mode === 'pattern') {
+                    backgroundValue = bgPreset?.value || backgroundValue;
+                }
+                canvas.style.background = backgroundValue;
+                if (mode === 'solid' && bgText) bgText.value = backgroundValue;
+                if (bgPresetWrap) bgPresetWrap.classList.toggle('d-none', mode === 'solid');
                 const page = canvasManager.pages[canvasManager.activePageIndex];
-                if (page) page.background = c;
+                if (page) {
+                    page.background = backgroundValue;
+                    page.backgroundMode = mode;
+                }
             }
             function syncFromPage() {
                 const page = canvasManager.pages[canvasManager.activePageIndex];
@@ -798,17 +922,111 @@
                 if (heightInput) heightInput.value = page.pageHeight || 900;
                 if (bgColor) bgColor.value = page.background || '#ffffff';
                 if (bgText) bgText.value = page.background || '#ffffff';
+                if (bgMode) bgMode.value = page.backgroundMode || 'solid';
                 applyCanvasSize();
                 applyCanvasBg();
             }
             if (widthInput) widthInput.addEventListener('change', applyCanvasSize);
             if (heightInput) heightInput.addEventListener('change', applyCanvasSize);
             if (bgColor) bgColor.addEventListener('input', applyCanvasBg);
+            if (bgMode) bgMode.addEventListener('change', applyCanvasBg);
+            if (bgPreset) bgPreset.addEventListener('change', applyCanvasBg);
             if (bgText) bgText.addEventListener('change', function() {
                 if (bgColor) bgColor.value = this.value;
                 applyCanvasBg();
             });
             syncFromPage();
+        })();
+
+        document.getElementById('change-background-btn')?.addEventListener('click', function() {
+            document.getElementById('canvas-prop-bg-mode')?.focus();
+            document.getElementById('canvasPropsSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
+        document.getElementById('add-navigation-widget-btn')?.addEventListener('click', async function() {
+            if (!window.canvasManager) return;
+            await canvasManager.addChart({
+                chartType: 'navigation',
+                title: 'Navigation Link',
+                width: 3,
+                height: 80,
+                datasetName: '',
+                mapping: {},
+                aggregation: { enabled: false, function: 'None' },
+                navigation: {
+                    label: 'Open Link',
+                    target: 'current',
+                    customUrl: '',
+                    borderEnabled: true,
+                    borderColor: '#4A90D9',
+                    borderRadius: 8,
+                    backgroundColor: '#ffffff'
+                }
+            });
+        });
+
+        (function wireDashboardTheme() {
+            const themeSelect = document.getElementById('dashboard-theme-select');
+            const applyBtn = document.getElementById('dashboard-theme-apply-btn');
+            const customWrap = document.getElementById('dashboard-theme-custom-colors');
+            const customColorInputs = () => Array.from(document.querySelectorAll('[data-custom-theme-color]')).map(i => i.value);
+            const presets = {
+                ocean: 'ocean',
+                sunset: 'sunset',
+                forest: 'forest',
+                midnight: 'midnight',
+                pastel: 'pastel',
+                corporate: 'corporate',
+                retro: 'retro',
+                neon: 'neon',
+                earth: 'earth',
+                monochrome: 'monochrome'
+            };
+
+            function selectedPalette() {
+                const t = themeSelect?.value || 'ocean';
+                if (t === 'custom') {
+                    return 'custom:' + customColorInputs().join(',');
+                }
+                return presets[t] || 'default';
+            }
+
+            async function applyThemeToCharts() {
+                const palette = selectedPalette();
+                localStorage.setItem('cp_dashboard_chart_theme', JSON.stringify({
+                    theme: themeSelect?.value || 'ocean',
+                    palette,
+                    customColors: customColorInputs()
+                }));
+                const charts = (canvasManager?.charts || []).filter(c => !(window.ShapeManager && ShapeManager.isShape(c.chartType)) && c.chartType !== 'navigation');
+                for (const c of charts) {
+                    c.style = c.style || {};
+                    c.style.colorPalette = palette;
+                    await canvasManager.updateChart(c);
+                }
+            }
+
+            function syncCustomVisibility() {
+                if (!customWrap || !themeSelect) return;
+                customWrap.classList.toggle('d-none', themeSelect.value !== 'custom');
+            }
+
+            themeSelect?.addEventListener('change', syncCustomVisibility);
+            applyBtn?.addEventListener('click', applyThemeToCharts);
+
+            try {
+                const saved = JSON.parse(localStorage.getItem('cp_dashboard_chart_theme') || 'null');
+                if (saved && themeSelect) {
+                    themeSelect.value = saved.theme || 'ocean';
+                    syncCustomVisibility();
+                    if (saved.customColors && saved.customColors.length) {
+                        document.querySelectorAll('[data-custom-theme-color]').forEach((el, idx) => {
+                            if (saved.customColors[idx]) el.value = saved.customColors[idx];
+                        });
+                    }
+                    applyThemeToCharts();
+                }
+            } catch {}
         })();
 
         // ── Report Topnav context ─────────────────────────────

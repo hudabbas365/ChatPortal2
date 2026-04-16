@@ -7,7 +7,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@(seoEntry?.Title ?? ViewData["Title"] ?? "AI Insights")</title>
+    <title>@(seoEntry?.Title ?? (ViewData["Title"] != null ? $"{ViewData["Title"]} — AI Insights" : "AI Insights"))</title>
     <meta name="description" content="@(seoEntry?.MetaDescription ?? "AI-Powered Data Conversations Portal")" />
     <meta name="keywords" content="@(seoEntry?.MetaKeywords ?? "chat, AI, data, analytics, dashboards")" />
     <meta name="robots" content="@(seoEntry?.RobotsDirective ?? "index, follow")" />
@@ -55,7 +55,6 @@
                     <div class="footer-links">
                         <a href="/">Home</a>
                         <a href="/about">About</a>
-                        <a href="/pricing">Pricing</a>
                         <a href="/docs">Docs</a>
                         <a href="/blog">Blog</a>
                     </div>
