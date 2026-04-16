@@ -1153,7 +1153,7 @@ class PropertiesPanel {
                 </div>
                 <div class="col-2">
                     <label class="form-label mb-0" style="font-size:0.68rem">Width</label>
-                    <input type="number" class="form-control form-control-sm table-field-width" min="40" max="800" value="${Number(fieldDef?.width || '') || ''}">
+                    <input type="number" class="form-control form-control-sm table-field-width" min="40" max="800" value="${fieldDef?.width ?? ''}">
                 </div>
                 <div class="col-2 d-flex align-items-center gap-1">
                     <input type="checkbox" class="form-check-input table-field-visible" ${fieldDef?.visible !== false ? 'checked' : ''} title="Visible">
@@ -1194,7 +1194,10 @@ class PropertiesPanel {
             fieldName: this._resolveFieldName(row.querySelector('.table-field-name')?.value || ''),
             label: row.querySelector('.table-field-label')?.value || '',
             visible: !!row.querySelector('.table-field-visible')?.checked,
-            width: parseInt(row.querySelector('.table-field-width')?.value || '') || null
+            width: (() => {
+                const parsed = parseInt(row.querySelector('.table-field-width')?.value || '', 10);
+                return Number.isNaN(parsed) ? null : parsed;
+            })()
         })).filter(f => f.fieldName);
     }
 
