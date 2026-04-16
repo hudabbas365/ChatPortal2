@@ -136,9 +136,9 @@ public class AuthController : Controller
         if (string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Password))
             return BadRequest(new { error = "Email and password are required." });
 
-        // Create Organization first
+        // Create Organization first (with FreeTrial plan so token budget is available)
         var orgName = !string.IsNullOrWhiteSpace(req.OrganizationName) ? req.OrganizationName : (req.FullName ?? req.Email) + "'s Organization";
-        var org = new Organization { Name = orgName };
+        var org = new Organization { Name = orgName, Plan = PlanType.FreeTrial };
         _db.Organizations.Add(org);
         await _db.SaveChangesAsync();
 
@@ -189,13 +189,35 @@ public class AuthController : Controller
             return BadRequest(new { error = "Please complete the CAPTCHA." });
         }
 
-        var user = await _userManager.FindByEmailAsync(req.Email);
+        // Look up by email first, then fall back to username
+        var user = await _userManager.FindByEmailAsync(req.Email)
+                   ?? await _userManager.FindByNameAsync(req.Email);
         if (user == null)
+        {
+            _logger.LogWarning("Login failed: no user found for '{Identifier}'.", req.Email);
             return Unauthorized(new { error = "Invalid credentials." });
+        }
+
+        // Check if the account is locked out before attempting password check
+        if (await _userManager.IsLockedOutAsync(user))
+        {
+            var lockoutEnd = await _userManager.GetLockoutEndDateAsync(user);
+            var remaining = lockoutEnd.HasValue ? (int)Math.Ceiling((lockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes) : 0;
+            _logger.LogWarning("Login failed: account '{Email}' is locked out for {Minutes} more minutes.", user.Email, remaining);
+            return Unauthorized(new { error = $"Account is locked. Please try again in {remaining} minute(s)." });
+        }
 
         var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, true);
+        if (result.IsLockedOut)
+        {
+            _logger.LogWarning("Login failed: account '{Email}' just became locked out.", user.Email);
+            return Unauthorized(new { error = "Too many failed attempts. Account is locked for 15 minutes." });
+        }
         if (!result.Succeeded)
+        {
+            _logger.LogWarning("Login failed: invalid password for '{Email}'.", user.Email);
             return Unauthorized(new { error = "Invalid credentials." });
+        }
 
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);

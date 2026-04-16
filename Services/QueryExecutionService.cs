@@ -72,9 +72,14 @@ public class QueryExecutionService : IQueryExecutionService
         // Must start with SELECT, WITH (CTE), or EVALUATE (DAX)
         if (!upper.StartsWith("SELECT") && !upper.StartsWith("WITH") && !upper.StartsWith("EVALUATE"))
             return false;
-        // Block stacked queries
-        if (sql.Contains(';') && !upper.StartsWith("EVALUATE"))
-            return false;
+        // Block stacked queries (multiple statements via semicolons) — but not for DAX/EVALUATE
+        if (!upper.StartsWith("EVALUATE"))
+        {
+            // Strip trailing semicolons, then check for any remaining ones (stacked statements)
+            var trimmed = upper.TrimEnd(';', ' ', '\r', '\n', '\t');
+            if (trimmed.Contains(';'))
+                return false;
+        }
         foreach (var pattern in BlockedSqlPatterns)
             if (System.Text.RegularExpressions.Regex.IsMatch(sql, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 return false;

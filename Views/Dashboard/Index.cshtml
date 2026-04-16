@@ -571,6 +571,7 @@
         </div>
         <div class="dcp-input-area">
             <textarea class="dcp-input" id="dcpInput" rows="1" placeholder="Ask AI to help design your report…"></textarea>
+            <button class="dcp-send-btn" id="dcpStopBtn" title="Stop generating" style="display:none;"><i class="bi bi-stop-circle-fill"></i></button>
             <button class="dcp-send-btn" id="dcpSendBtn" title="Send"><i class="bi bi-send-fill"></i></button>
         </div>
     </aside>
@@ -951,7 +952,7 @@
                     activePageIndex: canvasManager.activePageIndex
                 });
                 const defaultReportName = document.getElementById('canvas-name-display')?.textContent || ('Report — ' + new Date().toLocaleDateString());
-                const reportName = prompt('Enter a name for this report:', defaultReportName);
+                const reportName = await window._openSaveReportModal(defaultReportName);
                 if (!reportName) {
                     btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
                     btn.disabled = false;
@@ -1014,7 +1015,6 @@
                     viewBtn.onclick = () => window.open('/report/view/' + report.guid, '_blank');
                 }
                 btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Saved!';
-                alert(`Report "${reportName}" saved successfully!`);
                 setTimeout(() => {
                     btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Save Report';
                     btn.disabled = false;
@@ -1040,6 +1040,67 @@ function promptRename() {
         });
     }
 }
+</script>
+
+<!-- Save Report Modal -->
+<div class="modal fade" id="saveReportModal" tabindex="-1" aria-labelledby="saveReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:12px;border:1px solid var(--cp-border);background:var(--cp-surface);">
+            <div class="modal-header" style="border-bottom:1px solid var(--cp-border);padding:16px 20px;">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-check" style="font-size:1.2rem;color:var(--cp-primary);"></i>
+                    <h6 class="modal-title mb-0" id="saveReportModalLabel" style="font-weight:600;">Save Report</h6>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="padding:20px;">
+                <label for="saveReportNameInput" class="form-label" style="font-size:0.85rem;font-weight:500;">Report Name</label>
+                <input type="text" class="form-control" id="saveReportNameInput" maxlength="200" placeholder="Enter a name for this report" autocomplete="off" />
+                <div class="form-text mt-1" style="font-size:0.78rem;">Give your report a descriptive name so you can find it later.</div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--cp-border);padding:12px 20px;gap:8px;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary" id="saveReportModalConfirm">
+                    <i class="bi bi-check-lg me-1"></i>Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// Wire the Save Report modal confirm
+(function() {
+    let _saveResolve = null;
+    const modal = document.getElementById('saveReportModal');
+    const input = document.getElementById('saveReportNameInput');
+    const confirmBtn = document.getElementById('saveReportModalConfirm');
+    if (!modal || !input || !confirmBtn) return;
+    const bsModal = new bootstrap.Modal(modal);
+
+    // Expose a promise-based open function
+    window._openSaveReportModal = function(defaultName) {
+        return new Promise((resolve) => {
+            _saveResolve = resolve;
+            input.value = defaultName || '';
+            bsModal.show();
+            setTimeout(() => { input.focus(); input.select(); }, 300);
+        });
+    };
+    confirmBtn.addEventListener('click', () => {
+        const val = input.value.trim();
+        if (!val) { input.classList.add('is-invalid'); return; }
+        input.classList.remove('is-invalid');
+        bsModal.hide();
+        if (_saveResolve) { _saveResolve(val); _saveResolve = null; }
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); confirmBtn.click(); }
+        input.classList.remove('is-invalid');
+    });
+    modal.addEventListener('hidden.bs.modal', () => {
+        if (_saveResolve) { _saveResolve(null); _saveResolve = null; }
+    });
+})();
 </script>
 </body>
 </html>

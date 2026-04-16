@@ -196,6 +196,20 @@
 }
 .rv-qa-send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
 
+/* ── Stop Button (mirrors send button styling) ───────────── */
+.rv-qa-stop-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: #fff; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.rv-qa-stop-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 3px 10px rgba(239, 68, 68, 0.35);
+}
+
 /* ── Empty state in messages ──────────────────────────────── */
 .rv-qa-messages:empty::after {
     content: 'Ask a question about your report or pick a suggestion above.';

@@ -316,7 +316,8 @@ public class OrgAdminController : Controller
     public async Task<IActionResult> GetTokenUsage([FromQuery] int organizationId)
     {
         var caller = await GetCallerAsync();
-        if (caller == null || !IsOrgAdminOf(caller, organizationId))
+        // Allow any authenticated user who belongs to this organization (not just OrgAdmin)
+        if (caller == null || (caller.OrganizationId != organizationId && !IsOrgAdminOf(caller, organizationId)))
             return StatusCode(403, new { error = "You do not have permission to view this organization's token usage." });
 
         var status = await _tokenBudget.GetStatusAsync(organizationId);

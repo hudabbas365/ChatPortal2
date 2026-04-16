@@ -84,6 +84,34 @@
                     </div>
                 </div>
                 <div class="org-form-card" style="margin-top:16px">
+                    <!-- License Info Widget -->
+                    <div class="license-info-card mb-3" id="licenseInfoCard">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong><i class="bi bi-key me-2"></i>License Management</strong>
+                            <button class="btn btn-sm cp-btn-gradient" id="buyLicensesBtn">
+                                <i class="bi bi-cart-plus me-1"></i>Buy Licenses
+                            </button>
+                        </div>
+                        <div class="d-flex gap-3 flex-wrap mb-2">
+                            <div class="license-stat">
+                                <span class="license-stat-label">Purchased</span>
+                                <span class="badge bg-primary" id="licensePurchased">0</span>
+                            </div>
+                            <div class="license-stat">
+                                <span class="license-stat-label">Assigned</span>
+                                <span class="badge bg-warning text-dark" id="licenseAssigned">0</span>
+                            </div>
+                            <div class="license-stat">
+                                <span class="license-stat-label">Available</span>
+                                <span class="badge bg-success" id="licenseAvailable">0</span>
+                            </div>
+                            <div class="license-stat">
+                                <span class="license-stat-label">Plan</span>
+                                <span class="badge bg-info" id="licensePlanType">—</span>
+                            </div>
+                        </div>
+                        <div class="small text-muted" id="licenseHint">Each license allows you to assign a paid plan to one user.</div>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h4 style="margin:0;font-size:1rem;font-weight:600">Users</h4>
@@ -94,8 +122,8 @@
                     </div>
                     <div class="table-responsive">
                         <table class="table cp-table">
-                            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>License</th><th>Token Budget</th><th>Actions</th></tr></thead>
-                            <tbody id="usersTableBody"><tr><td colspan="7" class="text-center text-muted py-3">No users yet</td></tr></tbody>
+                            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>License</th><th>Actions</th></tr></thead>
+                            <tbody id="usersTableBody"><tr><td colspan="6" class="text-center text-muted py-3">No users yet</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -287,22 +315,130 @@
     </div>
 </div>
 
-<!-- Payment Placeholder Modal -->
+<!-- PayPal Payment Modal -->
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-credit-card me-2"></i>Payment Processing</h5>
+                <h5 class="modal-title"><i class="bi bi-paypal me-2"></i>Complete Payment</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body text-center py-4">
-                <i class="bi bi-stripe fs-1 text-primary mb-3 d-block"></i>
-                <h5>Payment Integration Coming Soon</h5>
-                <p class="text-muted">Stripe and PayPal payment processing will be integrated here. Your plan upgrade request has been noted.</p>
-                <p class="text-muted small">Contact us at <strong>billing@AIInsights.com</strong> for manual upgrades.</p>
+            <div class="modal-body">
+                <div id="paymentSummary" class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded" style="background:var(--cp-glass-bg, #f8f9fa)">
+                        <div>
+                            <div class="fw-bold" id="paymentItemName">—</div>
+                            <div class="text-muted small" id="paymentItemDesc">—</div>
+                        </div>
+                        <div class="fw-bold fs-5 text-primary" id="paymentItemPrice">$0</div>
+                    </div>
+                </div>
+                <div id="paymentAlert" class="alert d-none mb-3"></div>
+                <div id="paymentProcessing" class="text-center py-4 d-none">
+                    <span class="spinner-border text-primary mb-2"></span>
+                    <p class="text-muted">Processing your payment with PayPal…</p>
+                </div>
+                <div id="paymentActions">
+                    <button class="btn cp-btn-gradient w-100" id="payWithPayPalBtn">
+                        <i class="bi bi-paypal me-1"></i>Pay with PayPal
+                    </button>
+                    <p class="text-muted small text-center mt-2 mb-0">You will be redirected to PayPal to complete the payment securely.</p>
+                </div>
+                <div id="paymentSuccess" class="text-center py-4 d-none">
+                    <i class="bi bi-check-circle-fill text-success fs-1 d-block mb-2"></i>
+                    <h5>Payment Successful!</h5>
+                    <p class="text-muted" id="paymentSuccessMsg">Your purchase has been applied.</p>
+                </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn cp-btn-gradient" data-bs-dismiss="modal">Got it</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Buy Licenses Modal -->
+<div class="modal fade" id="buyLicensesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-key me-2"></i>Buy Licenses</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="buyLicAlert" class="alert d-none mb-3"></div>
+                <p class="text-muted small">Each license costs <strong>$25/user</strong> (Professional) or <strong>$45/user</strong> (Enterprise). Purchase licenses so you can assign paid plans to your users.</p>
+                <div class="mb-3">
+                    <label class="form-label-cp">Number of Licenses</label>
+                    <input type="number" class="form-control cp-input" id="buyLicCount" min="1" value="1" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label-cp">License Type</label>
+                    <select class="form-select cp-input" id="buyLicType">
+                        <option value="Professional">Professional — $25/license</option>
+                        <option value="Enterprise">Enterprise — $45/license</option>
+                    </select>
+                </div>
+                <div class="p-3 rounded mb-3" style="background:var(--cp-glass-bg, #f8f9fa)">
+                    <div class="d-flex justify-content-between">
+                        <span>Total</span>
+                        <strong id="buyLicTotal">$25.00</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="submitBuyLicBtn">
+                    <i class="bi bi-paypal me-1"></i>Pay with PayPal
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Buy Token Pack Modal -->
+<div class="modal fade" id="buyTokenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cpu me-2"></i>Buy Token Packs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="buyTokenAlert" class="alert d-none mb-3"></div>
+                <p class="text-muted small">Add more AI tokens to your organization. Choose a package below:</p>
+                <div class="d-flex flex-column gap-2" id="tokenPackageList">
+                    <label class="token-pack-option">
+                        <input type="radio" name="tokenPack" value="0" data-tokens="1000000" data-price="15" checked />
+                        <div class="token-pack-card">
+                            <div class="fw-bold">1M Tokens</div>
+                            <div class="text-muted small">1,000,000 extra tokens</div>
+                            <div class="fw-bold text-primary">$15.00</div>
+                        </div>
+                    </label>
+                    <label class="token-pack-option">
+                        <input type="radio" name="tokenPack" value="1" data-tokens="2000000" data-price="20" />
+                        <div class="token-pack-card">
+                            <div class="fw-bold">2M Tokens</div>
+                            <div class="text-muted small">2,000,000 extra tokens</div>
+                            <div class="fw-bold text-primary">$20.00</div>
+                        </div>
+                    </label>
+                    <label class="token-pack-option">
+                        <input type="radio" name="tokenPack" value="2" data-tokens="10000000" data-price="25" />
+                        <div class="token-pack-card">
+                            <div class="fw-bold">10M Tokens</div>
+                            <div class="text-muted small">10,000,000 extra tokens</div>
+                            <div class="fw-bold text-primary">$25.00</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="submitBuyTokenBtn">
+                    <i class="bi bi-paypal me-1"></i>Pay with PayPal
+                </button>
             </div>
         </div>
     </div>
@@ -349,30 +485,112 @@
             </div>
             <div class="glass-card p-4 mb-3">
                 <h5>Token Add-ons</h5>
-                <p class="text-muted small mb-2">Enterprise token packs add <strong>2,000,000</strong> tokens each at <strong>$15</strong> per pack.</p>
+                <p class="text-muted small mb-2">Purchase additional AI tokens for your organization.</p>
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span>Current extra packs: <strong id="enterprisePackCount">${plan?.enterpriseExtraTokenPacks || 0}</strong></span>
                     <span>Total extra tokens: <strong id="enterprisePackTokens">${((plan?.enterpriseExtraTokenPacks || 0) * 2000000).toLocaleString()}</strong></span>
                 </div>
-                <button class="btn btn-sm cp-btn-gradient ${!isEnterprise ? 'disabled' : ''}" id="buyTokenPackBtn" ${!isEnterprise ? 'disabled' : ''}>Buy More</button>
+                <button class="btn btn-sm cp-btn-gradient" id="buyTokenPackBtn">
+                    <i class="bi bi-cart-plus me-1"></i>Buy More Tokens
+                </button>
             </div>
             <div class="glass-card p-4">
                 <h5>Billing History</h5>
                 <p class="text-muted small">No invoices yet. Invoices will appear here once you have an active paid plan.</p>
             </div>`;
         document.getElementById('buyTokenPackBtn')?.addEventListener('click', function() {
-            fetch('/api/billing/token-packs', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ organizationId: orgId, packs: 1 })
-            }).then(r => r.json()).then(function(d) {
-                if (d.error) { alert(d.error); return; }
-                document.getElementById('enterprisePackCount').textContent = d.packs;
-                document.getElementById('enterprisePackTokens').textContent = (d.totalExtraTokens || 0).toLocaleString();
-                loadTokenUsage();
-            });
+            new bootstrap.Modal(document.getElementById('buyTokenModal')).show();
         });
     }
+
+    // ── Pending PayPal payment context ──
+    let _pendingPayment = { type: '', amount: 0, description: '', quantity: 0, tokenAmount: 0, planKey: '' };
+
+    function openPayPalPayment(type, amount, description, extra) {
+        _pendingPayment = { type, amount, description, quantity: extra?.quantity || 0, tokenAmount: extra?.tokenAmount || 0, planKey: extra?.planKey || '' };
+        document.getElementById('paymentItemName').textContent = description;
+        document.getElementById('paymentItemDesc').textContent = type === 'license' ? 'License purchase' : type === 'token_pack' ? 'Token pack' : 'Plan upgrade';
+        document.getElementById('paymentItemPrice').textContent = '$' + amount.toFixed(2);
+        document.getElementById('paymentAlert').classList.add('d-none');
+        document.getElementById('paymentProcessing').classList.add('d-none');
+        document.getElementById('paymentActions').classList.remove('d-none');
+        document.getElementById('paymentSuccess').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('paymentModal')).show();
+    }
+
+    document.getElementById('payWithPayPalBtn')?.addEventListener('click', async function() {
+        const btn = this;
+        const alertEl = document.getElementById('paymentAlert');
+        const processing = document.getElementById('paymentProcessing');
+        const actions = document.getElementById('paymentActions');
+
+        btn.disabled = true;
+        actions.classList.add('d-none');
+        processing.classList.remove('d-none');
+
+        try {
+            // 1. Create PayPal order
+            const createResp = await fetch('/api/paypal/create-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: _pendingPayment.amount, description: _pendingPayment.description })
+            });
+            const createData = await createResp.json();
+            if (!createResp.ok || !createData.orderId) {
+                throw new Error(createData.error || 'Failed to create PayPal order.');
+            }
+
+            // 2. Open PayPal approval in popup
+            const popup = window.open(createData.approveUrl, 'PayPal', 'width=500,height=650,scrollbars=yes');
+
+            // 3. Poll for popup close (user approved or cancelled)
+            await new Promise((resolve, reject) => {
+                const interval = setInterval(() => {
+                    if (!popup || popup.closed) {
+                        clearInterval(interval);
+                        resolve();
+                    }
+                }, 500);
+                // Timeout after 10 minutes
+                setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
+            });
+
+            // 4. Capture the order
+            const captureResp = await fetch('/api/paypal/capture-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: createData.orderId,
+                    organizationId: orgId,
+                    purchaseType: _pendingPayment.type,
+                    quantity: _pendingPayment.quantity,
+                    tokenAmount: _pendingPayment.tokenAmount,
+                    planKey: _pendingPayment.planKey
+                })
+            });
+            const captureData = await captureResp.json();
+
+            if (captureResp.ok && captureData.success) {
+                processing.classList.add('d-none');
+                document.getElementById('paymentSuccessMsg').textContent = captureData.message || 'Purchase applied successfully!';
+                document.getElementById('paymentSuccess').classList.remove('d-none');
+                // Refresh relevant data
+                loadBilling();
+                loadLicenseInfo();
+                loadTokenUsage();
+            } else {
+                throw new Error(captureData.error || 'Payment capture failed.');
+            }
+        } catch (err) {
+            processing.classList.add('d-none');
+            actions.classList.remove('d-none');
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = err.message || 'Payment failed. Please try again.';
+            alertEl.classList.remove('d-none');
+        } finally {
+            btn.disabled = false;
+        }
+    });
 
     window.upgradeplan = function(planKey) {
         if (!userId) return;
@@ -386,7 +604,8 @@
                 else { loadBilling(); }
             });
         } else {
-            new bootstrap.Modal(document.getElementById('paymentModal')).show();
+            const price = planKey === 'Enterprise' ? 45.00 : 25.00;
+            openPayPalPayment('plan_upgrade', price, planKey + ' Plan Upgrade', { planKey });
         }
     };
 
@@ -464,10 +683,9 @@
         fetch(`/api/org/users?organizationId=${orgId}`)
             .then(r => r.json())
             .then(users => {
-                if (!users.length) { document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No users yet</td></tr>'; return; }
+                if (!users.length) { document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No users yet</td></tr>'; return; }
                 document.getElementById('usersTableBody').innerHTML = users.map(u => {
                     const plan = (u.assignedPlan || 'Free');
-                    const planBudget = plan === 'Enterprise' ? '10,000,000 +' : plan === 'Professional' ? '2,000,000' : plan === 'FreeTrial' ? '10,000' : '0';
                     const statusBadge = u.status === 'Pending' ? '<span class="badge bg-warning text-dark">Pending</span>'
                         : u.status === 'Suspended' ? '<span class="badge bg-danger">Suspended</span>'
                         : '<span class="badge bg-success">Active</span>';
@@ -486,7 +704,6 @@
                                 <button class="btn btn-sm btn-outline-primary" onclick="assignLicense('${u.id}')">Save</button>
                             </div>
                         </td>
-                        <td><span class="small text-muted">${planBudget}</span></td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary" onclick="changeRole('${u.id}','${u.role}')"><i class="bi bi-pencil"></i></button>
@@ -524,6 +741,7 @@
             if (d.error) { alert(d.error); return; }
             alert('License assigned successfully.');
             loadUsers();
+            loadLicenseInfo();
         });
     };
     window.openResetPassword = function(uid) {
@@ -594,6 +812,63 @@
         }).catch(() => { alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Request failed.'; alertEl.classList.remove('d-none'); });
     });
 
+    // License Info
+    function loadLicenseInfo() {
+        if (!orgId) return;
+        fetch(`/api/billing/license-info?organizationId=${orgId}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('licensePurchased').textContent = data.purchased || 0;
+                document.getElementById('licenseAssigned').textContent = data.assigned || 0;
+                document.getElementById('licenseAvailable').textContent = data.available || 0;
+                document.getElementById('licensePlanType').textContent = data.plan || '—';
+                const hint = document.getElementById('licenseHint');
+                if (hint) {
+                    if (data.available <= 0 && data.purchased > 0) {
+                        hint.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>No licenses available. Buy more to assign paid plans to users.';
+                    } else if (data.purchased === 0) {
+                        hint.innerHTML = '<i class="bi bi-info-circle me-1"></i>No licenses purchased yet. Buy licenses to assign paid plans to users.';
+                    } else {
+                        hint.textContent = `${data.available} license(s) available for assignment.`;
+                    }
+                }
+            }).catch(() => {});
+    }
+
+    // Buy Licenses Modal
+    document.getElementById('buyLicensesBtn')?.addEventListener('click', function() {
+        updateLicenseTotal();
+        new bootstrap.Modal(document.getElementById('buyLicensesModal')).show();
+    });
+
+    function updateLicenseTotal() {
+        const count = parseInt(document.getElementById('buyLicCount')?.value) || 1;
+        const type = document.getElementById('buyLicType')?.value || 'Professional';
+        const price = type === 'Enterprise' ? 45.00 : 25.00;
+        document.getElementById('buyLicTotal').textContent = '$' + (count * price).toFixed(2);
+    }
+    document.getElementById('buyLicCount')?.addEventListener('input', updateLicenseTotal);
+    document.getElementById('buyLicType')?.addEventListener('change', updateLicenseTotal);
+
+    document.getElementById('submitBuyLicBtn')?.addEventListener('click', function() {
+        const count = parseInt(document.getElementById('buyLicCount')?.value) || 1;
+        const type = document.getElementById('buyLicType')?.value || 'Professional';
+        const price = type === 'Enterprise' ? 45.00 : 25.00;
+        const total = count * price;
+        bootstrap.Modal.getInstance(document.getElementById('buyLicensesModal'))?.hide();
+        openPayPalPayment('license', total, `${count} ${type} License(s)`, { quantity: count });
+    });
+
+    // Buy Token Pack Modal
+    document.getElementById('submitBuyTokenBtn')?.addEventListener('click', function() {
+        const selected = document.querySelector('input[name="tokenPack"]:checked');
+        if (!selected) return;
+        const tokens = parseInt(selected.dataset.tokens);
+        const price = parseFloat(selected.dataset.price);
+        bootstrap.Modal.getInstance(document.getElementById('buyTokenModal'))?.hide();
+        openPayPalPayment('token_pack', price, `${(tokens).toLocaleString()} Token Pack`, { tokenAmount: tokens });
+    });
+
     // Token Usage
     function loadTokenUsage() {
         if (!orgId) return;
@@ -618,7 +893,7 @@
         document.querySelectorAll('.org-settings-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
         if (tab === 'billing') loadBilling();
         else if (tab === 'activity') loadActivity();
-        else if (tab === 'users') { loadUsers(); loadTokenUsage(); }
+        else if (tab === 'users') { loadUsers(); loadTokenUsage(); loadLicenseInfo(); }
         else if (tab === 'ws-members' && window.orgAdminWM) orgAdminWM.init(orgId);
     }
     document.querySelectorAll('.org-settings-nav-item').forEach(btn => {
@@ -639,6 +914,7 @@
     // Initial loads
     loadUsers();
     loadTokenUsage();
+    loadLicenseInfo();
     loadBilling();
 })();
 </script>

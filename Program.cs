@@ -109,6 +109,8 @@ builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionServi
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 builder.Services.AddScoped<ITrialEnforcementService, TrialEnforcementService>();
+builder.Services.AddHttpClient("PayPal");
+builder.Services.AddScoped<IPayPalService, PayPalService>();
 
 // Session support
 builder.Services.AddDistributedMemoryCache();

@@ -6,6 +6,7 @@
     const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
     let _isStreaming = false;
     let _isOpen      = false;
+    let _abortController = null;
 
     // ── Helpers ──────────────────────────────────────────────────────
     function _esc(str) {
@@ -314,9 +315,12 @@
 
         _isStreaming = true;
 
+        _abortController = new AbortController();
         const sendBtn = document.getElementById('dcpSendBtn');
+        const stopBtn = document.getElementById('dcpStopBtn');
         const input   = document.getElementById('dcpInput');
-        if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+        if (sendBtn) sendBtn.style.display = 'none';
+        if (stopBtn) { stopBtn.style.display = ''; stopBtn.onclick = () => { if (_abortController) _abortController.abort(); }; }
         if (input)   { input.disabled = true; }
 
         addUserBubble(text);
@@ -339,7 +343,8 @@
                     reportGuid   : window._currentReportGuid || null,
                     pageIndex    : window.canvasManager?.activePageIndex ?? null,
                     agentId      : window._dashboardWsData?.agentId || null
-                })
+                }),
+                signal: _abortController.signal
             });
             _httpStatus = response.status;
 
@@ -392,7 +397,11 @@
             }
         } finally {
             _isStreaming = false;
-            if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
+            _abortController = null;
+            const sendBtn = document.getElementById('dcpSendBtn');
+            const stopBtn = document.getElementById('dcpStopBtn');
+            if (sendBtn) { sendBtn.style.display = ''; sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
+            if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.onclick = null; }
             if (input)   { input.disabled = false; input.style.height = ''; input.focus(); }
         }
     }

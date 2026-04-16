@@ -6,6 +6,7 @@
     let currentWorkspaceId = null;
     let currentChatId = null;
     let isStreaming = false;
+    let _abortController = null;
 
     function escapeHtml(text) {
         const div = document.createElement('div');
@@ -1004,9 +1005,14 @@
         let fullText = '';
 
         const sendBtn = document.getElementById('chatSendBtn');
-        if (sendBtn) {
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        const stopBtn = document.getElementById('chatStopBtn');
+        if (sendBtn) { sendBtn.style.display = 'none'; }
+        if (stopBtn) { stopBtn.style.display = ''; }
+
+        // Create AbortController for this request
+        _abortController = new AbortController();
+        if (stopBtn) {
+            stopBtn.onclick = () => { if (_abortController) _abortController.abort(); };
         }
 
         // ── Thinking panel: start step 1 immediately ─────────────────
@@ -1028,7 +1034,8 @@
                             workspaceId: currentWorkspaceId,
                             agentId: window.currentAgentGuid || '',
                             userId: user?.id || ''
-                        })
+                        }),
+                    signal: _abortController.signal
                 });
                 _httpStatus = response.status;
 
@@ -1106,10 +1113,11 @@
             });
         } finally {
             isStreaming = false;
-            if (sendBtn) {
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>';
-            }
+            _abortController = null;
+            const sendBtn = document.getElementById('chatSendBtn');
+            const stopBtn = document.getElementById('chatStopBtn');
+            if (sendBtn) { sendBtn.style.display = ''; sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
+            if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.onclick = null; }
         }
     }
 

@@ -18,7 +18,9 @@
     let _msgsEl    = null;
     let _inputEl   = null;
     let _sendBtn   = null;
+    let _stopBtn   = null;
     let _isBusy    = false;
+    let _abortController = null;
 
     // ── Build DOM ──────────────────────────────────────────────────────────────
     function _buildPanel() {
@@ -49,9 +51,14 @@
             });
         }
 
-        // Input + send
+        // Input + send + stop
         _inputEl = _panelEl.querySelector('.rv-qa-textarea');
         _sendBtn = _panelEl.querySelector('.rv-qa-send-btn');
+        _stopBtn = _panelEl.querySelector('.rv-qa-stop-btn');
+
+        if (_stopBtn) {
+            _stopBtn.addEventListener('click', () => { if (_abortController) _abortController.abort(); });
+        }
 
         if (_inputEl) {
             _inputEl.addEventListener('keydown', e => {
@@ -159,7 +166,10 @@
     async function sendMessage(text) {
         if (_isBusy || !text) return;
         _isBusy = true;
-        if (_sendBtn) _sendBtn.disabled = true;
+        if (_sendBtn) _sendBtn.style.display = 'none';
+        if (_stopBtn) _stopBtn.style.display = '';
+
+        _abortController = new AbortController();
 
         addUserBubble(text);
         open(); // ensure panel is open
@@ -186,6 +196,7 @@
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify(payload),
+                signal:  _abortController.signal,
             });
 
             // Remove thinking indicator and add real bubble
@@ -223,7 +234,9 @@
             console.warn('[report-qa-panel] send error:', err);
         } finally {
             _isBusy = false;
-            if (_sendBtn) _sendBtn.disabled = false;
+            _abortController = null;
+            if (_sendBtn) { _sendBtn.style.display = ''; _sendBtn.disabled = false; }
+            if (_stopBtn) _stopBtn.style.display = 'none';
             if (_inputEl) _inputEl.focus();
         }
     }

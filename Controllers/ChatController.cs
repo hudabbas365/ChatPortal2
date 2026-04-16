@@ -208,8 +208,25 @@ Always be concise and actionable.";
             effectiveSystemPrompt += "\n\n" + reportContext;
         if (!string.IsNullOrEmpty(datasourceIdentity))
             effectiveSystemPrompt += datasourceIdentity;
+        // When the user is viewing a specific report, keep schema brief to focus on report context
         if (!string.IsNullOrEmpty(schemaContext))
-            effectiveSystemPrompt += "\n\n" + schemaContext;
+        {
+            if (req.Context == "report_viewer" && !string.IsNullOrEmpty(reportContext))
+            {
+                effectiveSystemPrompt += "\n\n## Schema Reference (abbreviated)\n" +
+                    "The full datasource schema is available but keep your focus on the report's existing charts and queries shown above. " +
+                    "Only reference the schema when the user explicitly asks to explore data beyond the report.\n" +
+                    schemaContext;
+                effectiveSystemPrompt += "\n\n**IMPORTANT**: The user is currently viewing a specific report. " +
+                    "Prioritize answering questions about the charts, data, and insights visible in THIS report. " +
+                    "Describe what the charts show, explain trends, and summarize findings from the report context above. " +
+                    "Only generate new queries when the user explicitly asks for additional data exploration.";
+            }
+            else
+            {
+                effectiveSystemPrompt += "\n\n" + schemaContext;
+            }
+        }
      
 
         var fullResponse = new StringBuilder();

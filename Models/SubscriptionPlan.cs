@@ -5,6 +5,14 @@ public static class PlanPricing
     public const decimal ProPricePerUser = 25.00m;
     public const decimal EnterprisePricePerUser = 45.00m;
     public const decimal EnterpriseTokenPackPrice = 15.00m;
+
+    // Token packages (available to all plans)
+    public static readonly (string Name, int Tokens, decimal Price)[] TokenPackages = new[]
+    {
+        ("1M Tokens",  1_000_000,  15.00m),
+        ("2M Tokens",  2_000_000,  20.00m),
+        ("10M Tokens", 10_000_000, 25.00m)
+    };
 }
 
 public enum PlanType { Free, FreeTrial, Professional, Enterprise }

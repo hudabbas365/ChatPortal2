@@ -207,7 +207,7 @@ public class WorkspaceController : Controller
         {
             var wsCount = await _db.Workspaces.CountAsync(w => w.OrganizationId == orgId);
             if (wsCount >= callerOrg.MaxWorkspaces)
-                return StatusCode(403, new { error = $"Your plan allows a maximum of {callerOrg.MaxWorkspaces} workspace(s). Upgrade to Enterprise for unlimited workspaces." });
+                return StatusCode(403, new { error = $"Your plan allows a maximum of {callerOrg.MaxWorkspaces} workspace(s) In current plan per Orgnization" });
         }
 
         var workspace = new Workspace

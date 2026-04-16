@@ -63,8 +63,9 @@ class CanvasManager {
         const defaultX = 20 + (this.charts.length % 5) * 30;
         const defaultY = 20 + (this.charts.length % 5) * 30;
         // Resolve default dataset: prefer first real table from datasource dropdown, else 'sales'
-        let defaultDataset = partial.datasetName || 'sales';
-        if (!partial.datasetName && window.currentDatasourceId) {
+        // When a dataQuery is provided (e.g. from Chat transfer), skip the default so chartRenderer uses the query path
+        let defaultDataset = partial.datasetName || (partial.dataQuery ? '' : 'sales');
+        if (!partial.datasetName && !partial.dataQuery && window.currentDatasourceId) {
             const dsSel = document.getElementById('prop-dataset');
             if (dsSel && dsSel.options.length > 0) defaultDataset = dsSel.options[0].value;
         }
@@ -234,7 +235,7 @@ class CanvasManager {
             card.innerHTML = `
                 <div class="chart-card-header">
                     <i class="bi bi-grip-vertical chart-drag-handle text-muted me-2" title="Drag to reposition"></i>
-                    <span class="chart-title">${safeTitle}</span>
+                    <span class="chart-title" title="Double-click to edit title">${safeTitle}</span>
                     <div class="chart-card-actions ms-auto">
                         <button class="btn btn-xs btn-icon" data-action="edit" title="Edit">
                             <i class="bi bi-pencil"></i>
@@ -252,6 +253,45 @@ class CanvasManager {
                 </div>
                 <div class="chart-resize-handle" title="Drag to resize"></div>
             `;
+        }
+
+        // ── Inline title editing on double-click ──
+        const titleEl = card.querySelector('.chart-title');
+        if (titleEl) {
+            titleEl.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (titleEl.contentEditable === 'true') return;
+                titleEl.contentEditable = 'true';
+                titleEl.classList.add('editing');
+                titleEl.focus();
+                // Select all text
+                const range = document.createRange();
+                range.selectNodeContents(titleEl);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
+            const commitTitle = () => {
+                if (titleEl.contentEditable !== 'true') return;
+                titleEl.contentEditable = 'false';
+                titleEl.classList.remove('editing');
+                const newTitle = titleEl.textContent.trim() || chartDef.title;
+                titleEl.textContent = newTitle;
+                if (newTitle !== chartDef.title) {
+                    chartDef.title = newTitle;
+                    const idx = this.charts.findIndex(c => c.id === chartDef.id);
+                    if (idx >= 0) this.charts[idx].title = newTitle;
+                    this.updateChart(chartDef);
+                    if (window.propertiesPanel && this.selectedChartId === chartDef.id) {
+                        window.propertiesPanel.load(chartDef);
+                    }
+                }
+            };
+            titleEl.addEventListener('blur', commitTitle);
+            titleEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+                if (e.key === 'Escape') { titleEl.textContent = chartDef.title; titleEl.blur(); }
+            });
         }
 
         card.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
