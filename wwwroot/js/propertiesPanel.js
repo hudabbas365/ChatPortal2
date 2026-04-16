@@ -1126,13 +1126,16 @@ class PropertiesPanel {
             addBtn.addEventListener('click', () => this._addTableFieldRow({ fieldName: '', label: '', visible: true, width: '' }));
         }
         if (!fields || fields.length === 0) {
-            this._addTableFieldRow({ fieldName: this.fields[0] || '', label: this.fields[0] || '', visible: true, width: '' });
+            const firstField = Array.isArray(this.fields) && this.fields.length > 0 ? this.fields[0] : '';
+            this._addTableFieldRow({ fieldName: firstField, label: firstField, visible: true, width: '' });
         }
     }
 
     _addTableFieldRow(fieldDef) {
         const container = document.getElementById('table-fields-container');
         if (!container) return;
+        const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : String(v ?? '');
+        const optionsHtml = this.fields.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
         const row = document.createElement('div');
         row.className = 'border rounded p-2 mb-1 table-field-row';
         row.innerHTML = `
@@ -1141,12 +1144,12 @@ class PropertiesPanel {
                     <label class="form-label mb-0" style="font-size:0.68rem">Field</label>
                     <select class="form-select form-select-sm table-field-name">
                         <option value="">--</option>
-                        ${this.fields.map(f => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(f) : f}">${typeof escapeHtml === 'function' ? escapeHtml(f) : f}</option>`).join('')}
+                        ${optionsHtml}
                     </select>
                 </div>
                 <div class="col-4">
                     <label class="form-label mb-0" style="font-size:0.68rem">Display Label</label>
-                    <input type="text" class="form-control form-control-sm table-field-label" value="${typeof escapeHtml === 'function' ? escapeHtml(fieldDef?.label || '') : (fieldDef?.label || '')}">
+                    <input type="text" class="form-control form-control-sm table-field-label" value="${esc(fieldDef?.label || '')}">
                 </div>
                 <div class="col-2">
                     <label class="form-label mb-0" style="font-size:0.68rem">Width</label>

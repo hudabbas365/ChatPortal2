@@ -717,8 +717,8 @@
                             <div class="d-flex gap-1">
                                 <select class="form-select form-select-sm" id="license_${u.id}" autocomplete="off">
                                     <option value="FreeTrial" ${plan === 'FreeTrial' || plan === 'Free' ? 'selected' : ''}>Free Trial</option>
-                                    <option value="Professional" ${plan === 'Professional' ? 'selected' : ''} ${proDisabled ? 'disabled title="0 licenses available"' : ''}>Pro${proDisabled ? ' (0 licenses available)' : ''}</option>
-                                    <option value="Enterprise" ${plan === 'Enterprise' ? 'selected' : ''} ${entDisabled ? 'disabled title="0 licenses available"' : ''}>Enterprise${entDisabled ? ' (0 licenses available)' : ''}</option>
+                                    <option value="Professional" ${plan === 'Professional' ? 'selected' : ''} ${proDisabled ? `disabled title="${_licenseAvailability.pro} licenses available"` : ''}>Pro</option>
+                                    <option value="Enterprise" ${plan === 'Enterprise' ? 'selected' : ''} ${entDisabled ? `disabled title="${_licenseAvailability.enterprise} licenses available"` : ''}>Enterprise</option>
                                 </select>
                                 <button class="btn btn-sm btn-outline-primary" onclick="assignLicense('${u.id}')">Save</button>
                             </div>
