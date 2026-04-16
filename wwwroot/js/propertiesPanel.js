@@ -38,9 +38,12 @@ class PropertiesPanel {
             this.populate();
             this.bindAutoApply();
             this._wireMultiValueBtn();
+            this._wireAggMenu();
+            this._renderTableFields(chartDef.mapping?.tableFields || []);
             this.updateTypeSpecificFields(chartDef.chartType);
             this.initFieldDropTargets();
             this.updateFieldHighlights();
+            this.populateNavigationProps(chartDef);
         }
         this.switchTab(this.activeTab);
     }
@@ -157,8 +160,10 @@ class PropertiesPanel {
         this.setFieldVal('prop-y-field', c.mapping?.yField || '');
         this.setFieldVal('prop-r-field', c.mapping?.rField || '');
         this.setFieldVal('prop-group-by-field', c.mapping?.groupByField || '');
-        this.setVal('prop-agg-enabled', c.aggregation?.enabled || false, 'checkbox');
-        this.setVal('prop-agg-function', c.aggregation?.function || 'SUM');
+        const aggFn = c.aggregation?.function || (c.aggregation?.enabled ? 'SUM' : 'None');
+        this.setVal('prop-agg-enabled', aggFn !== 'None', 'checkbox');
+        this.setVal('prop-agg-function', aggFn);
+        this._updateAggLabel();
         this.setVal('prop-row-limit', c.rowLimit || 100);
         // Populate condition builder from filterWhere
         this._populateConditions(c.filterWhere || '');
@@ -256,10 +261,11 @@ class PropertiesPanel {
                 rField: this._resolveFieldName(this.getVal('prop-r-field')),
                 groupByField: this._resolveFieldName(this.getVal('prop-group-by-field')),
                 multiValueFields: this._collectMultiValueFields(),
+                tableFields: this._collectTableFields(),
             },
             aggregation: {
-                enabled: this.getVal('prop-agg-enabled', 'checkbox'),
-                function: this.getVal('prop-agg-function'),
+                enabled: (this.getVal('prop-agg-function') || 'None') !== 'None',
+                function: this.getVal('prop-agg-function') || 'None',
             },
             rowLimit: parseInt(this.getVal('prop-row-limit')) || 100,
             filterWhere: this._collectConditionsSQL(),
@@ -277,6 +283,9 @@ class PropertiesPanel {
                 borderRadius: this.getVal('prop-border-radius'),
             },
             customJsonData: this.getVal('prop-custom-json'),
+            navigation: this.currentChart.chartType === 'navigation'
+                ? this.collectNavigationProps()
+                : (this.currentChart.navigation || null),
         };
     }
 
@@ -300,13 +309,7 @@ class PropertiesPanel {
 
     /** Auto-enable aggregation if the value field is numeric, otherwise disable it. */
     _autoAggregation(valueFieldName) {
-        const aggCheckbox = document.getElementById('prop-agg-enabled');
-        if (!aggCheckbox) return;
-        if (this._isNumericField(valueFieldName)) {
-            aggCheckbox.checked = true;
-        } else {
-            aggCheckbox.checked = false;
-        }
+        this._updateAggLabel();
     }
 
     async datasetChanged() {
@@ -369,6 +372,9 @@ class PropertiesPanel {
             if (el.id === 'prop-value-field') {
                 this._autoAggregation(el.value);
             }
+            if (el.id === 'prop-nav-target') {
+                this._toggleNavigationTargetUrl();
+            }
             applyNow();
         };
 
@@ -405,6 +411,17 @@ class PropertiesPanel {
         document.querySelectorAll('.chart-type-field').forEach(el => {
             const types = (el.dataset.chartTypes || '').split(',').map(t => t.trim());
             el.style.display = types.includes(chartType) ? '' : 'none';
+        });
+        const navSection = document.getElementById('navigation-props-section');
+        if (navSection) navSection.style.display = chartType === 'navigation' ? '' : 'none';
+        document.querySelectorAll('.chart-only-section').forEach(el => {
+            if (chartType === 'navigation') {
+                el.style.display = 'none';
+            } else if (window.ShapeManager && this.currentChart && ShapeManager.isShape(this.currentChart.chartType)) {
+                el.style.display = 'none';
+            } else {
+                el.style.display = '';
+            }
         });
     }
 
@@ -857,8 +874,8 @@ class PropertiesPanel {
         const tableName = this.getVal('prop-dataset') || '';
         const labelField = this.getVal('prop-label-field') || '';
         const valueField = this.getVal('prop-value-field') || '';
-        const aggEnabled = this.getVal('prop-agg-enabled', 'checkbox');
-        const aggFn = this.getVal('prop-agg-function') || 'SUM';
+        const aggFn = this.getVal('prop-agg-function') || 'None';
+        const aggEnabled = aggFn !== 'None';
         const rowLimit = this.getVal('prop-row-limit') || '100';
         const whereClause = this._collectConditionsSQL();
         const mvFields = this._collectMultiValueFields();
@@ -1070,6 +1087,148 @@ class PropertiesPanel {
             if (sel.value) values.push(this._resolveFieldName(sel.value));
         });
         return values;
+    }
+
+    _wireAggMenu() {
+        const btn = document.getElementById('value-agg-menu-btn');
+        const menu = document.getElementById('value-agg-menu');
+        if (!btn || !menu) return;
+        btn.onclick = () => {
+            menu.style.display = menu.style.display === 'none' ? '' : 'none';
+        };
+        menu.querySelectorAll('[data-agg-value]').forEach(item => {
+            item.onclick = () => {
+                const val = item.getAttribute('data-agg-value') || 'None';
+                this.setVal('prop-agg-function', val);
+                this.setVal('prop-agg-enabled', val !== 'None', 'checkbox');
+                menu.style.display = 'none';
+                this._updateAggLabel();
+                this.apply();
+            };
+        });
+        this._updateAggLabel();
+    }
+
+    _updateAggLabel() {
+        const aggFn = this.getVal('prop-agg-function') || 'None';
+        const label = document.getElementById('agg-selected-label');
+        if (label) label.textContent = `(${aggFn})`;
+    }
+
+    _renderTableFields(fields) {
+        const container = document.getElementById('table-fields-container');
+        const addBtn = document.getElementById('add-table-field-btn');
+        if (!container) return;
+        container.innerHTML = '';
+        (fields || []).forEach(f => this._addTableFieldRow(f));
+        if (addBtn && !addBtn._tableFieldsWired) {
+            addBtn._tableFieldsWired = true;
+            addBtn.addEventListener('click', () => this._addTableFieldRow({ fieldName: '', label: '', visible: true, width: '' }));
+        }
+        if (!fields || fields.length === 0) {
+            const firstField = Array.isArray(this.fields) && this.fields.length > 0 ? this.fields[0] : '';
+            this._addTableFieldRow({ fieldName: firstField, label: firstField, visible: true, width: '' });
+        }
+    }
+
+    _addTableFieldRow(fieldDef) {
+        const container = document.getElementById('table-fields-container');
+        if (!container) return;
+        const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : String(v ?? '');
+        const optionsHtml = this.fields.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+        const row = document.createElement('div');
+        row.className = 'border rounded p-2 mb-1 table-field-row';
+        row.innerHTML = `
+            <div class="row g-1 align-items-end">
+                <div class="col-4">
+                    <label class="form-label mb-0" style="font-size:0.68rem">Field</label>
+                    <select class="form-select form-select-sm table-field-name">
+                        <option value="">--</option>
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <div class="col-4">
+                    <label class="form-label mb-0" style="font-size:0.68rem">Display Label</label>
+                    <input type="text" class="form-control form-control-sm table-field-label" value="${esc(fieldDef?.label || '')}">
+                </div>
+                <div class="col-2">
+                    <label class="form-label mb-0" style="font-size:0.68rem">Width</label>
+                    <input type="number" class="form-control form-control-sm table-field-width" min="40" max="800" value="${fieldDef?.width ?? ''}">
+                </div>
+                <div class="col-2 d-flex align-items-center gap-1">
+                    <input type="checkbox" class="form-check-input table-field-visible" ${fieldDef?.visible !== false ? 'checked' : ''} title="Visible">
+                    <button type="button" class="btn btn-xs btn-outline-secondary table-field-up" title="Move up"><i class="bi bi-arrow-up"></i></button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary table-field-down" title="Move down"><i class="bi bi-arrow-down"></i></button>
+                    <button type="button" class="btn btn-xs btn-outline-danger table-field-remove" title="Remove"><i class="bi bi-x"></i></button>
+                </div>
+            </div>`;
+        container.appendChild(row);
+
+        const sel = row.querySelector('.table-field-name');
+        if (fieldDef?.fieldName) this.setFieldValOnEl(sel, fieldDef.fieldName);
+        if (!row.querySelector('.table-field-label').value && sel.value) row.querySelector('.table-field-label').value = sel.value;
+        sel.addEventListener('change', () => {
+            const lbl = row.querySelector('.table-field-label');
+            if (!lbl.value) lbl.value = sel.value;
+            this.apply();
+        });
+        row.querySelectorAll('input').forEach(i => i.addEventListener('input', () => this.apply()));
+        row.querySelector('.table-field-visible')?.addEventListener('change', () => this.apply());
+        row.querySelector('.table-field-remove')?.addEventListener('click', () => { row.remove(); this.apply(); });
+        row.querySelector('.table-field-up')?.addEventListener('click', () => {
+            const prev = row.previousElementSibling;
+            if (prev) container.insertBefore(row, prev);
+            this.apply();
+        });
+        row.querySelector('.table-field-down')?.addEventListener('click', () => {
+            const next = row.nextElementSibling;
+            if (next) container.insertBefore(next, row);
+            this.apply();
+        });
+    }
+
+    _collectTableFields() {
+        const container = document.getElementById('table-fields-container');
+        if (!container) return [];
+        return Array.from(container.querySelectorAll('.table-field-row')).map(row => ({
+            fieldName: this._resolveFieldName(row.querySelector('.table-field-name')?.value || ''),
+            label: row.querySelector('.table-field-label')?.value || '',
+            visible: !!row.querySelector('.table-field-visible')?.checked,
+            width: (() => {
+                const parsed = parseInt(row.querySelector('.table-field-width')?.value || '', 10);
+                return Number.isNaN(parsed) ? null : parsed;
+            })()
+        })).filter(f => f.fieldName);
+    }
+
+    populateNavigationProps(chartDef) {
+        const nav = chartDef.navigation || {};
+        this.setVal('prop-nav-label', nav.label || chartDef.title || 'Open Link');
+        this.setVal('prop-nav-target', nav.target || 'current');
+        this.setVal('prop-nav-url', nav.customUrl || '');
+        this.setVal('prop-nav-border-enabled', nav.borderEnabled !== false, 'checkbox');
+        this.setVal('prop-nav-border-color', nav.borderColor || '#4A90D9');
+        this.setVal('prop-nav-border-radius', nav.borderRadius ?? 8);
+        this.setVal('prop-nav-bg-color', nav.backgroundColor || '#ffffff');
+        this._toggleNavigationTargetUrl();
+    }
+
+    collectNavigationProps() {
+        return {
+            label: this.getVal('prop-nav-label') || this.getVal('prop-title') || 'Open Link',
+            target: this.getVal('prop-nav-target') || 'current',
+            customUrl: this.getVal('prop-nav-url') || '',
+            borderEnabled: this.getVal('prop-nav-border-enabled', 'checkbox'),
+            borderColor: this.getVal('prop-nav-border-color') || '#4A90D9',
+            borderRadius: parseInt(this.getVal('prop-nav-border-radius')) || 8,
+            backgroundColor: this.getVal('prop-nav-bg-color') || '#ffffff'
+        };
+    }
+
+    _toggleNavigationTargetUrl() {
+        const wrap = document.getElementById('prop-nav-url-wrap');
+        const target = this.getVal('prop-nav-target') || 'current';
+        if (wrap) wrap.classList.toggle('d-none', target !== 'url');
     }
 
     /** Wire the "Add" button for multi-value fields. */

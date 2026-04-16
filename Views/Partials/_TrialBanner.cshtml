@@ -5,18 +5,21 @@
     if (!user) return;
     const plan = JSON.parse(localStorage.getItem('cp_plan') || 'null');
     if (!plan) return;
+    const licenseType = String(plan.licenseType || plan.plan || '').toLowerCase();
+    if (licenseType === 'pro' || licenseType === 'professional' || licenseType === 'enterprise') return;
     const container = document.getElementById('trialBannerContainer');
     if (!container) return;
     if (plan.isTrialActive) {
+        const days = Number(plan.daysRemaining || 0);
         container.innerHTML = `<div class="cp-trial-banner active">
             <i class="bi bi-clock me-2"></i>
-            <strong>${plan.daysRemaining} days</strong> remaining in your free trial.
+            You have <strong>${days} of 30 days</strong> remaining in your free trial.
             <a href="/pricing" class="trial-upgrade-link">Upgrade Now</a>
         </div>`;
     } else if (plan.isTrialExpired) {
         container.innerHTML = `<div class="cp-trial-banner expired">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            Your free trial has expired.
+            Your free trial (30 days) has expired.
             <a href="/pricing" class="trial-upgrade-link">Upgrade to continue</a>
         </div>`;
     }

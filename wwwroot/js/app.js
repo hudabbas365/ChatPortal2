@@ -68,8 +68,12 @@
         }
 
         const settingsLink = document.getElementById('orgSettingsLink');
+        const activityLink = document.getElementById('activityLink');
         if (settingsLink && user && user.role !== 'OrgAdmin' && user.role !== 'SuperAdmin') {
             settingsLink.style.display = 'none';
+        }
+        if (activityLink && user && (user.role === 'OrgAdmin' || user.role === 'SuperAdmin')) {
+            activityLink.style.display = '';
         }
 
         // Update left panel org name

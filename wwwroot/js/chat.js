@@ -1406,12 +1406,6 @@
             if (match) frame.src = match[1];
         });
 
-        // AI Context panel toggle (topbar button)
-        document.getElementById('aiContextToggle')?.addEventListener('click', function() {
-            const p = document.getElementById('thinkingPanel');
-            if (p) p.classList.toggle('tp-open');
-        });
-
         // Close button inside the panel
         document.getElementById('thinkingPanelClose')?.addEventListener('click', function() {
             ThinkingPanel.close();

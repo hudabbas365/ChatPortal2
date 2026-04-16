@@ -407,29 +407,45 @@
             <div class="modal-body">
                 <div id="buyTokenAlert" class="alert d-none mb-3"></div>
                 <p class="text-muted small">Add more AI tokens to your organization. Choose a package below:</p>
-                <div class="d-flex flex-column gap-2" id="tokenPackageList">
+                <div class="row g-3" id="tokenPackageList">
                     <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="0" data-tokens="1000000" data-price="15" checked />
-                        <div class="token-pack-card">
-                            <div class="fw-bold">1M Tokens</div>
-                            <div class="text-muted small">1,000,000 extra tokens</div>
-                            <div class="fw-bold text-primary">$15.00</div>
+                        <input type="radio" name="tokenPack" value="0" data-tokens="100000" data-price="9" checked />
+                        <div class="token-pack-card glass-card @(string.Empty)" style="border:2px solid var(--cp-primary,#4A90D9);">
+                            <div class="small text-uppercase text-muted">Starter</div>
+                            <div class="fw-bold">100K Tokens</div>
+                            <div class="text-muted small">Great for small teams getting started.</div>
+                            <div class="fw-bold text-primary mt-1">$9.00</div>
+                            <div class="btn btn-sm cp-btn-gradient mt-2">Buy</div>
                         </div>
                     </label>
                     <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="1" data-tokens="2000000" data-price="20" />
-                        <div class="token-pack-card">
+                        <input type="radio" name="tokenPack" value="1" data-tokens="500000" data-price="39" />
+                        <div class="token-pack-card glass-card">
+                            <div class="small text-uppercase text-muted">Growth</div>
+                            <div class="fw-bold">500K Tokens</div>
+                            <div class="text-muted small">Perfect for regular weekly reporting.</div>
+                            <div class="fw-bold text-primary mt-1">$39.00</div>
+                            <div class="btn btn-sm btn-outline-primary mt-2">Buy</div>
+                        </div>
+                    </label>
+                    <label class="token-pack-option">
+                        <input type="radio" name="tokenPack" value="2" data-tokens="2000000" data-price="99" />
+                        <div class="token-pack-card glass-card pricing-featured">
+                            <div class="small text-uppercase text-muted">Pro</div>
                             <div class="fw-bold">2M Tokens</div>
-                            <div class="text-muted small">2,000,000 extra tokens</div>
-                            <div class="fw-bold text-primary">$20.00</div>
+                            <div class="text-muted small">Best for active teams and heavy AI usage.</div>
+                            <div class="fw-bold text-primary mt-1">$99.00</div>
+                            <div class="btn btn-sm cp-btn-gradient mt-2">Buy</div>
                         </div>
                     </label>
                     <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="2" data-tokens="10000000" data-price="25" />
-                        <div class="token-pack-card">
-                            <div class="fw-bold">10M Tokens</div>
-                            <div class="text-muted small">10,000,000 extra tokens</div>
-                            <div class="fw-bold text-primary">$25.00</div>
+                        <input type="radio" name="tokenPack" value="3" data-tokens="0" data-price="0" />
+                        <div class="token-pack-card glass-card">
+                            <div class="small text-uppercase text-muted">Enterprise</div>
+                            <div class="fw-bold">Custom Token Pack</div>
+                            <div class="text-muted small">Tailored pricing and volume discounts.</div>
+                            <div class="fw-bold text-primary mt-1">Custom</div>
+                            <div class="btn btn-sm btn-outline-primary mt-2">Contact Sales</div>
                         </div>
                     </label>
                 </div>
@@ -450,6 +466,7 @@
     const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
     const orgId = user?.organizationId;
     const userId = user?.id;
+    let _licenseAvailability = { pro: 0, enterprise: 0 };
 
     // ---- Billing Tab ----
     function renderBilling(plan) {
@@ -685,10 +702,12 @@
             .then(users => {
                 if (!users.length) { document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No users yet</td></tr>'; return; }
                 document.getElementById('usersTableBody').innerHTML = users.map(u => {
-                    const plan = (u.assignedPlan || 'Free');
+                    const plan = (u.assignedPlan || 'FreeTrial');
                     const statusBadge = u.status === 'Pending' ? '<span class="badge bg-warning text-dark">Pending</span>'
                         : u.status === 'Suspended' ? '<span class="badge bg-danger">Suspended</span>'
                         : '<span class="badge bg-success">Active</span>';
+                    const proDisabled = _licenseAvailability.pro <= 0 && plan !== 'Professional';
+                    const entDisabled = _licenseAvailability.enterprise <= 0 && plan !== 'Enterprise';
                     return `<tr>
                         <td>${u.fullName || '-'}</td>
                         <td>${u.email}</td>
@@ -697,9 +716,9 @@
                         <td>
                             <div class="d-flex gap-1">
                                 <select class="form-select form-select-sm" id="license_${u.id}" autocomplete="off">
-                                    <option value="Free" ${plan === 'Free' ? 'selected' : ''}>Free</option>
-                                    <option value="Professional" ${plan === 'Professional' ? 'selected' : ''}>Pro</option>
-                                    <option value="Enterprise" ${plan === 'Enterprise' ? 'selected' : ''}>Enterprise</option>
+                                    <option value="FreeTrial" ${plan === 'FreeTrial' || plan === 'Free' ? 'selected' : ''}>Free Trial</option>
+                                    <option value="Professional" ${plan === 'Professional' ? 'selected' : ''} ${proDisabled ? `disabled title="${_licenseAvailability.pro} licenses available"` : ''}>Pro</option>
+                                    <option value="Enterprise" ${plan === 'Enterprise' ? 'selected' : ''} ${entDisabled ? `disabled title="${_licenseAvailability.enterprise} licenses available"` : ''}>Enterprise</option>
                                 </select>
                                 <button class="btn btn-sm btn-outline-primary" onclick="assignLicense('${u.id}')">Save</button>
                             </div>
@@ -732,7 +751,8 @@
         fetch(`/api/org/users/${uid}`, { method: 'DELETE' }).then(() => loadUsers());
     };
     window.assignLicense = function(uid) {
-        const plan = document.getElementById('license_' + uid)?.value || 'Free';
+        const selected = document.getElementById('license_' + uid)?.value || 'FreeTrial';
+        const plan = selected === 'FreeTrial' ? 'FreeTrial' : selected;
         fetch('/api/billing/assign-license', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
@@ -822,6 +842,10 @@
                 document.getElementById('licenseAssigned').textContent = data.assigned || 0;
                 document.getElementById('licenseAvailable').textContent = data.available || 0;
                 document.getElementById('licensePlanType').textContent = data.plan || '—';
+                _licenseAvailability = {
+                    pro: Number(data.proAvailable ?? data.availablePro ?? data.professionalAvailable ?? data.available ?? 0),
+                    enterprise: Number(data.enterpriseAvailable ?? data.availableEnterprise ?? data.available ?? 0)
+                };
                 const hint = document.getElementById('licenseHint');
                 if (hint) {
                     if (data.available <= 0 && data.purchased > 0) {
@@ -865,6 +889,10 @@
         if (!selected) return;
         const tokens = parseInt(selected.dataset.tokens);
         const price = parseFloat(selected.dataset.price);
+        if (!price) {
+            alert('Please contact sales for Enterprise custom token packs.');
+            return;
+        }
         bootstrap.Modal.getInstance(document.getElementById('buyTokenModal'))?.hide();
         openPayPalPayment('token_pack', price, `${(tokens).toLocaleString()} Token Pack`, { tokenAmount: tokens });
     });

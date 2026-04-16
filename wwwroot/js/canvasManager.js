@@ -60,12 +60,14 @@ class CanvasManager {
     async addChart(partial) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
         const isShape = window.ShapeManager && ShapeManager.isShape(partial.chartType);
+        const isNavigation = partial.chartType === 'navigation';
         const defaultX = 20 + (this.charts.length % 5) * 30;
         const defaultY = 20 + (this.charts.length % 5) * 30;
         // Resolve default dataset: prefer first real table from datasource dropdown, else 'sales'
         // When a dataQuery is provided (e.g. from Chat transfer), skip the default so chartRenderer uses the query path
         let defaultDataset = partial.datasetName || (partial.dataQuery ? '' : 'sales');
-        if (!partial.datasetName && !partial.dataQuery && window.currentDatasourceId) {
+        if (isNavigation) defaultDataset = '';
+        if (!isNavigation && !partial.datasetName && !partial.dataQuery && window.currentDatasourceId) {
             const dsSel = document.getElementById('prop-dataset');
             if (dsSel && dsSel.options.length > 0) defaultDataset = dsSel.options[0].value;
         }
@@ -73,24 +75,33 @@ class CanvasManager {
         const chart = {
             id: 'c' + Date.now(),
             chartType: partial.chartType || 'bar',
-            title: partial.title || (isShape ? partial.chartType.replace('shape-', '').replace(/-/g, ' ') : 'New Chart'),
+            title: partial.title || (isShape ? partial.chartType.replace('shape-', '').replace(/-/g, ' ') : isNavigation ? 'Navigation Link' : 'New Chart'),
             datasetName: defaultDataset,
             datasourceId: partial.datasourceId || window.currentDatasourceId || null,
             dataQuery: partial.dataQuery || null,
-            width: partial.width || (isShape ? 3 : 6),
-            height: partial.height || (isShape ? 180 : 300),
+            width: partial.width || (isShape || isNavigation ? 3 : 6),
+            height: partial.height || (isShape ? 180 : isNavigation ? 80 : 300),
             gridCol: 0,
             gridRow: 0,
             posX: partial.posX !== undefined ? partial.posX : defaultX,
             posY: partial.posY !== undefined ? partial.posY : defaultY,
             zIndex: ++this._maxZIndex,
-            mapping: partial.mapping || { labelField: '', valueField: '', groupByField: '', xField: '', yField: '', rField: '', multiValueFields: [] },
-            aggregation: partial.aggregation || { function: 'SUM', enabled: !partial.customJsonData },
+            mapping: partial.mapping || { labelField: '', valueField: '', groupByField: '', xField: '', yField: '', rField: '', multiValueFields: [], tableFields: [] },
+            aggregation: partial.aggregation || { function: isNavigation ? 'None' : 'SUM', enabled: isNavigation ? false : !partial.customJsonData },
             style: partial.style || { backgroundColor: '#4A90D9', borderColor: '#2C6FAC', showLegend: true, legendPosition: 'top', showTooltips: true, fillArea: false, colorPalette: 'default', showDataLabels: false, fontFamily: 'Inter, sans-serif', titleFontSize: 14, animated: true, responsive: true, borderRadius: '4' },
             customJsonData: partial.customJsonData || '',
             rowLimit: partial.rowLimit || 100,
             filterWhere: partial.filterWhere || '',
-            shapeProps: partial.shapeProps || (isShape ? ShapeManager.getDefaultShapeProps(partial.chartType) : null)
+            shapeProps: partial.shapeProps || (isShape ? ShapeManager.getDefaultShapeProps(partial.chartType) : null),
+            navigation: partial.navigation || (isNavigation ? {
+                label: partial.title || 'Open Link',
+                target: 'current',
+                customUrl: '',
+                borderEnabled: true,
+                borderColor: '#4A90D9',
+                borderRadius: 8,
+                backgroundColor: '#ffffff'
+            } : null)
         };
 
         const resp = await fetch('/api/chart/add', {
@@ -632,4 +643,3 @@ window.CrossFilter = {
         document.getElementById('crossfilter-clear-btn')?.addEventListener('click', () => this.clear());
     }
 };
-
