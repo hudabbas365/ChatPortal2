@@ -166,6 +166,10 @@ public class QueryExecutionService : IQueryExecutionService
     {
         var connStr = _encryption.Decrypt(ds.ConnectionString ?? "");
 
+        // Validate connection string has proper key=value format.
+        // If the first segment lacks '=' it's likely a bare server name — prepend 'Server='.
+        connStr = NormalizeConnectionString(ds.Type, connStr);
+
         var dbUser = _encryption.Decrypt(ds.DbUser ?? "");
         var dbPassword = _encryption.Decrypt(ds.DbPassword ?? "");
 
@@ -190,6 +194,35 @@ public class QueryExecutionService : IQueryExecutionService
         }
 
         return connStr;
+    }
+
+    /// <summary>
+    /// Ensures the connection string has proper key=value format.
+    /// Fixes common issues like missing 'Server=' prefix.
+    /// </summary>
+    private static string NormalizeConnectionString(string type, string connStr)
+    {
+        if (string.IsNullOrWhiteSpace(connStr)) return connStr;
+
+        var trimmed = connStr.Trim();
+
+        // Check if the first segment before ';' contains '=' (i.e. is a proper key=value pair)
+        var firstSemicolon = trimmed.IndexOf(';');
+        var firstSegment = firstSemicolon >= 0 ? trimmed[..firstSemicolon] : trimmed;
+
+        if (!firstSegment.Contains('='))
+        {
+            // The first segment has no '=' — it's likely a bare server name.
+            // Prepend the appropriate server keyword for the database type.
+            if (PgTypes.Contains(type))
+                trimmed = $"Host={trimmed}";
+            else if (MySqlTypes.Contains(type))
+                trimmed = $"Server={trimmed}";
+            else
+                trimmed = $"Server={trimmed}";
+        }
+
+        return trimmed;
     }
 
     /// <summary>

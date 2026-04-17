@@ -7,7 +7,7 @@ public class CohereService
     private readonly IConfiguration _config;
     private readonly ILogger<CohereService> _logger;
     private readonly HttpClient _httpClient;
-    private const string CohereApiUrl = "https://api.cohere.ai/v2/chat";
+    private const string CohereApiUrl = "https://api.cohere.com/v2/chat";
 
     public CohereService(IConfiguration config, ILogger<CohereService> logger, IHttpClientFactory httpClientFactory)
     {
@@ -167,7 +167,16 @@ public class CohereService
             ? "Analyze this chart. Describe the key trends, outliers, and actionable insights visible in the data."
             : prompt;
 
-        var visionModel = _config["Cohere:VisionModel"] ?? "command-r-plus";
+        var visionModel = _config["Cohere:VisionImageModel"] ?? "command-a-vision-07-2025";
+
+        // Cohere v2 vision uses: type="image_url" with image_url.url
+        // Base64 data URLs ("data:image/png;base64,...") are passed directly as the url value
+        var imageContent = new
+        {
+            type = "image_url",
+            image_url = new { url = imageDataUrl }
+        };
+
         var requestBody = new
         {
             model = visionModel,
@@ -179,11 +188,7 @@ public class CohereService
                     content = new object[]
                     {
                         new { type = "text", text = effectivePrompt },
-                        new
-                        {
-                            type = "image_url",
-                            image_url = new { url = imageDataUrl, detail = "high" }
-                        }
+                        imageContent
                     }
                 }
             },

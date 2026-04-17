@@ -410,42 +410,29 @@
                 <div class="row g-3" id="tokenPackageList">
                     <label class="token-pack-option">
                         <input type="radio" name="tokenPack" value="0" data-tokens="100000" data-price="9" checked />
-                        <div class="token-pack-card glass-card @(string.Empty)" style="border:2px solid var(--cp-primary,#4A90D9);">
+                        <div class="token-pack-card glass-card">
                             <div class="small text-uppercase text-muted">Starter</div>
                             <div class="fw-bold">100K Tokens</div>
                             <div class="text-muted small">Great for small teams getting started.</div>
                             <div class="fw-bold text-primary mt-1">$9.00</div>
-                            <div class="btn btn-sm cp-btn-gradient mt-2">Buy</div>
                         </div>
                     </label>
                     <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="1" data-tokens="500000" data-price="39" />
+                        <input type="radio" name="tokenPack" value="1" data-tokens="500000" data-price="20" />
                         <div class="token-pack-card glass-card">
                             <div class="small text-uppercase text-muted">Growth</div>
                             <div class="fw-bold">500K Tokens</div>
                             <div class="text-muted small">Perfect for regular weekly reporting.</div>
-                            <div class="fw-bold text-primary mt-1">$39.00</div>
-                            <div class="btn btn-sm btn-outline-primary mt-2">Buy</div>
+                            <div class="fw-bold text-primary mt-1">$20.00</div>
                         </div>
                     </label>
                     <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="2" data-tokens="2000000" data-price="99" />
+                        <input type="radio" name="tokenPack" value="2" data-tokens="2000000" data-price="25" />
                         <div class="token-pack-card glass-card pricing-featured">
                             <div class="small text-uppercase text-muted">Pro</div>
                             <div class="fw-bold">2M Tokens</div>
                             <div class="text-muted small">Best for active teams and heavy AI usage.</div>
-                            <div class="fw-bold text-primary mt-1">$99.00</div>
-                            <div class="btn btn-sm cp-btn-gradient mt-2">Buy</div>
-                        </div>
-                    </label>
-                    <label class="token-pack-option">
-                        <input type="radio" name="tokenPack" value="3" data-tokens="0" data-price="0" />
-                        <div class="token-pack-card glass-card">
-                            <div class="small text-uppercase text-muted">Enterprise</div>
-                            <div class="fw-bold">Custom Token Pack</div>
-                            <div class="text-muted small">Tailored pricing and volume discounts.</div>
-                            <div class="fw-bold text-primary mt-1">Custom</div>
-                            <div class="btn btn-sm btn-outline-primary mt-2">Contact Sales</div>
+                            <div class="fw-bold text-primary mt-1">$25.00</div>
                         </div>
                     </label>
                 </div>
@@ -485,7 +472,7 @@
                         <ul class="list-unstyled text-start mb-4">${features.map(f => '<li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>' + f + '</li>').join('')}</ul>
                         ${isCurrent
                             ? '<button class="btn btn-outline-primary w-100" disabled>Active</button>'
-                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeplan('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Upgrade'}</button>`}
+                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeplan('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Subscribe Monthly'}</button>`}
                     </div>
                 </div>
             </div>`;
@@ -493,8 +480,38 @@
 
         const trialBadge = isFreeTrial ? `<div class="alert alert-info mb-3"><i class="bi bi-clock me-2"></i><strong>${trialDays} days remaining</strong> on your Free Trial.</div>` : '';
 
+        // Build subscription status card
+        let subscriptionCard = '';
+        fetch(`/api/paypal/subscription-status?organizationId=${orgId}`)
+            .then(r => r.json())
+            .then(sub => {
+                const el = document.getElementById('subscriptionStatusCard');
+                if (!el) return;
+                if (sub.status === 'ACTIVE') {
+                    const nextDate = sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A';
+                    el.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge bg-success mb-1">Active Subscription</span>
+                                <div class="small text-muted">Next billing: <strong>${nextDate}</strong></div>
+                            </div>
+                            <button class="btn btn-outline-danger btn-sm" onclick="cancelSubscription()">
+                                <i class="bi bi-x-circle me-1"></i>Cancel Subscription
+                            </button>
+                        </div>`;
+                } else if (sub.status === 'CANCELLED') {
+                    const endDate = sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A';
+                    el.innerHTML = `
+                        <div class="alert alert-warning mb-0 py-2">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Subscription cancelled. Plan active until <strong>${endDate}</strong>.
+                        </div>`;
+                }
+            }).catch(() => {});
+
         document.getElementById('billingInfo').innerHTML = `
             ${trialBadge}
+            <div id="subscriptionStatusCard" class="glass-card p-3 mb-3"></div>
             <div class="row g-3 mb-4">
                 ${planCard('Free Trial', '30 days', ['Up to 3 Workspaces', '1 AI Agent', '100 queries/mo', 'Basic charts'], isFreeTrial, 'FreeTrial', 'bg-info')}
                 ${planCard('Professional', '$25<span class="fs-6 fw-normal">/mo</span>', ['Unlimited Workspaces', '10 AI Agents', '10,000 queries/mo', 'All chart types', 'Priority support'], isPro, 'Professional', 'bg-primary')}
@@ -546,57 +563,93 @@
         processing.classList.remove('d-none');
 
         try {
-            // 1. Create PayPal order
-            const createResp = await fetch('/api/paypal/create-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: _pendingPayment.amount, description: _pendingPayment.description })
-            });
-            const createData = await createResp.json();
-            if (!createResp.ok || !createData.orderId) {
-                throw new Error(createData.error || 'Failed to create PayPal order.');
-            }
+            if (_pendingPayment.type === 'subscription') {
+                // ── Recurring subscription flow ──
+                const createResp = await fetch('/api/paypal/create-subscription', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
+                });
+                const createData = await createResp.json();
+                if (!createResp.ok || !createData.approveUrl) {
+                    throw new Error(createData.error || 'Failed to create subscription.');
+                }
 
-            // 2. Open PayPal approval in popup
-            const popup = window.open(createData.approveUrl, 'PayPal', 'width=500,height=650,scrollbars=yes');
+                // Open PayPal approval in popup
+                const popup = window.open(createData.approveUrl, 'PayPal', 'width=500,height=650,scrollbars=yes');
 
-            // 3. Poll for popup close (user approved or cancelled)
-            await new Promise((resolve, reject) => {
-                const interval = setInterval(() => {
-                    if (!popup || popup.closed) {
-                        clearInterval(interval);
-                        resolve();
-                    }
-                }, 500);
-                // Timeout after 10 minutes
-                setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
-            });
+                // Poll for popup close
+                await new Promise((resolve, reject) => {
+                    const interval = setInterval(() => {
+                        if (!popup || popup.closed) { clearInterval(interval); resolve(); }
+                    }, 500);
+                    setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
+                });
 
-            // 4. Capture the order
-            const captureResp = await fetch('/api/paypal/capture-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    orderId: createData.orderId,
-                    organizationId: orgId,
-                    purchaseType: _pendingPayment.type,
-                    quantity: _pendingPayment.quantity,
-                    tokenAmount: _pendingPayment.tokenAmount,
-                    planKey: _pendingPayment.planKey
-                })
-            });
-            const captureData = await captureResp.json();
+                // Activate the subscription
+                const activateResp = await fetch('/api/paypal/activate-subscription', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
+                });
+                const activateData = await activateResp.json();
 
-            if (captureResp.ok && captureData.success) {
-                processing.classList.add('d-none');
-                document.getElementById('paymentSuccessMsg').textContent = captureData.message || 'Purchase applied successfully!';
-                document.getElementById('paymentSuccess').classList.remove('d-none');
-                // Refresh relevant data
-                loadBilling();
-                loadLicenseInfo();
-                loadTokenUsage();
+                if (activateResp.ok && activateData.success) {
+                    processing.classList.add('d-none');
+                    document.getElementById('paymentSuccessMsg').textContent =
+                        `${_pendingPayment.planKey} subscription activated! You will be billed $${_pendingPayment.amount.toFixed(2)}/month automatically.`;
+                    document.getElementById('paymentSuccess').classList.remove('d-none');
+                    loadBilling();
+                    loadLicenseInfo();
+                    loadTokenUsage();
+                } else {
+                    throw new Error(activateData.error || 'Subscription activation pending. Please check back shortly.');
+                }
             } else {
-                throw new Error(captureData.error || 'Payment capture failed.');
+                // ── One-time payment flow (licenses, token packs) ──
+                const createResp = await fetch('/api/paypal/create-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: _pendingPayment.amount, description: _pendingPayment.description })
+                });
+                const createData = await createResp.json();
+                if (!createResp.ok || !createData.orderId) {
+                    throw new Error(createData.error || 'Failed to create PayPal order.');
+                }
+
+                const popup = window.open(createData.approveUrl, 'PayPal', 'width=500,height=650,scrollbars=yes');
+
+                await new Promise((resolve, reject) => {
+                    const interval = setInterval(() => {
+                        if (!popup || popup.closed) { clearInterval(interval); resolve(); }
+                    }, 500);
+                    setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
+                });
+
+                const captureResp = await fetch('/api/paypal/capture-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: createData.orderId,
+                        organizationId: orgId,
+                        purchaseType: _pendingPayment.type,
+                        quantity: _pendingPayment.quantity,
+                        tokenAmount: _pendingPayment.tokenAmount,
+                        planKey: _pendingPayment.planKey
+                    })
+                });
+                const captureData = await captureResp.json();
+
+                if (captureResp.ok && captureData.success) {
+                    processing.classList.add('d-none');
+                    document.getElementById('paymentSuccessMsg').textContent = captureData.message || 'Purchase applied successfully!';
+                    document.getElementById('paymentSuccess').classList.remove('d-none');
+                    loadBilling();
+                    loadLicenseInfo();
+                    loadTokenUsage();
+                } else {
+                    throw new Error(captureData.error || 'Payment capture failed.');
+                }
             }
         } catch (err) {
             processing.classList.add('d-none');
@@ -609,7 +662,7 @@
         }
     });
 
-    window.upgradeplan = function(planKey) {
+    window.upgradeplan = async function(planKey) {
         if (!userId) return;
         if (planKey === 'FreeTrial') {
             fetch('/api/subscription/activate-trial', {
@@ -621,8 +674,42 @@
                 else { loadBilling(); }
             });
         } else {
+            // Use PayPal recurring subscription for paid plans
+            const alertEl = document.getElementById('paymentAlert');
+            const processing = document.getElementById('paymentProcessing');
+            const actions = document.getElementById('paymentActions');
             const price = planKey === 'Enterprise' ? 45.00 : 25.00;
-            openPayPalPayment('plan_upgrade', price, planKey + ' Plan Upgrade', { planKey });
+
+            document.getElementById('paymentItemName').textContent = planKey + ' Plan — Monthly Subscription';
+            document.getElementById('paymentItemDesc').textContent = `$${price.toFixed(2)}/month • Auto-renews monthly`;
+            document.getElementById('paymentItemPrice').textContent = '$' + price.toFixed(2) + '/mo';
+            alertEl.classList.add('d-none');
+            processing.classList.add('d-none');
+            actions.classList.remove('d-none');
+            document.getElementById('paymentSuccess').classList.add('d-none');
+            _pendingPayment = { type: 'subscription', planKey, amount: price };
+            new bootstrap.Modal(document.getElementById('paymentModal')).show();
+        }
+    };
+
+    window.cancelSubscription = async function() {
+        if (!orgId) return;
+        if (!confirm('Are you sure you want to cancel your monthly subscription? Your plan will remain active until the end of the current billing period.')) return;
+        try {
+            const resp = await fetch('/api/paypal/cancel-subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ organizationId: orgId, reason: 'Customer requested cancellation' })
+            });
+            const data = await resp.json();
+            if (resp.ok && data.success) {
+                alert(data.message);
+                loadBilling();
+            } else {
+                alert(data.error || 'Failed to cancel subscription.');
+            }
+        } catch (err) {
+            alert('Error cancelling subscription: ' + err.message);
         }
     };
 

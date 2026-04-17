@@ -15,6 +15,21 @@ public class Organization
     public int EnterpriseExtraTokenPacks { get; set; } = 0; // Each pack = +2M tokens, $15
     public int PurchasedLicenses { get; set; } = 0; // Licenses bought by OrgAdmin, each allows 1 user assignment
 
+    // ── PayPal Recurring Subscription ──
+    public string? PayPalSubscriptionId { get; set; }
+    public string? PayPalPlanId { get; set; }
+    public string SubscriptionStatus { get; set; } = "NONE"; // NONE, APPROVAL_PENDING, ACTIVE, SUSPENDED, CANCELLED, EXPIRED
+    public DateTime? SubscriptionStartDate { get; set; }
+    public DateTime? SubscriptionNextBillingDate { get; set; }
+
+    // ── Blocking ──
+    public bool IsBlocked { get; set; } = false;
+    public string? BlockedReason { get; set; }
+    public DateTime? BlockedAt { get; set; }
+
+    // ── Payment Records ──
+    public List<PaymentRecord> PaymentRecords { get; set; } = new();
+
     public int MonthlyTokenBudget => Plan switch
     {
         PlanType.Enterprise    => 10_000_000 + (EnterpriseExtraTokenPacks * 2_000_000),

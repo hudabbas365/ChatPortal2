@@ -477,4 +477,90 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    // ──── Payments Tracking ────
+    [HttpGet("/superadmin/payments")]
+    public async Task<IActionResult> Payments_All([FromQuery] int page = 1, [FromQuery] string? search = null)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        const int pageSize = 50;
+
+        var query = _db.PaymentRecords
+            .Include(p => p.Organization)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(p =>
+                (p.Organization != null && p.Organization.Name.ToLower().Contains(term)) ||
+                p.PaymentType.ToLower().Contains(term) ||
+                p.Status.ToLower().Contains(term) ||
+                (p.PayPalOrderId != null && p.PayPalOrderId.ToLower().Contains(term)) ||
+                (p.Description != null && p.Description.ToLower().Contains(term)));
+        }
+
+        var records = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var totalCount = await query.CountAsync();
+
+        ViewBag.Page = page;
+        ViewBag.Search = search;
+        ViewBag.TotalCount = totalCount;
+        ViewBag.TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        return View("~/Views/Admin/Payments.cshtml", records);
+    }
+
+    // ──── Block / Unblock Organizations ────
+    [HttpGet("/superadmin/org-management")]
+    public async Task<IActionResult> OrgManagement()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var orgs = await _db.Organizations
+            .OrderByDescending(o => o.IsBlocked)
+            .ThenBy(o => o.Name)
+            .ToListAsync();
+
+        return View("~/Views/Admin/OrgManagement.cshtml", orgs);
+    }
+
+    [HttpPost("/api/superadmin/orgs/{id}/block")]
+    public async Task<IActionResult> BlockOrg(int id, [FromBody] BlockOrgRequest req)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+
+        org.IsBlocked = true;
+        org.BlockedReason = req.Reason;
+        org.BlockedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    [HttpPost("/api/superadmin/orgs/{id}/unblock")]
+    public async Task<IActionResult> UnblockOrg(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+
+        org.IsBlocked = false;
+        org.BlockedReason = null;
+        org.BlockedAt = null;
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    public class BlockOrgRequest
+    {
+        public string? Reason { get; set; }
+    }
 }

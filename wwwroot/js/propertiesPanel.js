@@ -118,10 +118,16 @@ class PropertiesPanel {
         if (existingValue && tableNames.includes(existingValue)) {
             sel.value = existingValue;
         } else if (existingValue) {
-            // Try case-insensitive match
             const lower = existingValue.toLowerCase();
+            // Try case-insensitive match
             const match = tableNames.find(n => n.toLowerCase() === lower);
-            if (match) sel.value = match;
+            if (match) {
+                sel.value = match;
+            } else {
+                // Try matching without schema prefix (e.g. 'Sales' matches 'dbo.Sales')
+                const suffixMatch = tableNames.find(n => n.toLowerCase().endsWith('.' + lower) || lower.endsWith('.' + n.toLowerCase()));
+                if (suffixMatch) sel.value = suffixMatch;
+            }
         }
     }
 
@@ -130,9 +136,20 @@ class PropertiesPanel {
         let fieldList = this.fields;
         if (filterTable && this._schemaColumns && this._schemaColumns.length > 0) {
             const ft = filterTable.toLowerCase();
+            // Match exact table name or schema-prefixed name (e.g. 'dbo.Sales' matches 'Sales')
             const tableFields = this._schemaColumns
-                .filter(c => c.table && c.table.toLowerCase() === ft)
-                .map(c => c.name);
+                .filter(c => {
+                    if (!c.table) return false;
+                    const ct = c.table.toLowerCase();
+                    if (ct === ft) return true;
+                    // Support schema.table matching: 'dbo.sales' ends with '.sales'
+                    if (ct.endsWith('.' + ft)) return true;
+                    // Also match if filterTable has schema prefix but stored without
+                    if (ft.endsWith('.' + ct)) return true;
+                    return false;
+                })
+                .map(c => c.name)
+                .filter((v, i, a) => a.indexOf(v) === i); // deduplicate
             if (tableFields.length > 0) fieldList = tableFields;
         }
         const selects = document.querySelectorAll('.field-select');
@@ -319,7 +336,12 @@ class PropertiesPanel {
             this.currentChart.datasetName = ds;
             // Auto-select best label (text/date) and value (numeric) fields for the new table
             const cols = this._schemaColumns || [];
-            const tableCols = cols.filter(c => !c.table || c.table.toLowerCase() === (ds || '').toLowerCase());
+            const dsLower = (ds || '').toLowerCase();
+            const tableCols = cols.filter(c => {
+                if (!c.table) return true;
+                const ct = c.table.toLowerCase();
+                return ct === dsLower || ct.endsWith('.' + dsLower) || dsLower.endsWith('.' + ct);
+            });
             const effective = tableCols.length > 0 ? tableCols : cols;
             const isNumeric = (dt) => {
                 const t = (dt || '').toLowerCase();
@@ -503,6 +525,13 @@ class PropertiesPanel {
 
     initFieldDropTargets() {
         document.querySelectorAll('.field-select').forEach(select => {
+            // Remove old listeners by replacing with clone
+            if (select._fieldDropWired) {
+                const clone = select.cloneNode(true);
+                select.parentNode.replaceChild(clone, select);
+                select = clone;
+            }
+            select._fieldDropWired = true;
             select.addEventListener('dragover', (e) => { e.preventDefault(); select.style.outline = '2px solid var(--primary)'; });
             select.addEventListener('dragleave', () => { select.style.outline = ''; });
             select.addEventListener('drop', (e) => {
@@ -689,7 +718,7 @@ class PropertiesPanel {
     _addConditionRow(field, op, val) {
         const container = document.getElementById('pp-conditions');
         if (!container) return;
-        const fieldList = this.fields.length > 0 ? this.fields : [];
+        const fieldList = this.fields.length > 0 ? [...new Set(this.fields)] : [];
         const fieldOpts = '<option value="">-- field --</option>' +
             fieldList.map(f => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(f) : f}">${typeof escapeHtml === 'function' ? escapeHtml(f) : f}</option>`).join('');
         const ops = ['=','!=','>','<','>=','<=','LIKE','IN','IS NULL','IS NOT NULL'];
@@ -1210,6 +1239,9 @@ class PropertiesPanel {
         this.setVal('prop-nav-border-color', nav.borderColor || '#4A90D9');
         this.setVal('prop-nav-border-radius', nav.borderRadius ?? 8);
         this.setVal('prop-nav-bg-color', nav.backgroundColor || '#ffffff');
+        this.setVal('prop-nav-text-color', nav.textColor || '#4A90D9');
+        this.setVal('prop-nav-font-size', nav.fontSize ?? 13);
+        this._populateNavPageOptions(nav.targetPageIndex);
         this._toggleNavigationTargetUrl();
     }
 
@@ -1218,17 +1250,49 @@ class PropertiesPanel {
             label: this.getVal('prop-nav-label') || this.getVal('prop-title') || 'Open Link',
             target: this.getVal('prop-nav-target') || 'current',
             customUrl: this.getVal('prop-nav-url') || '',
+            targetPageIndex: parseInt(this.getVal('prop-nav-page')) || 0,
             borderEnabled: this.getVal('prop-nav-border-enabled', 'checkbox'),
             borderColor: this.getVal('prop-nav-border-color') || '#4A90D9',
             borderRadius: parseInt(this.getVal('prop-nav-border-radius')) || 8,
-            backgroundColor: this.getVal('prop-nav-bg-color') || '#ffffff'
+            backgroundColor: this.getVal('prop-nav-bg-color') || '#ffffff',
+            textColor: this.getVal('prop-nav-text-color') || '#4A90D9',
+            fontSize: parseInt(this.getVal('prop-nav-font-size')) || 13
         };
     }
 
     _toggleNavigationTargetUrl() {
         const wrap = document.getElementById('prop-nav-url-wrap');
+        const pageWrap = document.getElementById('prop-nav-page-wrap');
         const target = this.getVal('prop-nav-target') || 'current';
         if (wrap) wrap.classList.toggle('d-none', target !== 'url');
+        if (pageWrap) pageWrap.style.display = target === 'page' ? '' : 'none';
+    }
+
+    _populateNavPageOptions(selectedIndex) {
+        const sel = document.getElementById('prop-nav-page');
+        const targetSel = document.getElementById('prop-nav-target');
+        if (!sel) return;
+        sel.innerHTML = '';
+        const pages = window.canvasManager?.pages || [];
+        pages.forEach((p, i) => {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = p.name || ('Page ' + (i + 1));
+            sel.appendChild(opt);
+        });
+        if (selectedIndex !== undefined && selectedIndex !== null) sel.value = selectedIndex;
+        // Add 'page' option to target select if not present
+        if (targetSel && !targetSel.querySelector('option[value="page"]')) {
+            const opt = document.createElement('option');
+            opt.value = 'page';
+            opt.textContent = 'Navigate to Page';
+            targetSel.insertBefore(opt, targetSel.querySelector('option[value="url"]'));
+        }
+        // Wire target change to toggle page/url visibility
+        if (targetSel && !targetSel._navWired) {
+            targetSel._navWired = true;
+            targetSel.addEventListener('change', () => this._toggleNavigationTargetUrl());
+        }
     }
 
     /** Wire the "Add" button for multi-value fields. */

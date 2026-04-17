@@ -491,6 +491,51 @@
                     window.location.href = '/dashboard?workspace=' + encodeURIComponent(wsId);
                 });
             });
+            document.querySelectorAll('[data-action="ds-detail"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    const dsGuid = el.dataset.dsId;
+                    if (dsGuid) this._showDatasourceDetailPopup(dsGuid);
+                });
+            });
+        },
+
+        _showDatasourceDetailPopup(dsGuid) {
+            const ds = (this._wsData?.datasources || []).find(d => d.guid === dsGuid);
+            if (!ds) return;
+            // Remove any existing modal
+            let modal = document.getElementById('dsDetailModal');
+            if (modal) modal.remove();
+            const esc = this._esc;
+            modal = document.createElement('div');
+            modal.id = 'dsDetailModal';
+            modal.className = 'modal fade';
+            modal.tabIndex = -1;
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content" style="background:white;color:var(--cp-text)">
+                        <div class="modal-header border-bottom" style="border-color:var(--cp-border)!important">
+                            <h5 class="modal-title"><i class="bi bi-database me-2"></i>${esc(ds.name)}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Type</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.type || 'Unknown')}" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>
+                                <textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">${esc(ds.connectionString || '')}</textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-top" style="border-color:var(--cp-border)!important">
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            modal.addEventListener('hidden.bs.modal', () => { modal.remove(); });
+            bsModal.show();
         },
 
         _wireReportActions() {

@@ -179,6 +179,10 @@ class ChartRenderer {
         const existing = wrap.querySelector('.custom-chart-render');
         if (existing) existing.remove();
 
+        // Destroy any Chart.js instance still attached to this canvas element
+        const existingChart = Chart.getChart(canvasEl);
+        if (existingChart) existingChart.destroy();
+
         const ctx = canvasEl.getContext('2d');
         const config = this.buildConfig(chartDef, data);
 
@@ -2134,27 +2138,30 @@ class ChartRenderer {
         const borderColor = nav.borderColor || primaryColor;
         const borderRadius = Number(nav.borderRadius ?? 8);
         const backgroundColor = nav.backgroundColor || '#ffffff';
+        const textColor = nav.textColor || primaryColor;
+        const fontSize = Number(nav.fontSize ?? 13);
         const label = nav.label || chartDef.title || 'Open Link';
 
         container.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;';
-        container.innerHTML = `
-            <a href="${this._esc(href)}" ${target === 'url' ? 'target="_blank" rel="noopener noreferrer"' : ''}
-               style="
-                    display:inline-flex;
-                    align-items:center;
-                    justify-content:center;
-                    gap:6px;
-                    text-decoration:none;
-                    font-size:13px;
-                    font-weight:600;
-                    color:${this._esc(primaryColor)};
-                    background:${this._esc(backgroundColor)};
-                    border:${borderEnabled ? `1px solid ${this._esc(borderColor)}` : '1px solid transparent'};
-                    border-radius:${borderRadius}px;
-                    padding:8px 14px;
-                    min-width:120px;">
-                <i class="bi bi-link-45deg"></i>${this._esc(label)}
-            </a>`;
+        const linkEl = document.createElement('a');
+        linkEl.href = href;
+        if (target === 'url') { linkEl.target = '_blank'; linkEl.rel = 'noopener noreferrer'; }
+        linkEl.style.cssText = `display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;font-size:${fontSize}px;font-weight:600;color:${textColor};background:${backgroundColor};border:${borderEnabled ? '1px solid ' + borderColor : '1px solid transparent'};border-radius:${borderRadius}px;padding:8px 14px;min-width:120px;cursor:pointer;`;
+        linkEl.innerHTML = '<i class="bi bi-link-45deg"></i>' + this._esc(label);
+
+        // Handle page navigation click
+        if (target === 'page') {
+            linkEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                const pageIndex = Number(nav.targetPageIndex ?? 0);
+                if (window.canvasManager) {
+                    window.canvasManager.switchPage(pageIndex);
+                }
+            });
+        }
+
+        container.innerHTML = '';
+        container.appendChild(linkEl);
     }
 }
 

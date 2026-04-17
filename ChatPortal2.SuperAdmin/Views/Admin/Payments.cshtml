@@ -1,0 +1,88 @@
+@model List<AIInsights.Models.PaymentRecord>
+@{
+    ViewData["Title"] = "Payments";
+    ViewData["ActivePage"] = "payments";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">All Payments</h1>
+        <p class="page-desc">@ViewBag.TotalCount total payment records</p>
+    </div>
+    <form method="get" action="/superadmin/payments" class="d-flex gap-2">
+        <input type="text" name="search" class="form-control form-control-sm" placeholder="Search payments…"
+               value="@ViewBag.Search" style="min-width:220px" />
+        <button type="submit" class="btn-primary-sm"><i class="bi bi-search"></i> Search</button>
+        @if (!string.IsNullOrEmpty((string?)ViewBag.Search))
+        {
+            <a href="/superadmin/payments" class="btn-ghost-sm">Clear</a>
+        }
+    </form>
+</div>
+
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Organization</th>
+                <th>Type</th>
+                <th>Method</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>PayPal Order</th>
+                <th>Description</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem">No payment records found.</td></tr>
+            }
+            @foreach (var p in Model)
+            {
+                var statusClass = p.Status switch
+                {
+                    "succeeded" => "badge-emerald",
+                    "failed" => "badge-rose",
+                    "pending" => "badge-amber",
+                    "refunded" => "badge-sky",
+                    _ => "badge-indigo"
+                };
+                <tr>
+                    <td>@p.Id</td>
+                    <td style="font-weight:600;color:#1e3a5f">@(p.Organization?.Name ?? "—")</td>
+                    <td><span class="badge-sm badge-indigo">@p.PaymentType</span></td>
+                    <td>@p.PaymentMethod</td>
+                    <td style="font-weight:600">@p.Amount.ToString("C2")</td>
+                    <td><span class="badge-sm @statusClass">@p.Status</span></td>
+                    <td style="font-size:.78rem;color:var(--text-muted)">@(p.PayPalOrderId ?? "—")</td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@p.Description">@(p.Description ?? "—")</td>
+                    <td style="color:var(--text-muted)">@p.CreatedAt.ToString("MMM d, yyyy HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if ((int)ViewBag.TotalPages > 1)
+{
+    var page = (int)ViewBag.Page;
+    var totalPages = (int)ViewBag.TotalPages;
+    var search = (string?)ViewBag.Search;
+    var qs = !string.IsNullOrEmpty(search) ? $"&search={Uri.EscapeDataString(search)}" : "";
+
+    <nav class="d-flex justify-content-center mt-3 gap-2">
+        @if (page > 1)
+        {
+            <a href="/superadmin/payments?page=@(page - 1)@qs" class="btn-ghost-sm">← Previous</a>
+        }
+        <span class="d-flex align-items-center" style="font-size:.85rem;color:var(--text-muted)">Page @(page) of @totalPages</span>
+        @if (page < totalPages)
+        {
+            <a href="/superadmin/payments?page=@(page + 1)@qs" class="btn-ghost-sm">Next →</a>
+        }
+    </nav>
+}

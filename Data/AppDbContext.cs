@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
+    public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

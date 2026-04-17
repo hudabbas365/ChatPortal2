@@ -219,13 +219,26 @@ public class AuthController : Controller
             return Unauthorized(new { error = "Invalid credentials." });
         }
 
+        // Check if organization is blocked
+        if (user.OrganizationId.HasValue)
+        {
+            var org = await _db.Organizations.FindAsync(user.OrganizationId.Value);
+            if (org != null && org.IsBlocked)
+            {
+                _logger.LogWarning("Login blocked: organization '{OrgName}' (ID:{OrgId}) is blocked. User: '{Email}'.", org.Name, org.Id, user.Email);
+                return Unauthorized(new { error = "org_blocked", message = $"Your organization has been blocked. Reason: {org.BlockedReason ?? "Contact support for details."}. Please contact support to resolve this issue." });
+            }
+        }
+
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);
 
         _db.ActivityLogs.Add(new ActivityLog { Action = "login", Description = $"{user.Email} signed in.", UserId = user.Id, OrganizationId = user.OrganizationId });
         await _db.SaveChangesAsync();
 
-        return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId } });
+        var comingSoon = _config.GetValue<bool>("App:ComingSoon");
+        var redirectUrl = comingSoon ? "/" : "/chat";
+        return Ok(new { token, redirectUrl, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId } });
     }
 
     [HttpPost("/api/auth/logout")]

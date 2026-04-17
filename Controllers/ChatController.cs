@@ -160,6 +160,36 @@ public class ChatController : Controller
             }
         }
 
+        // Fallback: if no schema context yet, try the explicit datasourceId from the request
+        if (string.IsNullOrEmpty(schemaContext) && req.DatasourceId.HasValue && req.DatasourceId.Value > 0)
+        {
+            var ds = await _db.Datasources.FindAsync(req.DatasourceId.Value);
+            if (ds != null)
+            {
+                schemaContext = await BuildSchemaPromptAsync(ds);
+                connectedToPowerBi = IsPowerBi(ds.Type);
+                datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
+                    $"All queries you generate MUST target this specific datasource. " +
+                    $"Use the exact table and column names from the schema provided below. " +
+                    $"Do NOT assume or invent table/column names that are not in the schema.";
+            }
+        }
+
+        // Last-resort fallback: look up the workspace's first datasource
+        if (string.IsNullOrEmpty(schemaContext) && wsId > 0)
+        {
+            var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.WorkspaceId == wsId);
+            if (ds != null)
+            {
+                schemaContext = await BuildSchemaPromptAsync(ds);
+                connectedToPowerBi = IsPowerBi(ds.Type);
+                datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
+                    $"All queries you generate MUST target this specific datasource. " +
+                    $"Use the exact table and column names from the schema provided below. " +
+                    $"Do NOT assume or invent table/column names that are not in the schema.";
+            }
+        }
+
         // Inject workspace memories into system prompt
         var defaultPrompt = connectedToPowerBi
             ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
@@ -749,9 +779,11 @@ public class SendMessageRequest
     public string? SystemPrompt { get; set; }
     public string? WorkspaceId { get; set; }
     public string? AgentId { get; set; }
+    public int? DatasourceId { get; set; }
     public string? UserId { get; set; }
     public string? ReportGuid { get; set; }
     public string? Context { get; set; }
+    public int? PageIndex { get; set; }
 }
 
 public class PinRequest

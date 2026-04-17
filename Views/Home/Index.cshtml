@@ -1,249 +1,528 @@
 @{
-    ViewData["Title"] = "Home";
-    Layout = "_Layout";
+    ViewData["Title"] = "Coming Soon — AI Insights";
+    Layout = null;
 }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Insights — Coming May 1, 2026</title>
+    <meta name="description" content="AI Insights launches May 1 2026. Ask your business data questions in plain English and get instant charts, dashboards, and reports powered by AI." />
+    <meta name="keywords" content="AI Insights, coming soon, business intelligence, AI analytics, dashboards, charts, SQL, Power BI, data visualization" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://aiinsights.io/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AI Insights — Launching May 1, 2026" />
+    <meta property="og:description" content="Turn any data into decisions instantly. AI-powered analytics with 72+ chart types, natural-language queries, and beautiful dashboards." />
+    <meta property="og:url" content="https://aiinsights.io/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AI Insights — Launching May 1, 2026" />
+    <meta name="twitter:description" content="Turn any data into decisions instantly. AI-powered analytics with 72+ chart types." />
+    <script type="application/ld+json">
+    {
+        "@@context": "https://schema.org",
+        "@@type": "WebSite",
+        "name": "AI Insights",
+        "url": "https://aiinsights.io/",
+        "description": "AI-powered data conversations — ask your data anything and get instant charts and reports.",
+        "potentialAction": { "@@type": "SearchAction", "target": "https://aiinsights.io/search?q={search_term_string}", "query-input": "required name=search_term_string" }
+    }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <style>
+        :root {
+            --cs-bg: #0a0e1a;
+            --cs-surface: rgba(255,255,255,.04);
+            --cs-border: rgba(255,255,255,.08);
+            --cs-primary: #6366f1;
+            --cs-primary-light: #818cf8;
+            --cs-accent: #06b6d4;
+            --cs-accent2: #a78bfa;
+            --cs-text: #e2e8f0;
+            --cs-text-dim: #94a3b8;
+            --cs-text-muted: #64748b;
+            --cs-glow: rgba(99,102,241,.25);
+        }
+        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+        html { scroll-behavior:smooth; }
+        body {
+            font-family:'Inter',system-ui,-apple-system,sans-serif;
+            background:var(--cs-bg); color:var(--cs-text);
+            min-height:100vh; overflow-x:hidden;
+        }
 
-<!-- Hero Section -->
-<section class="cp-hero">
-    <div class="container px-4 px-lg-5">
-        <div class="row align-items-center g-5">
+        /* ── Animated background ── */
+        .cs-bg {
+            position:fixed; inset:0; z-index:0; pointer-events:none;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99,102,241,.12) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 80%, rgba(6,182,212,.10) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(167,139,250,.06) 0%, transparent 60%);
+        }
+        .cs-grid {
+            position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.03;
+            background-image:
+                linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
+            background-size:64px 64px;
+        }
 
-            <!-- Left column -->
-            <div class="col-lg-6">
-                <div class="hero-badge mb-3">
-                    <i class="bi bi-stars me-2"></i>✦ Trusted by 1,200+ data teams
+        /* ── Floating orbs ── */
+        .orb {
+            position:fixed; border-radius:50%; filter:blur(80px); opacity:.18; z-index:0;
+            animation:orbFloat 20s ease-in-out infinite alternate;
+        }
+        .orb-1 { width:500px;height:500px;background:var(--cs-primary);top:-10%;left:-5%; }
+        .orb-2 { width:400px;height:400px;background:var(--cs-accent);bottom:-5%;right:-5%;animation-delay:-7s; }
+        .orb-3 { width:300px;height:300px;background:var(--cs-accent2);top:40%;left:60%;animation-delay:-13s; }
+        @@keyframes orbFloat {
+            0%   { transform:translate(0,0) scale(1); }
+            100% { transform:translate(40px,30px) scale(1.15); }
+        }
+
+        .cs-wrapper { position:relative; z-index:1; }
+
+        /* ── Nav ── */
+        .cs-nav {
+            padding:1.25rem 2rem;
+            display:flex; align-items:center; justify-content:space-between;
+        }
+        .cs-logo { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
+        .cs-logo-icon {
+            width:40px;height:40px;border-radius:12px;
+            background:linear-gradient(135deg,var(--cs-primary),var(--cs-accent));
+            display:flex;align-items:center;justify-content:center;
+            font-size:1.1rem;color:#fff;
+        }
+        .cs-logo-text { font-size:1.1rem; font-weight:700; color:#fff; }
+        .cs-nav-links { display:flex; gap:1.5rem; }
+        .cs-nav-links a {
+            color:var(--cs-text-dim); text-decoration:none; font-size:.85rem;
+            font-weight:500; transition:color .2s;
+        }
+        .cs-nav-links a:hover { color:#fff; }
+
+        /* ── Hero ── */
+        .cs-hero {
+            text-align:center; padding:4rem 1.5rem 2rem;
+            max-width:860px; margin:0 auto;
+        }
+        .cs-badge {
+            display:inline-flex; align-items:center; gap:.4rem;
+            background:var(--cs-surface); border:1px solid var(--cs-border);
+            border-radius:100px; padding:.35rem 1rem;
+            font-size:.78rem; font-weight:600; color:var(--cs-accent);
+            margin-bottom:1.5rem;
+            animation:fadeUp .8s ease both;
+        }
+        .cs-badge .pulse {
+            width:8px;height:8px;border-radius:50%;background:var(--cs-accent);
+            animation:pulse 2s infinite;
+        }
+        @@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+
+        .cs-hero h1 {
+            font-size:clamp(2.2rem,5.5vw,4rem); font-weight:900;
+            line-height:1.08; letter-spacing:-.03em;
+            margin-bottom:1.25rem;
+            animation:fadeUp .8s .15s ease both;
+        }
+        .cs-hero h1 .gradient-text {
+            background:linear-gradient(135deg,var(--cs-primary-light),var(--cs-accent),var(--cs-accent2));
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+            background-clip:text;
+        }
+        .cs-hero-sub {
+            font-size:1.1rem; color:var(--cs-text-dim); line-height:1.7;
+            max-width:640px; margin:0 auto 2.5rem;
+            animation:fadeUp .8s .3s ease both;
+        }
+        @@keyframes fadeUp {
+            from { opacity:0; transform:translateY(24px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+
+        /* ── Countdown ── */
+        .cs-countdown {
+            display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;
+            margin-bottom:1rem;
+            animation:fadeUp .8s .45s ease both;
+        }
+        .cs-count-box {
+            background:var(--cs-surface); border:1px solid var(--cs-border);
+            border-radius:16px; padding:1.2rem 1.5rem; min-width:100px;
+            text-align:center; backdrop-filter:blur(12px);
+            transition:border-color .3s, box-shadow .3s;
+        }
+        .cs-count-box:hover {
+            border-color:var(--cs-primary);
+            box-shadow:0 0 30px var(--cs-glow);
+        }
+        .cs-count-val {
+            font-size:2.4rem; font-weight:800;
+            background:linear-gradient(135deg,#fff,var(--cs-primary-light));
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+            background-clip:text; line-height:1;
+        }
+        .cs-count-label {
+            font-size:.7rem; font-weight:600; text-transform:uppercase;
+            letter-spacing:.1em; color:var(--cs-text-muted); margin-top:.35rem;
+        }
+        .cs-launch-date {
+            font-size:.85rem; color:var(--cs-text-muted); margin-bottom:2.5rem;
+            animation:fadeUp .8s .55s ease both;
+        }
+        .cs-launch-date strong { color:var(--cs-accent); }
+
+        /* ── CTA ── */
+        .cs-cta-row {
+            display:flex; justify-content:center; gap:.75rem; flex-wrap:wrap;
+            margin-bottom:3.5rem;
+            animation:fadeUp .8s .6s ease both;
+        }
+        .cs-btn {
+            display:inline-flex; align-items:center; gap:.4rem;
+            padding:.7rem 1.6rem; border-radius:12px;
+            font-size:.9rem; font-weight:600; font-family:inherit;
+            cursor:pointer; text-decoration:none; transition:all .25s;
+        }
+        .cs-btn-primary {
+            background:linear-gradient(135deg,var(--cs-primary),var(--cs-accent));
+            border:none; color:#fff;
+            box-shadow:0 4px 24px var(--cs-glow);
+        }
+        .cs-btn-primary:hover { transform:translateY(-2px); box-shadow:0 8px 32px var(--cs-glow); }
+        .cs-btn-outline {
+            background:transparent; border:1px solid var(--cs-border);
+            color:var(--cs-text-dim);
+        }
+        .cs-btn-outline:hover { border-color:var(--cs-primary-light); color:#fff; }
+
+        /* ── What we're building ── */
+        .cs-section {
+            max-width:1100px; margin:0 auto; padding:0 1.5rem 4rem;
+        }
+        .cs-section-title {
+            text-align:center; font-size:1.6rem; font-weight:800;
+            margin-bottom:.5rem;
+        }
+        .cs-section-sub {
+            text-align:center; color:var(--cs-text-dim); font-size:.95rem;
+            margin-bottom:2.5rem; max-width:600px; margin-left:auto; margin-right:auto;
+        }
+
+        .cs-features {
+            display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+            gap:1.25rem;
+        }
+        .cs-feature {
+            background:var(--cs-surface); border:1px solid var(--cs-border);
+            border-radius:16px; padding:1.5rem; backdrop-filter:blur(12px);
+            transition:border-color .3s, transform .3s;
+        }
+        .cs-feature:hover { border-color:var(--cs-primary); transform:translateY(-4px); }
+        .cs-feature-icon {
+            width:48px;height:48px;border-radius:12px;
+            display:flex;align-items:center;justify-content:center;
+            font-size:1.2rem; margin-bottom:1rem;
+        }
+        .cs-feature h3 { font-size:1rem; font-weight:700; margin-bottom:.4rem; }
+        .cs-feature p { font-size:.85rem; color:var(--cs-text-dim); line-height:1.65; }
+
+        /* ── Chart showcase ── */
+        .cs-charts-grid {
+            display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+            gap:1rem; margin-top:2rem;
+        }
+        .cs-chart-card {
+            background:var(--cs-surface); border:1px solid var(--cs-border);
+            border-radius:14px; padding:1.25rem; text-align:center;
+            backdrop-filter:blur(12px);
+            transition:border-color .3s, transform .3s;
+        }
+        .cs-chart-card:hover { border-color:var(--cs-accent); transform:translateY(-3px); }
+        .cs-chart-card i { font-size:2rem; margin-bottom:.6rem; }
+        .cs-chart-card .chart-name { font-size:.82rem; font-weight:600; }
+        .cs-chart-card .chart-desc { font-size:.72rem; color:var(--cs-text-muted); margin-top:.2rem; }
+
+        /* ── Stats bar ── */
+        .cs-stats {
+            display:flex; justify-content:center; gap:2.5rem; flex-wrap:wrap;
+            padding:2rem 1.5rem;
+            border-top:1px solid var(--cs-border);
+            border-bottom:1px solid var(--cs-border);
+            margin-bottom:4rem;
+        }
+        .cs-stat { text-align:center; }
+        .cs-stat-val {
+            font-size:1.8rem; font-weight:800;
+            background:linear-gradient(135deg,var(--cs-primary-light),var(--cs-accent));
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+            background-clip:text;
+        }
+        .cs-stat-label { font-size:.75rem; color:var(--cs-text-muted); font-weight:500; margin-top:.15rem; }
+
+        /* ── Footer ── */
+        .cs-footer {
+            text-align:center; padding:2rem 1.5rem 3rem;
+            font-size:.8rem; color:var(--cs-text-muted);
+        }
+        .cs-footer a { color:var(--cs-primary-light); text-decoration:none; }
+
+        /* ── Responsive ── */
+        @@media (max-width:600px) {
+            .cs-nav { padding:1rem; }
+            .cs-hero { padding:2.5rem 1rem 1.5rem; }
+            .cs-count-box { min-width:72px; padding:.9rem 1rem; }
+            .cs-count-val { font-size:1.8rem; }
+            .cs-charts-grid { grid-template-columns:repeat(2,1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="cs-bg"></div>
+    <div class="cs-grid"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="cs-wrapper">
+
+        <!-- Nav -->
+        <nav class="cs-nav">
+            <a href="/" class="cs-logo">
+                <div class="cs-logo-icon"><i class="bi bi-bar-chart-fill"></i></div>
+                <span class="cs-logo-text">AI Insights</span>
+            </a>
+            <div class="cs-nav-links">
+                <a href="#features">Features</a>
+                <a href="#charts">Charts</a>
+                <a href="/auth/login">Sign In</a>
+            </div>
+        </nav>
+
+        <!-- Hero -->
+        <section class="cs-hero">
+            <div class="cs-badge">
+                <span class="pulse"></span>
+                Launching May 1, 2026
+            </div>
+            <h1>
+                The Future of<br/>
+                <span class="gradient-text">Data Conversations</span><br/>
+                Is Almost Here
+            </h1>
+            <p class="cs-hero-sub">
+                AI Insights connects to your SQL databases and Power BI Semantic Models,
+                deploys custom AI agents, and generates beautiful charts in seconds.
+                Ask your data anything in plain English — no SQL, no code, just answers.
+            </p>
+
+            <!-- Countdown -->
+            <div class="cs-countdown" id="countdown">
+                <div class="cs-count-box">
+                    <div class="cs-count-val" id="cd-days">--</div>
+                    <div class="cs-count-label">Days</div>
                 </div>
-                <h1 class="hero-title">
-                    Turn Any Data Into<br/>
-                    <span class="hero-highlight">Decisions — Instantly</span>
-                </h1>
-                <p class="hero-subtitle">
-                    AI Insights connects to your SQL databases and Power BI Semantic Models, deploys custom AI agents, and generates beautiful charts in seconds. No SQL. No dashboards. Just answers.
-                </p>
-                <div class="hero-actions">
-                    <a href="/auth/register" class="btn cp-btn-gradient btn-lg">
-                        <i class="bi bi-rocket-takeoff me-2"></i>Start Free Trial
-                    </a>
-                    <a href="/chat" class="btn btn-outline-cp btn-lg">
-                        <i class="bi bi-play-circle me-2"></i>Watch 2-min Demo
-                    </a>
+                <div class="cs-count-box">
+                    <div class="cs-count-val" id="cd-hours">--</div>
+                    <div class="cs-count-label">Hours</div>
                 </div>
-                <!-- Stat row -->
-                <div class="hero-stats mb-3">
-                    <div class="hero-stat-item">
-                        <span class="stat-number">2</span>
-                        <span class="stat-label">Datasources (Growing)</span>
-                    </div>
-                    <div class="hero-stat-divider"></div>
-                    <div class="hero-stat-item">
-                        <span class="stat-number">72+</span>
-                        <span class="stat-label">Chart Types</span>
-                    </div>
-                    <div class="hero-stat-divider"></div>
-                    <div class="hero-stat-item">
-                        <span class="stat-number">10×</span>
-                        <span class="stat-label">Faster insights</span>
-                    </div>
+                <div class="cs-count-box">
+                    <div class="cs-count-val" id="cd-mins">--</div>
+                    <div class="cs-count-label">Minutes</div>
                 </div>
-                <!-- Trust badges -->
-                <div class="hero-trust">
-                    <span class="trust-item"><i class="bi bi-shield-check me-1"></i>GDPR Compliant</span>
-                    <span class="trust-item"><i class="bi bi-clock me-1"></i>30-day Free Trial</span>
-                    <span class="trust-item"><i class="bi bi-credit-card me-1"></i>No Credit Card</span>
-                    <span class="trust-item"><i class="bi bi-patch-check me-1"></i>SOC 2 Ready</span>
+                <div class="cs-count-box">
+                    <div class="cs-count-val" id="cd-secs">--</div>
+                    <div class="cs-count-label">Seconds</div>
                 </div>
             </div>
+            <p class="cs-launch-date"><i class="bi bi-calendar-event me-1"></i>Official launch: <strong>May 1, 2026</strong></p>
 
-            <!-- Right column — AI Insights Panel -->
-            <div class="col-lg-6">
-                <div class="hero-insights-panel">
-
-                    <!-- Ask Anything bar -->
-                    <div class="hero-ask-bar">
-                        <i class="bi bi-search text-muted me-2"></i>
-                        <span class="hero-ask-placeholder">Ask your data anything…</span>
-                        <button class="btn cp-btn-gradient hero-ask-send">Send</button>
-                    </div>
-                    <div class="hero-quick-chips">
-                        <button class="hero-chip"><i class="bi bi-graph-up me-1"></i>Top revenue this month</button>
-                        <button class="hero-chip"><i class="bi bi-person-x me-1"></i>Churn risk users</button>
-                    </div>
-
-                    <!-- Metrics grid (2×2) -->
-                    <div class="hero-metrics-grid">
-                        <div class="hero-metric-card glass-card">
-                            <i class="bi bi-graph-up-arrow metric-icon" style="color:var(--cp-primary)"></i>
-                            <div class="metric-value">$2.4M</div>
-                            <div class="metric-label">Total Revenue</div>
-                            <span class="metric-trend up"><i class="bi bi-arrow-up-short"></i>13.3% vs last qtr</span>
-                        </div>
-                        <div class="hero-metric-card glass-card">
-                            <i class="bi bi-people-fill metric-icon" style="color:var(--cp-accent)"></i>
-                            <div class="metric-value">18,420</div>
-                            <div class="metric-label">Active Users</div>
-                            <span class="metric-trend up"><i class="bi bi-arrow-up-short"></i>9.7% this month</span>
-                        </div>
-                        <div class="hero-metric-card glass-card">
-                            <i class="bi bi-lightning-charge-fill metric-icon" style="color:var(--cp-orange)"></i>
-                            <div class="metric-value">0.8s</div>
-                            <div class="metric-label">Avg Query Time</div>
-                            <span class="metric-trend down"><i class="bi bi-arrow-down-short"></i>62% faster</span>
-                        </div>
-                        <div class="hero-metric-card glass-card">
-                            <i class="bi bi-bar-chart-fill metric-icon" style="color:var(--cp-purple)"></i>
-                            <div class="metric-value">72</div>
-                            <div class="metric-label">Chart Types</div>
-                            <span class="metric-trend up"><i class="bi bi-plus"></i>Sankey · Treemap · +70</span>
-                        </div>
-                    </div>
-
-                    <!-- Live AI response strip -->
-                    <div class="hero-ai-strip">
-                        <div class="hero-ai-msg">
-                            🤖 <strong>AI Insight</strong>: <em>"North region leads $145K (+13%), East $101K (+9.7%). Recommend reallocating 15% budget from South → North for Q3 max ROI."</em>
-                        </div>
-                        <div class="hero-ai-footer">Generated in 0.4s · Powered by GPT-4</div>
-                    </div>
-
-                </div>
+            <div class="cs-cta-row">
+                <a href="/auth/register" class="cs-btn cs-btn-primary">
+                    <i class="bi bi-rocket-takeoff"></i> Get Early Access
+                </a>
+                <a href="#features" class="cs-btn cs-btn-outline">
+                    <i class="bi bi-arrow-down-circle"></i> Learn More
+                </a>
             </div>
+        </section>
 
+        <!-- Stats -->
+        <div class="cs-stats">
+            <div class="cs-stat">
+                <div class="cs-stat-val">72+</div>
+                <div class="cs-stat-label">Chart Types</div>
+            </div>
+            <div class="cs-stat">
+                <div class="cs-stat-val">2</div>
+                <div class="cs-stat-label">Datasources (Growing)</div>
+            </div>
+            <div class="cs-stat">
+                <div class="cs-stat-val">&lt;1s</div>
+                <div class="cs-stat-label">Avg Query Time</div>
+            </div>
+            <div class="cs-stat">
+                <div class="cs-stat-val">10×</div>
+                <div class="cs-stat-label">Faster Insights</div>
+            </div>
         </div>
-    </div>
-</section>
 
-<!-- Features Section -->
-<section class="cp-section cp-features">
-    <div class="container">
-        <div class="section-header text-center mb-5">
-            <h2 class="section-title">Everything You Need</h2>
-            <p class="section-subtitle">A complete analytics platform powered by AI</p>
-        </div>
-        <div class="row g-4">
-            <div class="col-md-4">
-                <div class="feature-card glass-card">
-                    <div class="feature-icon">
-                        <i class="bi bi-database-fill-gear"></i>
+        <!-- What We're Building -->
+        <section class="cs-section" id="features">
+            <h2 class="cs-section-title">What We're Building</h2>
+            <p class="cs-section-sub">A complete AI-powered analytics platform that turns plain English into instant insights, dashboards, and reports.</p>
+
+            <div class="cs-features">
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(99,102,241,.15);color:var(--cs-primary-light)">
+                        <i class="bi bi-chat-dots-fill"></i>
                     </div>
-                    <h3 class="feature-title">Growing Datasource Library</h3>
-                    <p class="feature-desc">Currently supporting SQL Server Online and Power BI Semantic Models, with 15+ additional connectors launching next month.</p>
+                    <h3>Natural Language Queries</h3>
+                    <p>Ask questions like "Show top 10 products by revenue this month" and get instant answers with charts. No SQL knowledge needed — our AI understands business context.</p>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="feature-card glass-card">
-                    <div class="feature-icon">
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(6,182,212,.15);color:var(--cs-accent)">
                         <i class="bi bi-robot"></i>
                     </div>
-                    <h3 class="feature-title">AI Agents</h3>
-                    <p class="feature-desc">Create custom AI agents with specific knowledge, system prompts, and datasource connections. Chat naturally.</p>
+                    <h3>Custom AI Agents</h3>
+                    <p>Create specialized AI agents with tailored system prompts and datasource connections. Each agent learns your business vocabulary and delivers domain-specific insights.</p>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="feature-card glass-card">
-                    <div class="feature-icon">
-                        <i class="bi bi-bar-chart-line-fill"></i>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(167,139,250,.15);color:var(--cs-accent2)">
+                        <i class="bi bi-grid-1x2-fill"></i>
                     </div>
-                    <h3 class="feature-title">72+ Chart Types</h3>
-                    <p class="feature-desc">From basic bar charts to Sankey diagrams, candlesticks, treemaps, and more. Drag-and-drop report designer.</p>
+                    <h3>Drag-and-Drop Dashboards</h3>
+                    <p>Build pixel-perfect report pages with our canvas designer. Drag charts, tables, shapes, and navigation widgets. Apply themes with one click and share interactive reports.</p>
+                </div>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(52,211,153,.15);color:#34d399">
+                        <i class="bi bi-database-fill-gear"></i>
+                    </div>
+                    <h3>SQL &amp; Power BI Connectors</h3>
+                    <p>Connect SQL Server, online SQL databases, and Power BI Semantic Models today. Reuse your existing schemas, business logic, and trusted measures with AI-driven analysis.</p>
+                </div>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(251,191,36,.15);color:#fbbf24">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </div>
+                    <h3>Enterprise-Grade Security</h3>
+                    <p>Role-based access control, encrypted connections, read-only query execution, and workspace-level isolation. GDPR compliant, SOC 2 ready, with full activity audit logs.</p>
+                </div>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(244,63,94,.15);color:#fb7185">
+                        <i class="bi bi-share-fill"></i>
+                    </div>
+                    <h3>One-Click Report Sharing</h3>
+                    <p>Generate shareable links so teammates can view polished reports without editing permissions. Multi-page reports with consistent formatting across every visual.</p>
                 </div>
             </div>
-        </div>
-    </div>
-</section>
+        </section>
 
-<!-- How to Use AI Insights — User Guide -->
-<section class="cp-section cp-how-to" id="how-to">
-    <div class="container">
-        <div class="section-header text-center mb-5">
-            <h2 class="section-title">How to Use AI Insights</h2>
-            <p class="section-subtitle">Get started in 4 simple steps — no technical knowledge required</p>
-        </div>
-        <div class="row g-4">
-            <div class="col-md-6 col-lg-3">
-                <div class="howto-card glass-card">
-                    <div class="howto-step-num">1</div>
-                    <div class="howto-icon"><i class="bi bi-folder-plus"></i></div>
-                    <h4 class="howto-title">Create a Workspace</h4>
-                    <p class="howto-desc">Click <strong>+ New Workspace</strong> in the left panel and give it a name. A workspace is your project space where everything lives.</p>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="howto-card glass-card">
-                    <div class="howto-step-num">2</div>
-                    <div class="howto-icon"><i class="bi bi-database-add"></i></div>
-                    <h4 class="howto-title">Connect Your Data</h4>
-                    <p class="howto-desc">Follow the guided wizard to connect a data source. Just paste your connection details — we'll handle the rest.</p>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="howto-card glass-card">
-                    <div class="howto-step-num">3</div>
-                    <div class="howto-icon"><i class="bi bi-chat-dots"></i></div>
-                    <h4 class="howto-title">Ask Questions</h4>
-                    <p class="howto-desc">Click on your AI Agent and start chatting. Ask things like <em>"What were our top sales last month?"</em> — the AI understands plain English.</p>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="howto-card glass-card">
-                    <div class="howto-step-num">4</div>
-                    <div class="howto-icon"><i class="bi bi-bar-chart-line"></i></div>
-                    <h4 class="howto-title">View & Share Reports</h4>
-                    <p class="howto-desc">Charts and insights are created automatically. Open the Dashboard to drag, resize, and save reports — then share them with your team.</p>
-                </div>
-            </div>
-        </div>
-        <div class="row mt-5">
-            <div class="col-lg-8 mx-auto">
-                <div class="howto-tips glass-card">
-                    <h5><i class="bi bi-lightbulb me-2"></i>Tips for Best Results</h5>
-                    <ul class="howto-tips-list">
-                        <li><i class="bi bi-check-circle-fill text-success me-2"></i>Ask clear, specific questions — e.g. <em>"Show me revenue by region this quarter"</em></li>
-                        <li><i class="bi bi-check-circle-fill text-success me-2"></i>Use the <strong>suggestion chips</strong> that appear below the chat for quick ideas</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-2"></i>Click <strong>"Add to Dashboard"</strong> on any chart to save it to your report</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-2"></i>Invite team members from <strong>Settings → Users</strong> so everyone can explore the data</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
+        <!-- Chart Showcase -->
+        <section class="cs-section" id="charts">
+            <h2 class="cs-section-title">72+ Chart Types Built In</h2>
+            <p class="cs-section-sub">From classic bar charts to advanced Sankey diagrams — every visualization your data story needs.</p>
 
-<!-- How It Works / Integration Showcase -->
-<section class="cp-section cp-pricing-preview" id="integrations">
-    <div class="container">
-        <div class="section-header text-center mb-5">
-            <h2 class="section-title">How It Works with Your Current Stack</h2>
-            <p class="section-subtitle">Connect today with SQL Online Service and Power BI Semantic Model</p>
-        </div>
-        <div class="row g-4 justify-content-center">
-            <div class="col-md-6">
-                <div class="pricing-card glass-card h-100">
-                    <div class="pricing-tier"><i class="bi bi-database-fill-check me-2"></i>SQL Online Service</div>
-                    <p class="feature-desc mb-2">Connect your SQL Server and online SQL databases in minutes. Ask plain-English questions and get instant charts from live operational data.</p>
-                    <ul class="pricing-features mb-0">
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Use existing schemas and tables</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Secure read-only query execution</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Fast chart generation from SQL data</li>
-                    </ul>
+            <div class="cs-charts-grid">
+                <div class="cs-chart-card">
+                    <i class="bi bi-bar-chart-fill" style="color:var(--cs-primary-light)"></i>
+                    <div class="chart-name">Bar &amp; Column</div>
+                    <div class="chart-desc">Grouped, stacked, horizontal</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-graph-up" style="color:var(--cs-accent)"></i>
+                    <div class="chart-name">Line &amp; Area</div>
+                    <div class="chart-desc">Trends, time series, sparklines</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-pie-chart-fill" style="color:var(--cs-accent2)"></i>
+                    <div class="chart-name">Pie &amp; Donut</div>
+                    <div class="chart-desc">Proportions, segments, nested</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-diagram-3-fill" style="color:#34d399"></i>
+                    <div class="chart-name">Sankey</div>
+                    <div class="chart-desc">Flow, allocation, pathways</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-grid-3x3-gap-fill" style="color:#fbbf24"></i>
+                    <div class="chart-name">Treemap</div>
+                    <div class="chart-desc">Hierarchical proportions</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-moisture" style="color:#fb7185"></i>
+                    <div class="chart-name">Scatter &amp; Bubble</div>
+                    <div class="chart-desc">Correlation, clustering</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-speedometer2" style="color:var(--cs-primary-light)"></i>
+                    <div class="chart-name">Gauge &amp; KPI</div>
+                    <div class="chart-desc">Progress, targets, thresholds</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-calendar3" style="color:var(--cs-accent)"></i>
+                    <div class="chart-name">Heatmap</div>
+                    <div class="chart-desc">Density, calendar, matrix</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-hexagon-fill" style="color:var(--cs-accent2)"></i>
+                    <div class="chart-name">Radar &amp; Polar</div>
+                    <div class="chart-desc">Multi-axis comparison</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-water" style="color:#34d399"></i>
+                    <div class="chart-name">Waterfall</div>
+                    <div class="chart-desc">Cumulative gain/loss</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-graph-down" style="color:#fbbf24"></i>
+                    <div class="chart-name">Candlestick</div>
+                    <div class="chart-desc">Financial OHLC data</div>
+                </div>
+                <div class="cs-chart-card">
+                    <i class="bi bi-plus-circle-dotted" style="color:#fb7185"></i>
+                    <div class="chart-name">+60 More</div>
+                    <div class="chart-desc">Funnel, box plot, map…</div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="pricing-card glass-card h-100">
-                    <div class="pricing-tier"><i class="bi bi-pie-chart-fill me-2"></i>Power BI Semantic Model</div>
-                    <p class="feature-desc mb-2">Connect to your Power BI datasets and semantic models so teams can explore trusted metrics through conversational analytics.</p>
-                    <ul class="pricing-features mb-0">
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Use existing business logic and measures</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Query curated datasets with AI</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Share report-ready visuals quickly</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        <div class="text-center mt-4">
-            <div class="glass-card d-inline-block px-4 py-3">
-                <i class="bi bi-clock-history me-2 text-primary"></i>
-                <strong>Coming Soon:</strong> 15+ additional data sources next month (MySQL, PostgreSQL, Snowflake, BigQuery, MongoDB, REST APIs, and more).
-            </div>
-        </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="cs-footer">
+            <p>&copy; 2025–2026 <a href="/">AI Insights</a>. All rights reserved.</p>
+            <p style="margin-top:.4rem">
+                <a href="/about">About</a> · <a href="/docs">Docs</a> · <a href="/blog">Blog</a>
+            </p>
+        </footer>
+
     </div>
-</section>
+
+    <script>
+    (function() {
+        const launch = new Date('2026-05-01T00:00:00Z').getTime();
+        function update() {
+            const now = Date.now();
+            let diff = launch - now;
+            if (diff < 0) diff = 0;
+            const d = Math.floor(diff / 86400000);
+            const h = Math.floor((diff % 86400000) / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            document.getElementById('cd-days').textContent = String(d).padStart(2, '0');
+            document.getElementById('cd-hours').textContent = String(h).padStart(2, '0');
+            document.getElementById('cd-mins').textContent = String(m).padStart(2, '0');
+            document.getElementById('cd-secs').textContent = String(s).padStart(2, '0');
+        }
+        update();
+        setInterval(update, 1000);
+    })();
+    </script>
+</body>
+</html>

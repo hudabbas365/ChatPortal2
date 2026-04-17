@@ -3009,6 +3009,17 @@ body.embed-body {
     font-size: 0.85rem;
     border-bottom: 1px solid var(--cp-border);
     text-align: left;
+    white-space: nowrap;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dr-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.dr-table-scroll .cp-table {
+    min-width: max-content;
 }
 .cp-table-head {
     background: var(--cp-bg);

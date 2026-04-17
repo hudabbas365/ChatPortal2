@@ -105,3 +105,60 @@
 .prop-section-shape.visible {
     display: block;
 }
+
+/* Navigation widget card — no background, border, or shadow by default */
+.navigation-card {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+.navigation-card:hover {
+    box-shadow: 0 0 0 2px var(--cp-primary, #4A90D9) !important;
+}
+.navigation-card.selected {
+    box-shadow: 0 0 0 2px var(--cp-primary, #4A90D9) !important;
+}
+
+/* Token pack radio selection highlight */
+.token-pack-option {
+    cursor: pointer;
+    display: block;
+}
+.token-pack-option input[type="radio"] {
+    display: none;
+}
+.token-pack-option input[type="radio"]:checked + .token-pack-card {
+    border: 2px solid var(--cp-primary, #4A90D9) !important;
+    box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.25);
+    background: rgba(74, 144, 217, 0.06);
+}
+.token-pack-card {
+    border: 2px solid transparent;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+/* Datasource detail modal styling */
+#dsDetailModal .modal-content {
+    background: var(--cp-card-bg, #1e1e2e) !important;
+    color: var(--cp-text, #e0e0e0) !important;
+    border: 1px solid var(--cp-border, #333) !important;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+#dsDetailModal .modal-header {
+    border-bottom: 1px solid var(--cp-border, #333) !important;
+}
+#dsDetailModal .modal-footer {
+    border-top: 1px solid var(--cp-border, #333) !important;
+}
+#dsDetailModal .form-control {
+    background: var(--cp-surface, #252535) !important;
+    color: var(--cp-text, #e0e0e0) !important;
+    border-color: var(--cp-border, #333) !important;
+}
+#dsDetailModal .form-label {
+    color: var(--cp-text-muted, #aaa) !important;
+}

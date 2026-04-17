@@ -1033,6 +1033,7 @@
                             message: message,
                             workspaceId: currentWorkspaceId,
                             agentId: window.currentAgentGuid || '',
+                            datasourceId: window.currentDatasourceId || null,
                             userId: user?.id || ''
                         }),
                     signal: _abortController.signal

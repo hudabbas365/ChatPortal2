@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace AIInsights.Controllers;
 
@@ -230,11 +231,18 @@ public class BillingController : Controller
         var returnUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&paypal=success";
         var cancelUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&paypal=cancel";
 
-        var result = await _payPal.CreateOrderAsync(req.Amount, "USD", req.Description ?? "AIInsights Purchase", returnUrl, cancelUrl);
-        if (!result.Success)
-            return BadRequest(new { error = result.Error });
+        try
+        {
+            var result = await _payPal.CreateOrderAsync(req.Amount, "USD", req.Description ?? "AIInsights Purchase", returnUrl, cancelUrl);
+            if (!result.Success)
+                return BadRequest(new { error = result.Error });
 
-        return Ok(new { orderId = result.OrderId, approveUrl = result.ApproveUrl });
+            return Ok(new { orderId = result.OrderId, approveUrl = result.ApproveUrl });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Payment service error: {ex.Message}" });
+        }
     }
 
     // ── PayPal: Capture Order ─────────────────────────────────────
@@ -244,27 +252,68 @@ public class BillingController : Controller
         var caller = await GetCallerAsync();
         if (caller == null) return Unauthorized();
 
-        var capture = await _payPal.CaptureOrderAsync(req.OrderId);
+        PayPalCaptureResult capture;
+        try
+        {
+            capture = await _payPal.CaptureOrderAsync(req.OrderId);
+        }
+        catch (Exception ex)
+        {
+            // Log failed payment
+            _db.PaymentRecords.Add(new PaymentRecord
+            {
+                OrganizationId = req.OrganizationId,
+                UserId = caller.Id,
+                PaymentType = req.PurchaseType,
+                Amount = 0,
+                Status = "failed",
+                PayPalOrderId = req.OrderId,
+                Description = $"Capture exception: {req.PurchaseType}",
+                ErrorMessage = ex.Message,
+                PlanKey = req.PlanKey
+            });
+            await _db.SaveChangesAsync();
+            return StatusCode(500, new { error = $"Payment capture error: {ex.Message}" });
+        }
         if (!capture.Success)
+        {
+            // Log failed payment
+            _db.PaymentRecords.Add(new PaymentRecord
+            {
+                OrganizationId = req.OrganizationId,
+                UserId = caller.Id,
+                PaymentType = req.PurchaseType,
+                Amount = 0,
+                Status = "failed",
+                PayPalOrderId = req.OrderId,
+                Description = $"Capture failed: {req.PurchaseType}",
+                ErrorMessage = capture.Error,
+                PlanKey = req.PlanKey
+            });
+            await _db.SaveChangesAsync();
             return BadRequest(new { error = capture.Error });
+        }
 
         // Apply the purchase based on type
         var org = await _db.Organizations.FindAsync(req.OrganizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
 
         var description = "";
+        decimal amount = 0;
 
         switch (req.PurchaseType)
         {
             case "license":
                 var count = Math.Max(1, req.Quantity);
                 org.PurchasedLicenses += count;
+                amount = count * (req.PlanKey?.ToLower() == "enterprise" ? 45m : 25m);
                 description = $"{count} license(s) purchased via PayPal (Order: {req.OrderId}).";
                 break;
 
             case "token_pack":
                 var tokens = req.TokenAmount > 0 ? req.TokenAmount : 1_000_000;
                 org.EnterpriseExtraTokenPacks += (int)Math.Ceiling(tokens / 2_000_000.0);
+                amount = tokens <= 100000 ? 9m : tokens <= 500000 ? 20m : 25m;
                 description = $"{tokens:N0} extra tokens purchased via PayPal (Order: {req.OrderId}).";
                 break;
 
@@ -272,6 +321,7 @@ public class BillingController : Controller
                 if (Enum.TryParse<PlanType>(req.PlanKey, true, out var planType))
                 {
                     org.Plan = planType;
+                    amount = req.PlanKey?.ToLower() == "enterprise" ? 45m : 25m;
                     description = $"Plan upgraded to {req.PlanKey} via PayPal (Order: {req.OrderId}).";
                 }
                 break;
@@ -280,6 +330,18 @@ public class BillingController : Controller
                 return BadRequest(new { error = "Unknown purchase type." });
         }
 
+        // Log successful payment
+        _db.PaymentRecords.Add(new PaymentRecord
+        {
+            OrganizationId = req.OrganizationId,
+            UserId = caller.Id,
+            PaymentType = req.PurchaseType,
+            Amount = amount,
+            Status = "succeeded",
+            PayPalOrderId = req.OrderId,
+            Description = description,
+            PlanKey = req.PlanKey
+        });
         _db.ActivityLogs.Add(new ActivityLog
         {
             Action = "paypal_payment_completed",
@@ -303,6 +365,289 @@ public class BillingController : Controller
             price = p.Price
         });
         return Ok(packages);
+    }
+
+    // ── PayPal Recurring Subscriptions ────────────────────────────
+
+    [HttpPost("/api/paypal/create-subscription")]
+    public async Task<IActionResult> PayPalCreateSubscription([FromBody] PayPalCreateSubscriptionRequest req)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (!IsOrgAdminOf(caller, req.OrganizationId))
+            return StatusCode(403, new { error = "Only Organization Admins can manage subscriptions." });
+
+        var org = await _db.Organizations.FindAsync(req.OrganizationId);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        // Determine price from plan
+        decimal monthlyPrice = req.PlanKey?.ToLower() switch
+        {
+            "enterprise" => 45.00m,
+            "professional" => 25.00m,
+            _ => 0
+        };
+        if (monthlyPrice == 0)
+            return BadRequest(new { error = "Invalid plan. Choose Professional or Enterprise." });
+
+        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
+        var returnUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&subscription=success&orgId={req.OrganizationId}&planKey={req.PlanKey}";
+        var cancelUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&subscription=cancel";
+
+        try
+        {
+            // 1. Create a PayPal product (or reuse — for simplicity create each time; PayPal deduplicates by name)
+            var product = await _payPal.CreateProductAsync("AIInsights Subscription", "AIInsights monthly plan subscription");
+            if (!product.Success)
+                return BadRequest(new { error = product.Error });
+
+            // 2. Create a billing plan
+            var plan = await _payPal.CreatePlanAsync(product.ProductId, $"AIInsights {req.PlanKey} Monthly", monthlyPrice);
+            if (!plan.Success)
+                return BadRequest(new { error = plan.Error });
+
+            // 3. Create the subscription
+            var sub = await _payPal.CreateSubscriptionAsync(plan.PlanId, returnUrl, cancelUrl);
+            if (!sub.Success)
+                return BadRequest(new { error = sub.Error });
+
+            // Store pending subscription info
+            org.PayPalSubscriptionId = sub.SubscriptionId;
+            org.PayPalPlanId = plan.PlanId;
+            org.SubscriptionStatus = "APPROVAL_PENDING";
+            await _db.SaveChangesAsync();
+
+            return Ok(new { subscriptionId = sub.SubscriptionId, approveUrl = sub.ApproveUrl });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Subscription error: {ex.Message}" });
+        }
+    }
+
+    [HttpPost("/api/paypal/activate-subscription")]
+    public async Task<IActionResult> PayPalActivateSubscription([FromBody] PayPalActivateSubscriptionRequest req)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
+        var org = await _db.Organizations.FindAsync(req.OrganizationId);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        if (string.IsNullOrEmpty(org.PayPalSubscriptionId))
+            return BadRequest(new { error = "No pending subscription found." });
+
+        try
+        {
+            // Verify subscription status with PayPal
+            var details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+            if (details == null)
+                return BadRequest(new { error = "Could not verify subscription with PayPal." });
+
+            if (details.Status == "ACTIVE" || details.Status == "APPROVED")
+            {
+                // Activate the plan on the org
+                if (Enum.TryParse<PlanType>(req.PlanKey, true, out var planType))
+                {
+                    org.Plan = planType;
+                }
+                org.SubscriptionStatus = "ACTIVE";
+                org.SubscriptionStartDate = DateTime.UtcNow;
+                org.SubscriptionNextBillingDate = details.NextBillingTime ?? DateTime.UtcNow.AddMonths(1);
+
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = "subscription_activated",
+                    Description = $"Monthly {req.PlanKey} subscription activated (PayPal: {org.PayPalSubscriptionId}). Next billing: {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                    UserId = caller.Id,
+                    OrganizationId = req.OrganizationId
+                });
+                // Log successful subscription payment
+                decimal subPrice = req.PlanKey?.ToLower() == "enterprise" ? 45m : 25m;
+                _db.PaymentRecords.Add(new PaymentRecord
+                {
+                    OrganizationId = req.OrganizationId,
+                    UserId = caller.Id,
+                    PaymentType = "subscription",
+                    Amount = subPrice,
+                    Status = "succeeded",
+                    PayPalSubscriptionId = org.PayPalSubscriptionId,
+                    Description = $"Monthly {req.PlanKey} subscription activated",
+                    PlanKey = req.PlanKey
+                });
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true, status = "ACTIVE", nextBilling = org.SubscriptionNextBillingDate });
+            }
+
+            return Ok(new { success = false, status = details.Status, error = $"Subscription status is {details.Status}, not yet active." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Activation error: {ex.Message}" });
+        }
+    }
+
+    [HttpPost("/api/paypal/cancel-subscription")]
+    public async Task<IActionResult> PayPalCancelSubscription([FromBody] PayPalCancelSubscriptionRequest req)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (!IsOrgAdminOf(caller, req.OrganizationId))
+            return StatusCode(403, new { error = "Only Organization Admins can cancel subscriptions." });
+
+        var org = await _db.Organizations.FindAsync(req.OrganizationId);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        if (string.IsNullOrEmpty(org.PayPalSubscriptionId))
+            return BadRequest(new { error = "No active subscription to cancel." });
+
+        try
+        {
+            var cancelled = await _payPal.CancelSubscriptionAsync(org.PayPalSubscriptionId, req.Reason ?? "Customer requested cancellation");
+            if (!cancelled)
+                return BadRequest(new { error = "Failed to cancel subscription with PayPal." });
+
+            org.SubscriptionStatus = "CANCELLED";
+            // Keep plan active until end of current billing period
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "subscription_cancelled",
+                Description = $"Monthly subscription cancelled (PayPal: {org.PayPalSubscriptionId}). Plan remains active until {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                UserId = caller.Id,
+                OrganizationId = req.OrganizationId
+            });
+            await _db.SaveChangesAsync();
+
+            return Ok(new { success = true, message = $"Subscription cancelled. Your plan remains active until {org.SubscriptionNextBillingDate:yyyy-MM-dd}." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Cancel error: {ex.Message}" });
+        }
+    }
+
+    [HttpGet("/api/paypal/subscription-status")]
+    public async Task<IActionResult> GetSubscriptionStatus([FromQuery] int organizationId)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
+        var org = await _db.Organizations.FindAsync(organizationId);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        return Ok(new
+        {
+            subscriptionId = org.PayPalSubscriptionId,
+            status = org.SubscriptionStatus,
+            plan = org.Plan.ToString(),
+            startDate = org.SubscriptionStartDate,
+            nextBillingDate = org.SubscriptionNextBillingDate
+        });
+    }
+
+    // ── PayPal Webhook (recurring payment notifications) ─────────
+    [HttpPost("/api/paypal/webhook")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PayPalWebhook()
+    {
+        string body;
+        using (var reader = new StreamReader(Request.Body))
+            body = await reader.ReadToEndAsync();
+
+        try
+        {
+            var doc = JsonDocument.Parse(body);
+            var eventType = doc.RootElement.GetProperty("event_type").GetString() ?? "";
+            var resource = doc.RootElement.GetProperty("resource");
+
+            if (eventType == "PAYMENT.SALE.COMPLETED")
+            {
+                // Recurring payment received — find org by subscription ID
+                var billingAgreementId = resource.TryGetProperty("billing_agreement_id", out var ba) ? ba.GetString() : null;
+                if (!string.IsNullOrEmpty(billingAgreementId))
+                {
+                    var org = await _db.Organizations.FirstOrDefaultAsync(o => o.PayPalSubscriptionId == billingAgreementId);
+                    if (org != null)
+                    {
+                        var amount = resource.TryGetProperty("amount", out var amt) && amt.TryGetProperty("total", out var tot)
+                            ? decimal.TryParse(tot.GetString(), out var d) ? d : 0 : 0;
+                        org.SubscriptionNextBillingDate = DateTime.UtcNow.AddMonths(1);
+                        _db.PaymentRecords.Add(new PaymentRecord
+                        {
+                            OrganizationId = org.Id,
+                            PaymentType = "subscription",
+                            Amount = amount,
+                            Status = "succeeded",
+                            PayPalSubscriptionId = billingAgreementId,
+                            Description = $"Recurring monthly payment received",
+                            PlanKey = org.Plan.ToString()
+                        });
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "recurring_payment_received",
+                            Description = $"Monthly recurring payment received (PayPal: {billingAgreementId}). Next billing: {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                            OrganizationId = org.Id
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+            }
+            else if (eventType == "BILLING.SUBSCRIPTION.CANCELLED" || eventType == "BILLING.SUBSCRIPTION.SUSPENDED")
+            {
+                var subId = resource.GetProperty("id").GetString();
+                if (!string.IsNullOrEmpty(subId))
+                {
+                    var org = await _db.Organizations.FirstOrDefaultAsync(o => o.PayPalSubscriptionId == subId);
+                    if (org != null)
+                    {
+                        org.SubscriptionStatus = eventType.Contains("CANCELLED") ? "CANCELLED" : "SUSPENDED";
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "subscription_" + (eventType.Contains("CANCELLED") ? "cancelled" : "suspended"),
+                            Description = $"Subscription {org.SubscriptionStatus.ToLower()} by PayPal webhook ({subId}).",
+                            OrganizationId = org.Id
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+            }
+            else if (eventType == "BILLING.SUBSCRIPTION.PAYMENT.FAILED")
+            {
+                var subId = resource.TryGetProperty("id", out var sid) ? sid.GetString() : null;
+                if (!string.IsNullOrEmpty(subId))
+                {
+                    var org = await _db.Organizations.FirstOrDefaultAsync(o => o.PayPalSubscriptionId == subId);
+                    if (org != null)
+                    {
+                        _db.PaymentRecords.Add(new PaymentRecord
+                        {
+                            OrganizationId = org.Id,
+                            PaymentType = "subscription",
+                            Amount = 0,
+                            Status = "failed",
+                            PayPalSubscriptionId = subId,
+                            Description = "Recurring payment failed",
+                            ErrorMessage = "PayPal billing subscription payment failed — org notified to fix payment within 5 days.",
+                            PlanKey = org.Plan.ToString()
+                        });
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "recurring_payment_failed",
+                            Description = $"Recurring payment FAILED for org '{org.Name}' (PayPal: {subId}). Must fix payment within 5 days.",
+                            OrganizationId = org.Id
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Log but always return 200 to PayPal
+        }
+
+        return Ok();
     }
 }
 
@@ -348,4 +693,22 @@ public class PayPalCaptureOrderRequest
     public int Quantity { get; set; } = 1;
     public int TokenAmount { get; set; } = 0;
     public string? PlanKey { get; set; }
+}
+
+public class PayPalCreateSubscriptionRequest
+{
+    public int OrganizationId { get; set; }
+    public string PlanKey { get; set; } = ""; // "Professional" or "Enterprise"
+}
+
+public class PayPalActivateSubscriptionRequest
+{
+    public int OrganizationId { get; set; }
+    public string PlanKey { get; set; } = "";
+}
+
+public class PayPalCancelSubscriptionRequest
+{
+    public int OrganizationId { get; set; }
+    public string? Reason { get; set; }
 }

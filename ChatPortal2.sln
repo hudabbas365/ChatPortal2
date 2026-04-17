@@ -5,8 +5,9 @@ VisualStudioVersion = 18.3.11520.95
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatPortal2", "ChatPortal2.csproj", "{9630DB53-BC9A-D095-1539-CE30971CC064}"
 EndProject
-# NOTE: SuperAdmin project display name updated to AIInsights.SuperAdmin while physical folder remains ChatPortal2.SuperAdmin (git mv out of scope).
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIInsights.SuperAdmin", "ChatPortal2.SuperAdmin\ChatPortal2.SuperAdmin.csproj", "{19C09DB2-7A80-49D0-ADB9-003CB490573A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatPortal2.SuperAdmin", "ChatPortal2.SuperAdmin\ChatPortal2.SuperAdmin.csproj", "{19C09DB2-7A80-49D0-ADB9-003CB490573A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ComingSoon", "..\ComingSoon\ComingSoon.csproj", "{E2C96DBD-0574-4881-8616-07006ED8268A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -42,6 +43,18 @@ Global
 		{19C09DB2-7A80-49D0-ADB9-003CB490573A}.Release|x64.Build.0 = Release|Any CPU
 		{19C09DB2-7A80-49D0-ADB9-003CB490573A}.Release|x86.ActiveCfg = Release|Any CPU
 		{19C09DB2-7A80-49D0-ADB9-003CB490573A}.Release|x86.Build.0 = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|x64.Build.0 = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Debug|x86.Build.0 = Debug|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x64.ActiveCfg = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x64.Build.0 = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x86.ActiveCfg = Release|Any CPU
+		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -41,9 +41,6 @@
             </button>
         </div>
         <div class="navbar-actions ms-auto">
-            <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="change-background-btn" title="Change canvas background">
-                <i class="bi bi-palette me-1"></i>Change Background
-            </button>
             <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="add-navigation-widget-btn" title="Add navigation hyperlink widget">
                 <i class="bi bi-link-45deg me-1"></i>Navigation
             </button>
@@ -54,18 +51,19 @@
                 <div class="dropdown-menu dropdown-menu-end p-2" style="min-width:280px">
                     <label class="form-label mb-1 small">Chart Theme</label>
                     <select class="form-select form-select-sm mb-2" id="dashboard-theme-select">
-                        <option value="ocean">Ocean</option>
-                        <option value="sunset">Sunset</option>
-                        <option value="forest">Forest</option>
-                        <option value="midnight">Midnight</option>
-                        <option value="pastel">Pastel</option>
-                        <option value="corporate">Corporate</option>
-                        <option value="retro">Retro</option>
-                        <option value="neon">Neon</option>
-                        <option value="earth">Earth</option>
-                        <option value="monochrome">Monochrome</option>
-                        <option value="custom">Custom</option>
+                        <option value="ocean">🎨 Ocean</option>
+                        <option value="sunset">🎨 Sunset</option>
+                        <option value="forest">🎨 Forest</option>
+                        <option value="midnight">🎨 Midnight</option>
+                        <option value="pastel">🎨 Pastel</option>
+                        <option value="corporate">🎨 Corporate</option>
+                        <option value="retro">🎨 Retro</option>
+                        <option value="neon">🎨 Neon</option>
+                        <option value="earth">🎨 Earth</option>
+                        <option value="monochrome">🎨 Monochrome</option>
+                        <option value="custom">✏️ Custom</option>
                     </select>
+                    <div id="dashboard-theme-preview" class="d-flex gap-1 mb-2 flex-wrap"></div>
                     <div id="dashboard-theme-custom-colors" class="d-none">
                         <div class="d-flex gap-1 mb-2">
                             <input type="color" class="form-control form-control-color" data-custom-theme-color value="#4A90D9" style="width:36px;height:30px">
@@ -547,6 +545,10 @@
                                                 <option value="url">Custom URL</option>
                                             </select>
                                         </div>
+                                        <div class="mb-2" id="prop-nav-page-wrap" style="display:none">
+                                            <label class="form-label">Target Page</label>
+                                            <select id="prop-nav-page" class="form-select form-select-sm"></select>
+                                        </div>
                                         <div class="mb-2 d-none" id="prop-nav-url-wrap">
                                             <label class="form-label">Custom URL</label>
                                             <input type="url" id="prop-nav-url" class="form-control form-control-sm" placeholder="https://...">
@@ -568,6 +570,16 @@
                                         <div class="mb-2">
                                             <label class="form-label">Background</label>
                                             <input type="color" id="prop-nav-bg-color" class="form-control form-control-sm" value="#ffffff">
+                                        </div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Text Color</label>
+                                                <input type="color" id="prop-nav-text-color" class="form-control form-control-sm" value="#4A90D9">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Font Size</label>
+                                                <input type="number" id="prop-nav-font-size" class="form-control form-control-sm" min="10" max="32" value="13">
+                                            </div>
                                         </div>
                                     </div>
 
@@ -675,10 +687,10 @@
                 <i class="bi bi-robot dcp-welcome-icon"></i>
                 <p>Ask me to add charts, analyse data, or help design your report.</p>
                 <div class="dcp-chips">
-                    <button class="dcp-chip">Add a sales bar chart</button>
-                    <button class="dcp-chip">Show revenue by region</button>
+                    <button class="dcp-chip">Add a bar chart</button>
+                    <button class="dcp-chip">Show data by category</button>
                     <button class="dcp-chip">Add a trend line chart</button>
-                    <button class="dcp-chip">Compare top products</button>
+                    <button class="dcp-chip">Compare top items</button>
                 </div>
             </div>
         </div>
@@ -938,11 +950,6 @@
             syncFromPage();
         })();
 
-        document.getElementById('change-background-btn')?.addEventListener('click', function() {
-            document.getElementById('canvas-prop-bg-mode')?.focus();
-            document.getElementById('canvasPropsSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        });
-
         document.getElementById('add-navigation-widget-btn')?.addEventListener('click', async function() {
             if (!window.canvasManager) return;
             await canvasManager.addChart({
@@ -1011,8 +1018,20 @@
                 customWrap.classList.toggle('d-none', themeSelect.value !== 'custom');
             }
 
-            themeSelect?.addEventListener('change', syncCustomVisibility);
+            function renderThemePreview() {
+                const preview = document.getElementById('dashboard-theme-preview');
+                if (!preview || !window.chartRenderer) return;
+                const t = themeSelect?.value || 'ocean';
+                if (t === 'custom') { preview.innerHTML = ''; return; }
+                const colors = window.chartRenderer.colorPalettes[t] || window.chartRenderer.colorPalettes.default;
+                preview.innerHTML = colors.map(c =>
+                    '<span style="width:24px;height:24px;border-radius:4px;background:' + c + ';display:inline-block;border:1px solid rgba(0,0,0,0.1);" title="' + c + '"></span>'
+                ).join('');
+            }
+
+            themeSelect?.addEventListener('change', function() { syncCustomVisibility(); renderThemePreview(); });
             applyBtn?.addEventListener('click', applyThemeToCharts);
+            renderThemePreview();
 
             try {
                 const saved = JSON.parse(localStorage.getItem('cp_dashboard_chart_theme') || 'null');
@@ -1070,7 +1089,23 @@
                                     window.currentDatasourceId = dsList[0].id;
                                     if (dsList[0].type) window.currentDatasourceType = dsList[0].type;
                                     // Populate dataset dropdown with real tables from datasource
-                                    loadDatasourceTables(dsList[0].id);
+                                    loadDatasourceTables(dsList[0].id).then(function(tableNames) {
+                                        // Update AI chat suggestion chips with real table names
+                                        if (tableNames && tableNames.length > 0) {
+                                            const chips = document.querySelectorAll('#dcpMessages .dcp-chip');
+                                            const t1 = tableNames[0] || 'data';
+                                            const t2 = tableNames.length > 1 ? tableNames[1] : t1;
+                                            const suggestions = [
+                                                'Show a bar chart from ' + t1,
+                                                'Summarize ' + t2 + ' data',
+                                                'Add a trend line chart',
+                                                'Compare top records in ' + t1
+                                            ];
+                                            chips.forEach(function(chip, i) {
+                                                if (suggestions[i]) chip.textContent = suggestions[i];
+                                            });
+                                        }
+                                    });
                                     // Load schema fields into Data Fields panel
                                     if (window.propertiesPanel) {
                                         propertiesPanel.loadFields('');

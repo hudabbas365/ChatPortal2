@@ -8,6 +8,8 @@ class CanvasManager {
         this._maxZIndex = 1;
         this._dragState = null;
         this._addingPage = false;
+        this._undoStack = [];
+        this._maxUndo = 30;
     }
 
     init(initialCharts, pages, activePageIndex) {
@@ -31,6 +33,34 @@ class CanvasManager {
 
         const addBtn = document.getElementById('add-page-btn');
         if (addBtn) addBtn.addEventListener('click', () => this.addPage());
+
+        // Ctrl+Z undo support
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                this.undo();
+            }
+        });
+    }
+
+    // ── Undo support ──────────────────────────────────────────────────
+    _pushUndo() {
+        const snapshot = JSON.stringify(this.pages);
+        this._undoStack.push({ pages: snapshot, activePageIndex: this.activePageIndex });
+        if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+    }
+
+    undo() {
+        if (this._undoStack.length === 0) return;
+        const state = this._undoStack.pop();
+        try {
+            this.pages = JSON.parse(state.pages);
+            this.activePageIndex = state.activePageIndex;
+            if (!this.pages[this.activePageIndex]) this.activePageIndex = 0;
+            this.charts = this.pages[this.activePageIndex].charts || [];
+            this.renderAll();
+            this.renderPageTabs();
+        } catch (e) { console.warn('Undo failed:', e); }
     }
 
     initDropZone() {
@@ -59,6 +89,7 @@ class CanvasManager {
 
     async addChart(partial) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
+        this._pushUndo();
         const isShape = window.ShapeManager && ShapeManager.isShape(partial.chartType);
         const isNavigation = partial.chartType === 'navigation';
         const defaultX = 20 + (this.charts.length % 5) * 30;
@@ -120,6 +151,7 @@ class CanvasManager {
 
     async deleteChart(chartId) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
+        this._pushUndo();
         await fetch(`/api/chart/${chartId}`, { method: 'DELETE' });
         this.charts = this.charts.filter(c => c.id !== chartId);
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
@@ -230,6 +262,7 @@ class CanvasManager {
         card.style.cssText = `left:${posX}px;top:${posY}px;width:${cardWidth}px;z-index:${zIdx};`;
 
         const isShape = window.ShapeManager && ShapeManager.isShape(chartDef.chartType);
+        const isNavigation = chartDef.chartType === 'navigation';
 
         if (isShape) {
             card.classList.add('shape-card');
@@ -240,6 +273,17 @@ class CanvasManager {
                     <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>
                 </div>
                 <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px"></div>
+                <div class="chart-resize-handle" title="Drag to resize"></div>
+            `;
+        } else if (isNavigation) {
+            card.classList.add('navigation-card');
+            card.innerHTML = `
+                <div class="shape-hover-actions">
+                    <button class="btn btn-xs btn-icon" data-action="edit" title="Edit"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate"><i class="bi bi-copy"></i></button>
+                    <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>
+                </div>
+                <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 80}px"></div>
                 <div class="chart-resize-handle" title="Drag to resize"></div>
             `;
         } else {
@@ -332,6 +376,9 @@ class CanvasManager {
         if (isShape) {
             const canvasWrap = card.querySelector('.chart-canvas-wrap');
             requestAnimationFrame(() => ShapeManager.render(canvasWrap, chartDef));
+        } else if (isNavigation) {
+            const canvasWrap = card.querySelector('.chart-canvas-wrap');
+            requestAnimationFrame(() => window.chartRenderer.render(chartDef, canvasWrap));
         } else {
             const canvasEl = card.querySelector('canvas');
             requestAnimationFrame(() => window.chartRenderer.render(chartDef, canvasEl));
@@ -340,12 +387,14 @@ class CanvasManager {
 
     _makeCardDraggable(card, chartDef) {
         const isShape = window.ShapeManager && ShapeManager.isShape(chartDef.chartType);
-        const handle = isShape ? card : card.querySelector('.chart-drag-handle');
+        const isNavigation = chartDef.chartType === 'navigation';
+        const useWholeCard = isShape || isNavigation;
+        const handle = useWholeCard ? card : card.querySelector('.chart-drag-handle');
         if (!handle) return;
 
         handle.addEventListener('mousedown', (e) => {
-            // For shapes, ignore clicks on action buttons and resize handle
-            if (isShape && (e.target.closest('button') || e.target.closest('.chart-resize-handle'))) return;
+            // For shapes/navigation, ignore clicks on action buttons and resize handle
+            if (useWholeCard && (e.target.closest('button') || e.target.closest('.chart-resize-handle'))) return;
             e.preventDefault();
             e.stopPropagation();
 
@@ -600,6 +649,7 @@ class CanvasManager {
 
     async resetCanvas() {
         if (!confirm('Reset canvas to default charts?')) return;
+        this._pushUndo();
         const resp = await fetch('/api/chart/reset', { method: 'POST' });
         const canvas = await resp.json();
         this.charts = canvas.charts || [];

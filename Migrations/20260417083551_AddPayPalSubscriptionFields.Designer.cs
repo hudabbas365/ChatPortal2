@@ -4,6 +4,7 @@ using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AIInsights.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417083551_AddPayPalSubscriptionFields")]
+    partial class AddPayPalSubscriptionFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -434,20 +437,11 @@ namespace AIInsights.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime?>("BlockedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("BlockedReason")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("EnterpriseExtraTokenPacks")
                         .HasColumnType("int");
-
-                    b.Property<bool>("IsBlocked")
-                        .HasColumnType("bit");
 
                     b.Property<string>("LogoUrl")
                         .HasColumnType("nvarchar(max)");
@@ -456,89 +450,15 @@ namespace AIInsights.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("PayPalPlanId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PayPalSubscriptionId")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("Plan")
                         .HasColumnType("int");
 
                     b.Property<int>("PurchasedLicenses")
                         .HasColumnType("int");
 
-                    b.Property<DateTime?>("SubscriptionNextBillingDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("SubscriptionStartDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("SubscriptionStatus")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.HasKey("Id");
 
                     b.ToTable("Organizations");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.PaymentRecord", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PayPalOrderId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PayPalSubscriptionId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PaymentMethod")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PaymentType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PlanKey")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.ToTable("PaymentRecords");
                 });
 
             modelBuilder.Entity("AIInsights.Models.PinnedResult", b =>
@@ -1105,17 +1025,6 @@ namespace AIInsights.Migrations
                     b.Navigation("Workspace");
                 });
 
-            modelBuilder.Entity("AIInsights.Models.PaymentRecord", b =>
-                {
-                    b.HasOne("AIInsights.Models.Organization", "Organization")
-                        .WithMany("PaymentRecords")
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
             modelBuilder.Entity("AIInsights.Models.Report", b =>
                 {
                     b.HasOne("AIInsights.Models.Agent", "Agent")
@@ -1279,8 +1188,6 @@ namespace AIInsights.Migrations
                     b.Navigation("Agents");
 
                     b.Navigation("Datasources");
-
-                    b.Navigation("PaymentRecords");
 
                     b.Navigation("Users");
 

@@ -342,7 +342,7 @@
                     datasourceId : window.currentDatasourceId || null,
                     reportGuid   : window._currentReportGuid || null,
                     pageIndex    : window.canvasManager?.activePageIndex ?? null,
-                    agentId      : window._dashboardWsData?.agentId || null
+                    agentId      : (window._dashboardWsData?.agents || [])[0]?.id || window._dashboardWsData?.agentId || null
                 }),
                 signal: _abortController.signal
             });
@@ -403,7 +403,44 @@
             if (sendBtn) { sendBtn.style.display = ''; sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
             if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.onclick = null; }
             if (input)   { input.disabled = false; input.style.height = ''; input.focus(); }
+            _appendSuggestionChips();
         }
+    }
+
+    // ── Append suggestion chips after AI reply ───────────────────────
+    function _appendSuggestionChips() {
+        var container = document.getElementById('dcpMessages');
+        if (!container) return;
+        // Remove any previous follow-up chips
+        var prev = container.querySelector('.dcp-followup-chips');
+        if (prev) prev.remove();
+
+        var tables = window._realTableNames || [];
+        var t1 = tables[0] || 'data';
+        var t2 = tables.length > 1 ? tables[1] : t1;
+        var suggestions = [
+            'Show a bar chart from ' + t1,
+            'Summarize ' + t2 + ' data',
+            'Add a trend line chart',
+            'Compare top records in ' + t1
+        ];
+
+        var wrap = document.createElement('div');
+        wrap.className = 'dcp-followup-chips dcp-chips';
+        suggestions.forEach(function (text) {
+            var btn = document.createElement('button');
+            btn.className = 'dcp-chip';
+            btn.textContent = text;
+            btn.addEventListener('click', function () {
+                wrap.remove();
+                var input = document.getElementById('dcpInput');
+                if (input) input.value = '';
+                sendMessage(text);
+            });
+            wrap.appendChild(btn);
+        });
+        container.appendChild(wrap);
+        container.scrollTop = container.scrollHeight;
     }
 
     // ── Wire suggestion chips ─────────────────────────────────────────

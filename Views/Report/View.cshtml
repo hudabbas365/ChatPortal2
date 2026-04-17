@@ -73,9 +73,12 @@
                     </a>
                 }
             }
-            <button class="btn" onclick="openShareModal()" title="Share Report">
-                <i class="bi bi-share"></i> Share
-            </button>
+            @if (!isViewOnly)
+            {
+                <button class="btn" onclick="openShareModal()" title="Share Report">
+                    <i class="bi bi-share"></i> Share
+                </button>
+            }
             <button class="btn" onclick="window.print()" title="Print Report">
                 <i class="bi bi-printer"></i> Print
             </button>
@@ -85,30 +88,33 @@
         </div>
     </nav>
 
-    <div class="rv-share-overlay" id="rvShareOverlay">
-        <div class="rv-share-box">
-            <h5><i class="bi bi-link-45deg me-2"></i>Share Report</h5>
-            <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
-                Generate a share link to invite people as <strong>viewers</strong> of this report in
-                <strong id="rvShareWsName">this workspace</strong>.
-            </p>
-            <div class="rv-share-url" style="display:none">
-                <input type="text" id="rvShareUrlInput" readonly onclick="this.select()">
-                <button id="rvShareCopyBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
-            </div>
-            <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
-                <i class="bi bi-info-circle-fill me-1"></i>
-                Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
-            </div>
-            <div id="rvShareStatus" style="font-size:0.78rem;margin-bottom:10px;display:none;"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;">
-                <button class="rv-share-close" id="rvShareCloseBtn">Close</button>
-                <button id="rvShareGenerateBtn" class="rv-share-url button" style="font-size:0.78rem;padding:5px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
-                    <i class="bi bi-link-45deg me-1"></i>Generate Link
-                </button>
+    @if (!isViewOnly)
+    {
+        <div class="rv-share-overlay" id="rvShareOverlay">
+            <div class="rv-share-box">
+                <h5><i class="bi bi-link-45deg me-2"></i>Share Report</h5>
+                <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
+                    Generate a share link to invite people as <strong>viewers</strong> of this report in
+                    <strong id="rvShareWsName">this workspace</strong>.
+                </p>
+                <div class="rv-share-url" style="display:none">
+                    <input type="text" id="rvShareUrlInput" readonly onclick="this.select()">
+                    <button id="rvShareCopyBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                </div>
+                <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
+                </div>
+                <div id="rvShareStatus" style="font-size:0.78rem;margin-bottom:10px;display:none;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="rv-share-close" id="rvShareCloseBtn">Close</button>
+                    <button id="rvShareGenerateBtn" class="rv-share-url button" style="font-size:0.78rem;padding:5px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
+                        <i class="bi bi-link-45deg me-1"></i>Generate Link
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
+    }
 
     <div class="rv-export-overlay" id="rvExportOverlay">
         <div class="rv-export-box">
@@ -280,14 +286,15 @@
             // Build card DOM (but defer chart rendering until page is shown)
             charts.forEach(c => {
                 const isShape = window.ShapeManager && ShapeManager.isShape(c.chartType);
+                const isNavigation = c.chartType === 'navigation';
                 const cardWidth = colsToPixels(c.width || 6);
-                const cardHeight = parseInt(c.height) || 300;
+                const cardHeight = parseInt(c.height) || (isNavigation ? 80 : 300);
                 const posX = c.posX !== undefined ? c.posX : 20;
                 const posY = (c.posY !== undefined ? c.posY : 20) + titleOffset;
                 const zIdx = c.zIndex || 1;
 
                 const card = document.createElement('div');
-                card.className = 'chart-card' + (isShape ? ' shape-card' : '');
+                card.className = 'chart-card' + (isShape ? ' shape-card' : '') + (isNavigation ? ' navigation-card' : '');
                 card.style.cssText = 'position:absolute;left:' + posX + 'px;top:' + posY + 'px;width:' + cardWidth + 'px;z-index:' + zIdx + ';';
 
                 if (isShape) {
@@ -296,10 +303,20 @@
                     canvasWrap.style.height = cardHeight + 'px';
                     card.appendChild(canvasWrap);
                     pageEl.appendChild(card);
-                    // Shapes are lightweight — render immediately
                     card.dataset.shapeReady = '1';
                     card._shapeDef = c;
                     card._shapeWrap = canvasWrap;
+                } else if (isNavigation) {
+                    const canvasWrap = document.createElement('div');
+                    canvasWrap.className = 'chart-canvas-wrap';
+                    canvasWrap.style.height = cardHeight + 'px';
+                    card.appendChild(canvasWrap);
+                    pageEl.appendChild(card);
+
+                    if (!c.datasourceId && datasourceId) c.datasourceId = datasourceId;
+                    card.dataset.navReady = '1';
+                    card._chartDef = Object.assign({}, c);
+                    card._canvasWrap = canvasWrap;
                 } else {
                     const header = document.createElement('div');
                     header.className = 'chart-card-header';
@@ -346,6 +363,15 @@
             cards.forEach(card => {
                 if (card.dataset.shapeReady === '1' && card._shapeDef) {
                     requestAnimationFrame(() => ShapeManager.render(card._shapeWrap, card._shapeDef));
+                }
+                if (card.dataset.navReady === '1' && card._chartDef) {
+                    const def = card._chartDef;
+                    const canvasWrap = card._canvasWrap;
+                    setTimeout(() => {
+                        if (window.chartRenderer) {
+                            chartRenderer.render(def, canvasWrap);
+                        }
+                    }, 50);
                 }
                 if (card.dataset.chartReady === '1' && card._chartDef) {
                     const def = card._chartDef;

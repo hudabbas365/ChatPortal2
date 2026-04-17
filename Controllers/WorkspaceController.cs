@@ -16,13 +16,15 @@ public class WorkspaceController : Controller
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IWorkspacePermissionService _permissions;
     private readonly ILogger<WorkspaceController> _logger;
+    private readonly IEncryptionService _encryption;
 
-    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager, IWorkspacePermissionService permissions, ILogger<WorkspaceController> logger)
+    public WorkspaceController(AppDbContext db, UserManager<ApplicationUser> userManager, IWorkspacePermissionService permissions, ILogger<WorkspaceController> logger, IEncryptionService encryption)
     {
         _db = db;
         _userManager = userManager;
         _permissions = permissions;
         _logger = logger;
+        _encryption = encryption;
     }
 
     [HttpGet("/api/workspaces")]
@@ -125,10 +127,17 @@ public class WorkspaceController : Controller
             })
             .ToListAsync();
 
-        var datasources = await _db.Datasources
+        var datasourceEntities = await _db.Datasources
             .Where(d => d.WorkspaceId == workspace.Id)
-            .Select(d => new { d.Id, d.Guid, d.Name, d.Type })
             .ToListAsync();
+        var datasources = datasourceEntities.Select(d => new
+        {
+            d.Id,
+            d.Guid,
+            d.Name,
+            d.Type,
+            ConnectionString = MaskConnectionString(_encryption.Decrypt(d.ConnectionString ?? ""))
+        }).ToList();
 
         var dashboards = await _db.Dashboards
             .Where(d => d.WorkspaceId == workspace.Id)
@@ -606,7 +615,16 @@ public class WorkspaceController : Controller
         return Ok(orgUsers);
     }
 
-
+    private static string MaskConnectionString(string connStr)
+    {
+        if (string.IsNullOrEmpty(connStr)) return "";
+        var masked = System.Text.RegularExpressions.Regex.Replace(
+            connStr,
+            @"(Password|Pwd)\s*=\s*[^;]+",
+            "$1=••••••",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return masked;
+    }
 }
 
 public class WorkspaceRequest

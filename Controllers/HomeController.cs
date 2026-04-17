@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
+using System.Text;
 
 namespace AIInsights.Controllers;
 
@@ -19,11 +20,14 @@ public class HomeController : Controller
         ReferenceLoopHandling = ReferenceLoopHandling.Ignore
     };
 
-    public HomeController(ISeoService seoService, AppDbContext db)
+    public HomeController(ISeoService seoService, AppDbContext db, IConfiguration config)
     {
         _seoService = seoService;
         _db = db;
+        _config = config;
     }
+
+    private readonly IConfiguration _config;
 
     private async Task SetSeoAsync(string path)
     {
@@ -33,7 +37,10 @@ public class HomeController : Controller
     public async Task<IActionResult> Index()
     {
         await SetSeoAsync("/");
-        return View();
+        var comingSoon = _config.GetValue<bool>("App:ComingSoon");
+        if (comingSoon)
+            return View("Index");
+        return View("Index.Original");
     }
 
     [Route("/about")]
@@ -100,6 +107,44 @@ public class HomeController : Controller
         if (article == null) return NotFound();
         await SetSeoAsync($"/docs/{slug}");
         return View(article);
+    }
+
+    [Route("/sitemap.xml")]
+    [ResponseCache(Duration = 3600)]
+    public IActionResult Sitemap()
+    {
+        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? "https://aiinsights.io";
+        var urls = new[]
+        {
+            new { Loc = "/",       Priority = "1.0", ChangeFreq = "daily"   },
+            new { Loc = "/about",  Priority = "0.8", ChangeFreq = "monthly" },
+            new { Loc = "/docs",   Priority = "0.8", ChangeFreq = "weekly"  },
+            new { Loc = "/blog",   Priority = "0.7", ChangeFreq = "weekly"  },
+            new { Loc = "/pricing",Priority = "0.7", ChangeFreq = "monthly" },
+        };
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        sb.AppendLine("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
+        foreach (var u in urls)
+        {
+            sb.AppendLine("  <url>");
+            sb.AppendLine($"    <loc>{baseUrl}{u.Loc}</loc>");
+            sb.AppendLine($"    <changefreq>{u.ChangeFreq}</changefreq>");
+            sb.AppendLine($"    <priority>{u.Priority}</priority>");
+            sb.AppendLine("  </url>");
+        }
+        sb.AppendLine("</urlset>");
+        return Content(sb.ToString(), "application/xml", Encoding.UTF8);
+    }
+
+    [Route("/robots.txt")]
+    [ResponseCache(Duration = 3600)]
+    public IActionResult Robots()
+    {
+        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? "https://aiinsights.io";
+        var content = $"User-agent: *\nAllow: /\nDisallow: /auth/\nDisallow: /chat/\nDisallow: /dashboard/\nDisallow: /superadmin/\n\nSitemap: {baseUrl}/sitemap.xml\n";
+        return Content(content, "text/plain", Encoding.UTF8);
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
