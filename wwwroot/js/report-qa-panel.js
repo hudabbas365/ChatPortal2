@@ -249,6 +249,9 @@
             if (_sendBtn) { _sendBtn.style.display = ''; _sendBtn.disabled = false; }
             if (_stopBtn) _stopBtn.style.display = 'none';
             if (_inputEl) _inputEl.focus();
+            // Re-show suggestion chips after each response
+            const chipsEl = _panelEl?.querySelector('.rv-qa-chips');
+            if (chipsEl) chipsEl.style.display = '';
         }
     }
 

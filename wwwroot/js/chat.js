@@ -317,6 +317,9 @@
                            'REVOKE','REPLACE','UPSERT','ATTACH','DETACH'];
         const firstWord = norm.split(/[\s(;]/)[0];
 
+        // REST API queries are handled server-side — always allow
+        if (firstWord === 'REST_API') return { valid: true };
+
         // DAX EVALUATE and DMV queries are read-only — allow through without body scan
         var isDaxOrDmv = firstWord === 'EVALUATE'
             || (firstWord === 'SELECT' && norm.indexOf('$SYSTEM.') !== -1);
@@ -482,7 +485,13 @@
 
         // Remove welcome message on first user message
         const welcome = container.querySelector('.chat-welcome');
-        if (welcome && role === 'user') welcome.remove();
+        if (welcome && role === 'user') {
+            welcome.remove();
+            // Show persistent suggestion chips above input
+            if (window.ChatAgentContext && window.ChatAgentContext.showPersistentSuggestions) {
+                window.ChatAgentContext.showPersistentSuggestions();
+            }
+        }
 
         const msgEl = document.createElement('div');
         msgEl.className = `chat-message ${role}-message`;
@@ -1119,6 +1128,10 @@
             const stopBtn = document.getElementById('chatStopBtn');
             if (sendBtn) { sendBtn.style.display = ''; sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
             if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.onclick = null; }
+            // Re-show persistent suggestion chips after each response
+            if (window.ChatAgentContext?.showPersistentSuggestions) {
+                ChatAgentContext.showPersistentSuggestions();
+            }
         }
     }
 
@@ -1174,49 +1187,8 @@
             document.getElementById('leftPanel')?.classList.toggle('open');
         });
 
-        // ── Workspace selection from left panel ──────────────────────
-        document.getElementById('workspaceList')?.addEventListener('click', function(e) {
-            const item = e.target.closest('[data-workspace-id]');
-            if (!item) return;
-            const wsId = item.dataset.workspaceId;
-            if (!wsId || wsId === '0') return;
-
-            // Highlight active item
-            this.querySelectorAll('.panel-list-item').forEach(el => el.classList.remove('active'));
-            item.classList.add('active');
-
-            const wsName = item.textContent.trim();
-            currentWorkspaceId = wsId;
-            currentChatId = null;
-
-            // Clear agent/datasource context from previous workspace
-            window.currentAgentGuid = null;
-            window.currentDatasourceId = null;
-            window.currentDatasourceName = null;
-            window.currentDatasourceType = null;
-
-            // Update topbar + subnav title (only for named workspaces)
-            if (wsId) {
-                const titleEl = document.getElementById('chatWorkspaceTitle');
-                if (titleEl) titleEl.textContent = wsName;
-                const subnavName = document.getElementById('chatSubnavWorkspaceName');
-                if (subnavName) subnavName.textContent = wsName;
-            }
-
-            // Reset to Chat tab when switching workspace
-            switchTab('chat');
-
-            // Load browser chat history for this workspace
-            const wsChats = ChatHistory.getAll(wsId);
-            if (wsChats.length) {
-                currentChatId = wsChats[0].id;
-                loadChatSession(wsId, currentChatId);
-            } else {
-                clearChatUI();
-                if (window.ChatAgentContext) window.ChatAgentContext.rebuildWelcome();
-            }
-            renderChatList(wsId);
-        });
+        // ── Workspace selection is handled by workspaceFlow.js ──────
+        // (removed duplicate handler that caused chat blink on workspace click)
 
         // ── Sub-navigation tab switching ─────────────────────────────
         document.getElementById('chatSubnavTabs')?.addEventListener('click', function(e) {

@@ -17,13 +17,15 @@ public class BillingController : Controller
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IConfiguration _config;
     private readonly IPayPalService _payPal;
+    private readonly IEmailService _emailService;
 
-    public BillingController(AppDbContext db, UserManager<ApplicationUser> userManager, IConfiguration config, IPayPalService payPal)
+    public BillingController(AppDbContext db, UserManager<ApplicationUser> userManager, IConfiguration config, IPayPalService payPal, IEmailService emailService)
     {
         _db = db;
         _userManager = userManager;
         _config = config;
         _payPal = payPal;
+        _emailService = emailService;
     }
 
     private async Task<ApplicationUser?> GetCallerAsync()
@@ -350,6 +352,12 @@ public class BillingController : Controller
             OrganizationId = req.OrganizationId
         });
         await _db.SaveChangesAsync();
+
+        // Send invoice email
+        _ = _emailService.SendInvoiceEmailAsync(
+            caller.Email!, caller.FullName, org.Name,
+            description, amount, "USD",
+            req.OrderId, DateTime.UtcNow);
 
         return Ok(new { success = true, message = description });
     }

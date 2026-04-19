@@ -10,6 +10,9 @@ namespace AIInsights.Services;
 public interface IQueryExecutionService
 {
     Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000);
+    Task<(bool Success, string? Error)> TestConnectionAsync(string type, string connectionString, string? dbUser = null, string? dbPassword = null, string? xmlaEndpoint = null, string? tenantId = null);
+    Task<(bool Success, string? Error)> TestRestApiAsync(string? apiUrl, string? apiKey, string? apiMethod = null);
+    Task<QueryExecutionResult> ExecuteRestApiAsync(Datasource ds, int maxRows = 1000);
 }
 
 public class QueryExecutionResult
@@ -24,11 +27,13 @@ public class QueryExecutionService : IQueryExecutionService
 {
     private readonly IEncryptionService _encryption;
     private readonly IPowerBiService _powerBi;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi)
+    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi, IHttpClientFactory httpClientFactory)
     {
         _encryption = encryption;
         _powerBi = powerBi;
+        _httpClientFactory = httpClientFactory;
     }
 
     private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -39,6 +44,11 @@ public class QueryExecutionService : IQueryExecutionService
     public static readonly HashSet<string> PowerBiTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "Power BI", "PowerBI"
+    };
+
+    public static readonly HashSet<string> RestApiTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "REST API", "RestApi"
     };
 
     private static readonly HashSet<string> PgTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -86,8 +96,27 @@ public class QueryExecutionService : IQueryExecutionService
         return true;
     }
 
+    /// <summary>
+    /// Strips SQL line comments (--) and block comments (/* */) and collapses
+    /// the result so that AI-generated queries pass the safety gate.
+    /// </summary>
+    public static string StripSqlComments(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql)) return sql;
+        // Remove block comments
+        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"/\*[\s\S]*?\*/", " ");
+        // Remove line comments
+        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"--[^\r\n]*", " ");
+        // Collapse whitespace
+        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"\s+", " ").Trim();
+        return sql;
+    }
+
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
+        // Strip comments so AI-generated SQL with -- or /* */ annotations is not rejected
+        sql = StripSqlComments(sql);
+
         // Safety gate: only allow safe read-only queries
         if (!IsSafeQuery(sql))
             return new QueryExecutionResult { Success = false, Error = "Query blocked by security policy. Only read-only SELECT/EVALUATE queries are allowed." };
@@ -151,6 +180,57 @@ public class QueryExecutionService : IQueryExecutionService
                 Success = false,
                 Error = $"Query execution failed: {ex.Message}"
             };
+        }
+        finally
+        {
+            if (conn != null)
+            {
+                await conn.CloseAsync();
+                await conn.DisposeAsync();
+            }
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> TestConnectionAsync(string type, string connectionString, string? dbUser = null, string? dbPassword = null, string? xmlaEndpoint = null, string? tenantId = null)
+    {
+        if (PowerBiTypes.Contains(type))
+        {
+            // For Power BI we can't easily open a raw connection without ADOMD; accept if endpoint is provided
+            if (string.IsNullOrWhiteSpace(xmlaEndpoint))
+                return (false, "XMLA Endpoint is required for Power BI datasources.");
+            return (true, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return (false, "Connection string is required.");
+
+        var connStr = NormalizeConnectionString(type, connectionString);
+
+        // Inject credentials
+        if (!string.IsNullOrEmpty(dbUser))
+        {
+            var upper = connStr.ToUpperInvariant();
+            if (!upper.Contains("USER ID=") && !upper.Contains("UID=") && !upper.Contains("USERNAME=") && !upper.Contains("USER="))
+            {
+                connStr = connStr.TrimEnd(';') + $";User ID={dbUser}";
+                if (!string.IsNullOrEmpty(dbPassword))
+                    connStr = connStr.TrimEnd(';') + $";Password={dbPassword}";
+            }
+        }
+
+        DbConnection? conn = null;
+        try
+        {
+            conn = CreateConnection(type, connStr);
+            if (conn == null)
+                return (false, $"Unsupported datasource type: {type}.");
+
+            await conn.OpenAsync();
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
         }
         finally
         {
@@ -268,5 +348,162 @@ public class QueryExecutionService : IQueryExecutionService
             return new MySqlConnection(connectionString);
 
         return null;
+    }
+
+    public async Task<(bool Success, string? Error)> TestRestApiAsync(string? apiUrl, string? apiKey, string? apiMethod = null)
+    {
+        if (string.IsNullOrWhiteSpace(apiUrl))
+            return (false, "API URL is required.");
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(15);
+            var method = ResolveHttpMethod(apiMethod);
+            var request = new HttpRequestMessage(method, apiUrl);
+            if (!string.IsNullOrEmpty(apiKey))
+                request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+
+            var response = await client.SendAsync(request);
+
+            // Auto-retry with alternate method on 405 Method Not Allowed
+            if (response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
+            {
+                var altMethod = method == HttpMethod.Get ? HttpMethod.Post : HttpMethod.Get;
+                var retryRequest = new HttpRequestMessage(altMethod, apiUrl);
+                if (!string.IsNullOrEmpty(apiKey))
+                    retryRequest.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+                if (altMethod == HttpMethod.Post)
+                    retryRequest.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+                response = await client.SendAsync(retryRequest);
+            }
+
+            if (!response.IsSuccessStatusCode)
+                return (false, $"API returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Tried method: {method.Method}.");
+
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"REST API test failed: {ex.Message}");
+        }
+    }
+
+    public async Task<QueryExecutionResult> ExecuteRestApiAsync(Datasource ds, int maxRows = 1000)
+    {
+        var apiUrl = _encryption.Decrypt(ds.ApiUrl ?? "");
+        var apiKey = _encryption.Decrypt(ds.ApiKey ?? "");
+
+        if (string.IsNullOrWhiteSpace(apiUrl))
+            return new QueryExecutionResult { Success = false, Error = "API URL is not configured." };
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            var method = ResolveHttpMethod(ds.ApiMethod);
+            var request = new HttpRequestMessage(method, apiUrl);
+            if (!string.IsNullOrEmpty(apiKey))
+                request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+
+            var response = await client.SendAsync(request);
+
+            // Auto-retry with alternate method on 405 Method Not Allowed
+            if (response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
+            {
+                var altMethod = method == HttpMethod.Get ? HttpMethod.Post : HttpMethod.Get;
+                var retryRequest = new HttpRequestMessage(altMethod, apiUrl);
+                if (!string.IsNullOrEmpty(apiKey))
+                    retryRequest.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+                if (altMethod == HttpMethod.Post)
+                    retryRequest.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+                response = await client.SendAsync(retryRequest);
+            }
+
+            if (!response.IsSuccessStatusCode)
+                return new QueryExecutionResult { Success = false, Error = $"API returned HTTP {(int)response.StatusCode}. URL: {apiUrl}, Method: {method.Method}." };
+
+            var json = await response.Content.ReadAsStringAsync();
+            var rows = ParseJsonToRows(json, maxRows);
+
+            return new QueryExecutionResult { Success = true, Data = rows, RowCount = rows.Count };
+        }
+        catch (Exception ex)
+        {
+            return new QueryExecutionResult { Success = false, Error = $"REST API call failed: {ex.Message}" };
+        }
+    }
+
+    private static List<Dictionary<string, object>> ParseJsonToRows(string json, int maxRows)
+    {
+        var rows = new List<Dictionary<string, object>>();
+        if (string.IsNullOrWhiteSpace(json)) return rows;
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        // If root is an array, each element is a row
+        if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var element in root.EnumerateArray())
+            {
+                if (rows.Count >= maxRows) break;
+                if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    rows.Add(FlattenJsonObject(element));
+            }
+        }
+        // If root is an object, look for the first array property (common pattern: { "data": [...] })
+        else if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var element in prop.Value.EnumerateArray())
+                    {
+                        if (rows.Count >= maxRows) break;
+                        if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+                            rows.Add(FlattenJsonObject(element));
+                    }
+                    if (rows.Count > 0) break;
+                }
+            }
+            // If no array found, treat the object itself as a single row
+            if (rows.Count == 0)
+                rows.Add(FlattenJsonObject(root));
+        }
+
+        return rows;
+    }
+
+    private static Dictionary<string, object> FlattenJsonObject(System.Text.Json.JsonElement element)
+    {
+        var row = new Dictionary<string, object>();
+        foreach (var prop in element.EnumerateObject())
+        {
+            row[prop.Name] = prop.Value.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.String => (object)(prop.Value.GetString() ?? ""),
+                System.Text.Json.JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? l : prop.Value.GetDouble(),
+                System.Text.Json.JsonValueKind.True => true,
+                System.Text.Json.JsonValueKind.False => false,
+                System.Text.Json.JsonValueKind.Null => "NULL",
+                _ => prop.Value.GetRawText()
+            };
+        }
+        return row;
+    }
+
+    private static HttpMethod ResolveHttpMethod(string? method)
+    {
+        return (method?.Trim().ToUpperInvariant()) switch
+        {
+            "POST" => HttpMethod.Post,
+            "PUT" => HttpMethod.Put,
+            "DELETE" => HttpMethod.Delete,
+            "PATCH" => HttpMethod.Patch,
+            "HEAD" => HttpMethod.Head,
+            _ => HttpMethod.Get
+        };
     }
 }

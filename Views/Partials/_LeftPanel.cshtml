@@ -2,7 +2,7 @@
     <div class="left-panel-header">
         <a href="/" class="panel-brand">
             <i class="bi bi-bar-chart-fill"></i>
-            <span>AIInsights</span>
+            <span>AI Insights 365</span>
         </a>
         <button class="btn btn-icon panel-close-btn" id="panelCloseBtn">
             <i class="bi bi-x-lg"></i>
@@ -12,7 +12,7 @@
     <div class="panel-section">
         <div class="panel-section-label">Organization</div>
         <div class="panel-org-info" id="orgInfo">
-            <i class="bi bi-building me-2"></i><span id="orgName">My Organization</span>
+            <i class="bi bi-building me-2"></i><span id="orgName" class="org-name-truncate" title="My Organization">My Organization</span>
         </div>
     </div>
 
@@ -36,6 +36,13 @@
                 <i class="bi bi-folder me-2"></i>Default Workspace
             </div>
         </div>
+    </div>
+
+    <div class="panel-section" id="sharedWithMeSection" style="display:none">
+        <div class="panel-section-label">
+            <i class="bi bi-share me-1"></i>Shared with me
+        </div>
+        <div class="panel-list" id="sharedReportList"></div>
     </div>
 
     <div class="panel-footer">

@@ -230,7 +230,8 @@ public class AgentController : ControllerBase
 
         var dsType = req.DatasourceType ?? "";
         bool isPowerBi = Services.QueryExecutionService.PowerBiTypes.Contains(dsType);
-        string queryLang = isPowerBi ? "DAX" : "SQL";
+        bool isRestApi = Services.QueryExecutionService.RestApiTypes.Contains(dsType);
+        string queryLang = isRestApi ? "REST API" : isPowerBi ? "DAX" : "SQL";
 
         var sb = new System.Text.StringBuilder();
         sb.Append($"You are {req.AgentName ?? "Data Assistant"}, an AI data assistant for the \"{req.WorkspaceName ?? "the workspace"}\" workspace. ");
@@ -240,19 +241,33 @@ public class AgentController : ControllerBase
 
         if (!string.IsNullOrEmpty(req.SelectedTables))
         {
-            var tableLabel = isPowerBi ? "Available tables/measures" : "Available tables and views";
+            var tableLabel = isRestApi ? "Available API fields" : isPowerBi ? "Available tables/measures" : "Available tables and views";
             sb.Append($"{tableLabel}: {req.SelectedTables}. ");
         }
 
         sb.AppendLine("Your responsibilities include:");
-        sb.AppendLine($"1. Answering data-related questions by generating accurate {queryLang} queries");
-        sb.AppendLine("2. Analyzing query results and providing clear, actionable insights");
+        if (isRestApi)
+        {
+            sb.AppendLine("1. Answering data-related questions by analyzing the pre-fetched API data");
+            sb.AppendLine("2. Providing clear, actionable insights based on the data fields available");
+        }
+        else
+        {
+            sb.AppendLine($"1. Answering data-related questions by generating accurate {queryLang} queries");
+            sb.AppendLine("2. Analyzing query results and providing clear, actionable insights");
+        }
         sb.AppendLine("3. Suggesting appropriate chart types and visualizations for the data");
         sb.AppendLine("4. Explaining data patterns, trends, and anomalies");
         sb.AppendLine("5. Helping users explore and understand their data effectively");
         sb.AppendLine();
 
-        if (isPowerBi)
+        if (isRestApi)
+        {
+            sb.AppendLine("IMPORTANT: This is a REST API datasource. Do NOT generate SQL or DAX queries.");
+            sb.AppendLine("Always set the query field to \"REST_API\" — the system fetches data automatically from the API.");
+            sb.AppendLine("Suggest charts and field mappings based on the available API fields.");
+        }
+        else if (isPowerBi)
         {
             sb.AppendLine("IMPORTANT: Always generate DAX queries (not SQL) for this Power BI semantic model.");
             sb.AppendLine("Use EVALUATE, SUMMARIZECOLUMNS, CALCULATETABLE, TOPN, ADDCOLUMNS, VALUES, FILTER.");

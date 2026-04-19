@@ -181,8 +181,13 @@
 
         // ── Select workspace → load artifacts ───────────────
         async _selectWorkspace(guid) {
+            // Immediately hide chat panel to prevent agent name flash
+            const chatWs = document.getElementById('chatWorkspace');
+            if (chatWs) chatWs.style.display = 'none';
+
             // Reset wizard state to prevent leaking data between workspaces
-            this._resetWizardState();
+            const isSameWorkspace = this._selectedWsId === guid;
+            this._resetWizardState(isSameWorkspace);
 
             // Highlight in left panel
             document.querySelectorAll('#workspaceList .panel-list-item').forEach(el => el.classList.remove('active'));
@@ -212,7 +217,7 @@
         },
 
         // ── Reset wizard state between workspace switches ───
-        _resetWizardState() {
+        _resetWizardState(keepAgentContext) {
             this._setupStep = 0;
             this._createdDsId = null;
             this._createdDsGuid = null;
@@ -223,6 +228,13 @@
             this._generatedPrompt = null;
             this._pendingAgent = null;
             this._selectedDsType = '';
+            // Clear agent/datasource context only when switching to a different workspace
+            if (!keepAgentContext) {
+                window.currentAgentGuid = null;
+                window.currentDatasourceId = null;
+                window.currentDatasourceName = null;
+                window.currentDatasourceType = null;
+            }
         },
 
         // ── Update workspace item status badge in left panel ──
@@ -488,7 +500,13 @@
             document.querySelectorAll('[data-action="dashboard"]').forEach(el => {
                 el.addEventListener('click', () => {
                     const wsId = el.dataset.wsId || this._selectedWsId || '';
-                    window.location.href = '/dashboard?workspace=' + encodeURIComponent(wsId);
+                    let url = '/dashboard?workspace=' + encodeURIComponent(wsId);
+                    // Prefer agent from the clicked element (lineage), then current context, then first agent
+                    const agentGuid = el.dataset.agentId
+                        || window.currentAgentGuid
+                        || ((this._wsData?.agents || [])[0]?.guid);
+                    if (agentGuid) url += '&agent=' + encodeURIComponent(agentGuid);
+                    window.location.href = url;
                 });
             });
             document.querySelectorAll('[data-action="ds-detail"]').forEach(el => {
@@ -522,10 +540,25 @@
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Type</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.type || 'Unknown')}" />
                             </div>
+                            ${/rest\s*api/i.test(ds.type) ? `
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">API URL</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '')}" style="font-family:monospace;font-size:0.78rem" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">API Key</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiKey || '(not set)')}" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">HTTP Method</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiMethod || 'GET')}" />
+                            </div>
+                            ` : `
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>
                                 <textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">${esc(ds.connectionString || '')}</textarea>
                             </div>
+                            `}
                         </div>
                         <div class="modal-footer border-top" style="border-color:var(--cp-border)!important">
                             <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -714,6 +747,16 @@
                                 <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
                             </div>
                         </div>
+                        <div id="wfDsRestApiFields" style="display:none">
+                            <div class="wf-setup-field">
+                                <label>API URL</label>
+                                <input type="text" id="wfDsApiUrl" placeholder="https://api.example.com/data" />
+                            </div>
+                            <div class="wf-setup-field">
+                                <label>API Key <span class="wfe-opt">(optional)</span></label>
+                                <input type="password" id="wfDsApiKey" placeholder="Bearer token or API key" />
+                            </div>
+                        </div>
                         <div id="wfDsFieldsPreview" style="display:none">
                             <label style="font-size:0.75rem;font-weight:600;margin-bottom:4px;display:block;">Available Fields</label>
                             <div class="wf-fields-preview" id="wfDsFieldsList"></div>
@@ -767,12 +810,15 @@
                     document.getElementById('wfDsTypeSelector').style.display = 'none';
                     document.getElementById('wfDsConfigForm').style.display = 'block';
 
-                    // Toggle Power BI vs standard fields
+                    // Toggle Power BI vs REST API vs standard fields
                     const isPbi = /power\s*bi/i.test(this._selectedDsType);
+                    const isRestApi = /rest\s*api/i.test(this._selectedDsType);
                     const connStrField = document.getElementById('wfDsConnStr')?.closest('.wf-setup-field');
                     const pbiFields = document.getElementById('wfDsPbiFields');
-                    if (connStrField) connStrField.style.display = isPbi ? 'none' : '';
+                    const restApiFields = document.getElementById('wfDsRestApiFields');
+                    if (connStrField) connStrField.style.display = (isPbi || isRestApi) ? 'none' : '';
                     if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
+                    if (restApiFields) restApiFields.style.display = isRestApi ? '' : 'none';
                 });
             }
             if (search) {
@@ -803,7 +849,9 @@
             const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
             const name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
             const alertEl = document.getElementById('wfDsAlert');
+            const testBtn = document.getElementById('wfDsTestBtn');
             const isPbi = /power\s*bi/i.test(this._selectedDsType);
+            const isRestApi = /rest\s*api/i.test(this._selectedDsType);
 
             // Build payload based on datasource type
             const payload = {
@@ -813,7 +861,10 @@
                 userId: user?.id || ''
             };
 
-            if (isPbi) {
+            if (isRestApi) {
+                payload.apiUrl = document.getElementById('wfDsApiUrl')?.value.trim() || '';
+                payload.apiKey = document.getElementById('wfDsApiKey')?.value.trim() || '';
+            } else if (isPbi) {
                 payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
                 payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
                 payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
@@ -823,7 +874,24 @@
                 payload.connectionString = document.getElementById('wfDsConnStr')?.value.trim() || '';
             }
 
+            // Disable button & show testing state
+            if (testBtn) { testBtn.disabled = true; testBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Testing...'; }
+            if (alertEl) { alertEl.className = 'wf-setup-alert'; alertEl.textContent = 'Testing connection...'; }
+
             try {
+                // Step 1: Test the connection first
+                const testR = await fetch('/api/datasources/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const testResult = await testR.json();
+                if (!testR.ok || !testResult.connected) {
+                    if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = testResult.error || 'Connection failed. Please check your credentials and try again.'; }
+                    return;
+                }
+
+                // Step 2: Connection verified — create the datasource
                 const r = await fetch('/api/datasources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -831,7 +899,7 @@
                 });
                 if (!r.ok) throw new Error();
                 const ds = await r.json();
-                this._createdDsId = ds.id; // int id for binding
+                this._createdDsId = ds.id;
 
                 const fr = await fetch(`/api/datasources/${ds.id}/fields`);
                 const fields = await fr.json();
@@ -844,7 +912,9 @@
 
                 if (alertEl) { alertEl.className = 'wf-setup-alert success'; alertEl.textContent = `Connected. ${fields.length} fields loaded.`; }
             } catch {
-                if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Connection test failed.'; }
+                if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Connection test failed. Please verify your connection string.'; }
+            } finally {
+                if (testBtn) { testBtn.disabled = false; testBtn.innerHTML = '<i class="bi bi-wifi me-1"></i>Test & Load Fields'; }
             }
         },
 

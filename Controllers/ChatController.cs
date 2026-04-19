@@ -112,6 +112,7 @@ public class ChatController : Controller
         string schemaContext = "";
         string datasourceIdentity = "";
         bool connectedToPowerBi = false;
+        bool isRestApi = false;
         if (!string.IsNullOrEmpty(req.AgentId))
         {
             Agent? agent = null;
@@ -123,6 +124,7 @@ public class ChatController : Controller
             {
                 schemaContext = await BuildSchemaPromptAsync(agent.Datasource);
                 connectedToPowerBi = IsPowerBi(agent.Datasource.Type);
+                isRestApi = IsRestApi(agent.Datasource.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{agent.Datasource.Name}** (Type: {agent.Datasource.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -151,6 +153,7 @@ public class ChatController : Controller
                     {
                         schemaContext = await BuildSchemaPromptAsync(ds);
                         connectedToPowerBi = IsPowerBi(ds.Type);
+                        isRestApi = IsRestApi(ds.Type);
                         datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                             $"All queries you generate MUST target this specific datasource. " +
                             $"Use the exact table and column names from the schema provided below. " +
@@ -168,6 +171,7 @@ public class ChatController : Controller
             {
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
+                isRestApi = IsRestApi(ds.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -183,6 +187,7 @@ public class ChatController : Controller
             {
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
+                isRestApi = IsRestApi(ds.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -191,7 +196,27 @@ public class ChatController : Controller
         }
 
         // Inject workspace memories into system prompt
-        var defaultPrompt = connectedToPowerBi
+        var defaultPrompt = isRestApi
+            ? @"You are AI Insight's AI data assistant connected to a **REST API** datasource. The data has already been fetched from the API. When a user asks a data question:
+
+1. **Understand Intent**: Determine what data the user wants.
+2. **Analyze Data**: The API data is already available. Analyze the fields and sample data provided in the schema below.
+3. **Provide Insights**: Give clear, actionable insights based on the data.
+4. **Return Structure**: Always respond in this JSON format when a data query is involved:
+
+{
+  ""type"": ""data_response"",
+  ""prompt"": ""The original user question rephrased as a clear intent"",
+  ""query"": ""REST_API"",
+  ""description"": ""Description of the data analysis performed."",
+  ""suggestedChart"": ""bar"",
+  ""suggestedFields"": { ""label"": ""fieldName"", ""value"": ""fieldName"" }
+}
+
+IMPORTANT: For REST API datasources, always set query to ""REST_API"" — the system will fetch the data automatically.
+Use the field names from the schema provided. Suggest charts and fields based on the available data.
+For non-data questions, respond normally in plain text."
+            : connectedToPowerBi
             ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
 
 1. **Understand Intent**: Determine what data the user wants.
@@ -231,7 +256,8 @@ Always be concise and actionable."
 
 For non-data questions, respond normally in plain text.
 When the user asks to visualize or chart data, suggest appropriate chart types.
-Always be concise and actionable.";
+Always be concise and actionable.
+IMPORTANT: Return ONLY a single query — never multiple statements. Do NOT include SQL comments (-- or /* */).";
 
         var effectiveSystemPrompt = req.SystemPrompt ?? defaultPrompt;
         if (!string.IsNullOrEmpty(reportContext))
@@ -321,6 +347,16 @@ Always be concise and actionable.";
 
         var query = (req.Query ?? "").Trim();
 
+        // Strip SQL comments (AI often returns -- comments) and take only the first statement
+        query = QueryExecutionService.StripSqlComments(query);
+        if (!string.IsNullOrEmpty(query) && !query.TrimStart().StartsWith("EVALUATE", StringComparison.OrdinalIgnoreCase))
+        {
+            // Split on semicolons and take the first non-empty statement
+            var firstStatement = query.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            if (!string.IsNullOrEmpty(firstStatement))
+                query = firstStatement;
+        }
+
         // Server-side read-only guard — block all write operations
         var normalized = System.Text.RegularExpressions.Regex.Replace(
             query.ToUpperInvariant(), @"\s+", " ").Trim();
@@ -331,7 +367,9 @@ Always be concise and actionable.";
             normalized.TrimStart(), @"[\s(;]+").FirstOrDefault() ?? "";
 
         // Allow DAX EVALUATE and DMV queries (read-only Power BI operations)
+        // Allow REST_API marker (REST API datasources bypass SQL entirely)
         var isDaxOrDmv = firstToken == "EVALUATE"
+            || firstToken == "REST_API"
             || (firstToken == "SELECT" && normalized.Contains("$SYSTEM."));
 
         if (!isDaxOrDmv &&
@@ -381,11 +419,18 @@ Always be concise and actionable.";
                     ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
                     : !string.IsNullOrWhiteSpace(ds.ConnectionString);
 
-                if (hasConnection)
-                {
-                    var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
-                    return Ok(new { success = result.Success, data = result.Data, rowCount = result.RowCount, error = result.Error });
-                }
+                if (hasConnection || IsRestApi(ds.Type))
+                    {
+                        // REST API datasources: fetch data from the API instead of executing SQL
+                        if (IsRestApi(ds.Type))
+                        {
+                            var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                            return Ok(new { success = apiResult.Success, data = apiResult.Data, rowCount = apiResult.RowCount, error = apiResult.Error });
+                        }
+
+                        var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
+                        return Ok(new { success = result.Success, data = result.Data, rowCount = result.RowCount, error = result.Error });
+                    }
             }
         }
 
@@ -533,12 +578,51 @@ Always be concise and actionable.";
     }
 
     private static bool IsPowerBi(string? type) => QueryExecutionService.PowerBiTypes.Contains(type ?? "");
+    private static bool IsRestApi(string? type) => QueryExecutionService.RestApiTypes.Contains(type ?? "");
 
     private async Task<string> BuildSchemaPromptAsync(Datasource ds)
     {
         var isPbi = IsPowerBi(ds.Type);
+        var isRest = IsRestApi(ds.Type);
         var sb = new StringBuilder();
         sb.AppendLine($"## Connected Datasource: {ds.Name} ({ds.Type})");
+
+        // REST API: build schema from a sample API call
+        if (isRest)
+        {
+            sb.AppendLine("You are connected to a REST API datasource. Data is fetched automatically — do NOT generate SQL.");
+            sb.AppendLine("When the user asks a data question, set the query field to \"REST_API\" and the system will fetch the data.");
+            sb.AppendLine("### API Data Fields:");
+            try
+            {
+                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                if (apiResult.Success && apiResult.Data.Count > 0)
+                {
+                    var fields = apiResult.Data.First().Keys.ToList();
+                    sb.AppendLine($"- **{ds.Name.Replace(" ", "_")}** (API Endpoint): {string.Join(", ", fields)}");
+                    sb.AppendLine($"- Sample row count: {apiResult.Data.Count}");
+                    // Show up to 3 sample rows for context
+                    var sampleRows = apiResult.Data.Take(3);
+                    sb.AppendLine("### Sample Data:");
+                    foreach (var row in sampleRows)
+                    {
+                        var vals = row.Select(kv => $"{kv.Key}={kv.Value}");
+                        sb.AppendLine($"  - {string.Join(", ", vals)}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("- Could not retrieve sample data from the API.");
+                }
+            }
+            catch
+            {
+                sb.AppendLine("- Could not retrieve sample data from the API.");
+            }
+            sb.AppendLine();
+            sb.AppendLine("Use these field names when suggesting charts. Always set query to \"REST_API\".");
+            return sb.ToString();
+        }
 
         if (isPbi)
         {
@@ -554,6 +638,13 @@ Always be concise and actionable.";
         else
         {
             sb.AppendLine("You are connected to this datasource. Generate SQL queries compatible with this database type.");
+            if ((ds.Type ?? "").Contains("SQL Server", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine("### SQL Rules:");
+                sb.AppendLine("- ALWAYS use fully schema-qualified table names exactly as listed below (e.g., [SalesLT].[Product], [dbo].[BuildVersion]).");
+                sb.AppendLine("- NEVER omit the schema prefix. Every table reference in FROM, JOIN, and subqueries MUST include the schema.");
+                sb.AppendLine("- ALWAYS wrap every column name in square brackets (e.g., [Database Version], [ModifiedDate]). This is required because column names may contain spaces or reserved words.");
+            }
         }
 
         sb.AppendLine("### Database Schema:");
@@ -589,7 +680,7 @@ Always be concise and actionable.";
                         }
 
                         sb.AppendLine();
-                        sb.AppendLine("Always use exact table and column names from the schema above.");
+                        sb.AppendLine("Always use exact table and column names from the schema above — including the schema prefix (e.g., dbo.TableName or SalesLT.TableName).");
                         sb.AppendLine(isPbi ? "Generate DAX queries (not SQL) for this Power BI model." : $"Generate SQL appropriate for {ds.Type}.");
                         return sb.ToString();
                     }
@@ -702,6 +793,43 @@ Always be concise and actionable.";
         var ds = agent.Datasource;
         var tables = new List<string>();
 
+        // REST API: use field names from a sample API call for suggestions
+        if (IsRestApi(ds.Type))
+        {
+            var apiDsName = ds.Name ?? "API";
+            var fields = new List<string>();
+            try
+            {
+                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                if (apiResult.Success && apiResult.Data.Count > 0)
+                    fields = apiResult.Data.First().Keys.ToList();
+            }
+            catch { /* use generic suggestions */ }
+
+            if (fields.Count > 0)
+            {
+                var firstField = fields.FirstOrDefault(f => !f.Equals("id", StringComparison.OrdinalIgnoreCase)) ?? fields[0];
+                var numeric = fields.FirstOrDefault(f =>
+                    f.Contains("amount", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("price", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("total", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("count", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("value", StringComparison.OrdinalIgnoreCase)) ?? fields.Last();
+                suggestions.Add(new { text = $"Show me all data from {apiDsName}", icon = "bi-table" });
+                suggestions.Add(new { text = $"What are the unique values of {firstField}?", icon = "bi-list-ul" });
+                suggestions.Add(new { text = $"Summarize {numeric} from {apiDsName}", icon = "bi-graph-up" });
+                suggestions.Add(new { text = $"Show the top 10 records", icon = "bi-sort-down" });
+                suggestions.Add(new { text = $"What fields are available in {apiDsName}?", icon = "bi-diagram-3" });
+            }
+            else
+            {
+                suggestions.Add(new { text = $"Show me all data from {apiDsName}", icon = "bi-table" });
+                suggestions.Add(new { text = $"What fields are available?", icon = "bi-diagram-3" });
+                suggestions.Add(new { text = $"Summarize the data", icon = "bi-graph-up" });
+            }
+            return Ok(suggestions);
+        }
+
         // Try real schema introspection for table names
         var hasDsConn = IsPowerBi(ds.Type)
             ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
@@ -756,19 +884,17 @@ Always be concise and actionable.";
     {
         var t = type?.Trim() ?? "";
         if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            return "SELECT t.TABLE_SCHEMA + '.' + t.TABLE_NAME as table_name, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME WHERE t.TABLE_TYPE = 'BASE TABLE' ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION";
+            return "SELECT t.TABLE_SCHEMA + '.' + t.TABLE_NAME as table_name, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.table_name, c.column_name, c.data_type FROM information_schema.tables t JOIN information_schema.columns c ON c.table_name = t.table_name AND c.table_schema = t.table_schema WHERE t.table_schema = 'public' ORDER BY t.table_name, c.ordinal_position";
         if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.TABLE_NAME as table_name, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_NAME = t.TABLE_NAME AND c.TABLE_SCHEMA = t.TABLE_SCHEMA WHERE t.TABLE_SCHEMA = DATABASE() ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
-        // Power BI — DMV schema discovery via XMLA
+        // Power BI — DAX schema discovery via INFO functions
         if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
-            return "SELECT t.[Name] AS table_name, c.[ExplicitName] AS column_name, " +
-                   "CASE c.[DataType] WHEN 2 THEN 'String' WHEN 6 THEN 'Int64' WHEN 8 THEN 'Double' " +
-                   "WHEN 9 THEN 'DateTime' WHEN 10 THEN 'Decimal' WHEN 11 THEN 'Boolean' ELSE 'Other' END AS data_type " +
-                   "FROM $SYSTEM.TMSCHEMA_COLUMNS c " +
-                   "INNER JOIN $SYSTEM.TMSCHEMA_TABLES t ON c.[TableID] = t.[ID] " +
-                   "WHERE NOT t.[IsHidden] ORDER BY t.[Name], c.[ExplicitName]";
+            return "EVALUATE VAR _tables = SELECTCOLUMNS(FILTER(INFO.TABLES(), NOT [IsHidden]), \"TableID\", [ID], \"table_name\", [Name]) " +
+                   "VAR _cols = SELECTCOLUMNS(FILTER(INFO.COLUMNS(), NOT [IsHidden]), \"TableID\", [TableID], \"column_name\", [ExplicitName], " +
+                   "\"data_type\", SWITCH([DataType], 2, \"String\", 6, \"Int64\", 8, \"Double\", 9, \"DateTime\", 10, \"Decimal\", 11, \"Boolean\", \"Other\")) " +
+                   "RETURN SELECTCOLUMNS(NATURALLEFTOUTERJOIN(_tables, _cols), \"table_name\", [table_name], \"column_name\", [column_name], \"data_type\", [data_type])";
         return null;
     }
 }

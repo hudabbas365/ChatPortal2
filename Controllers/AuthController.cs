@@ -17,6 +17,7 @@ public class AuthController : Controller
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
+    private readonly IEmailService _emailService;
 
     // In-memory store for captcha answers: captchaId -> (answer, expiry)
     private static readonly ConcurrentDictionary<string, (string Answer, DateTime Expiry)> _captchaStore = new();
@@ -27,7 +28,8 @@ public class AuthController : Controller
         JwtService jwtService,
         AppDbContext db,
         IConfiguration config,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IEmailService emailService)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -35,6 +37,7 @@ public class AuthController : Controller
         _db = db;
         _config = config;
         _logger = logger;
+        _emailService = emailService;
     }
 
     [HttpGet("/auth/login")]
@@ -169,6 +172,16 @@ public class AuthController : Controller
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);
 
+        // Send email confirmation
+        var verifyToken = Guid.NewGuid().ToString("N");
+        org.EmailVerificationToken = verifyToken;
+        org.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+        await _db.SaveChangesAsync();
+
+        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
+        var confirmUrl = $"{baseUrl}/auth/confirm-email?token={verifyToken}&orgId={org.Id}";
+        _ = _emailService.SendEmailConfirmationAsync(user.Email!, user.FullName, confirmUrl);
+
         return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName = org.Name } });
     }
 
@@ -226,7 +239,7 @@ public class AuthController : Controller
             if (org != null && org.IsBlocked)
             {
                 _logger.LogWarning("Login blocked: organization '{OrgName}' (ID:{OrgId}) is blocked. User: '{Email}'.", org.Name, org.Id, user.Email);
-                return Unauthorized(new { error = "org_blocked", message = $"Your organization has been blocked. Reason: {org.BlockedReason ?? "Contact support for details."}. Please contact support to resolve this issue." });
+                return Unauthorized(new { error = "org_blocked", message = $"Your organization has been blocked. Reason: {org.BlockedReason ?? "Contact support for details."}. Please contact support@AIInsights365.net to resolve this issue." });
             }
         }
 
@@ -238,7 +251,16 @@ public class AuthController : Controller
 
         var comingSoon = _config.GetValue<bool>("App:ComingSoon");
         var redirectUrl = comingSoon ? "/" : "/chat";
-        return Ok(new { token, redirectUrl, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId } });
+
+        // Load org name for UI display
+        string? orgName = null;
+        if (user.OrganizationId.HasValue)
+        {
+            var loginOrg = await _db.Organizations.FindAsync(user.OrganizationId.Value);
+            orgName = loginOrg?.Name;
+        }
+
+        return Ok(new { token, redirectUrl, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName } });
     }
 
     [HttpPost("/api/auth/logout")]
@@ -283,7 +305,113 @@ public class AuthController : Controller
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null) return Unauthorized();
 
-        return Ok(new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId });
+        string? orgName = null;
+        if (user.OrganizationId.HasValue)
+        {
+            var meOrg = await _db.Organizations.FindAsync(user.OrganizationId.Value);
+            orgName = meOrg?.Name;
+        }
+
+        return Ok(new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName });
+    }
+
+    [HttpGet("/api/auth/org-verified")]
+    [Authorize]
+    public async Task<IActionResult> OrgVerified([FromQuery] int orgId)
+    {
+        var org = await _db.Organizations.FindAsync(orgId);
+        if (org == null) return NotFound();
+        return Ok(new { isVerified = org.IsEmailVerified });
+    }
+
+    [HttpGet("/auth/confirm-email")]
+    public async Task<IActionResult> ConfirmEmail([FromQuery] string token, [FromQuery] int orgId)
+    {
+        var org = await _db.Organizations.FindAsync(orgId);
+        if (org == null || org.EmailVerificationToken != token)
+            return Content("Invalid or expired confirmation link.");
+
+        if (org.EmailVerificationTokenExpiry.HasValue && org.EmailVerificationTokenExpiry.Value < DateTime.UtcNow)
+            return Content("This confirmation link has expired. Please request a new one from your account settings.");
+
+        org.IsEmailVerified = true;
+        org.EmailVerificationToken = null;
+        org.EmailVerificationTokenExpiry = null;
+        await _db.SaveChangesAsync();
+
+        return Redirect("/auth/login?verified=1");
+    }
+
+    [HttpPost("/api/auth/resend-confirmation")]
+    [Authorize]
+    public async Task<IActionResult> ResendConfirmation()
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user?.OrganizationId == null) return BadRequest(new { error = "No organization found." });
+
+        var org = await _db.Organizations.FindAsync(user.OrganizationId.Value);
+        if (org == null) return NotFound();
+        if (org.IsEmailVerified) return Ok(new { message = "Already verified." });
+
+        var verifyToken = Guid.NewGuid().ToString("N");
+        org.EmailVerificationToken = verifyToken;
+        org.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+        await _db.SaveChangesAsync();
+
+        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
+        var confirmUrl = $"{baseUrl}/auth/confirm-email?token={verifyToken}&orgId={org.Id}";
+        await _emailService.SendEmailConfirmationAsync(user.Email!, user.FullName, confirmUrl);
+
+        return Ok(new { success = true, message = "Confirmation email sent." });
+    }
+
+    [HttpGet("/auth/forgot-password")]
+    public IActionResult ForgotPassword() => View();
+
+    [HttpPost("/api/auth/forgot-password")]
+    public async Task<IActionResult> ForgotPasswordApi([FromBody] ForgotPasswordRequest req)
+    {
+        if (string.IsNullOrEmpty(req.Email))
+            return BadRequest(new { error = "Email is required." });
+
+        var user = await _userManager.FindByEmailAsync(req.Email);
+        if (user == null)
+            return Ok(new { success = true, message = "If an account exists with that email, a reset link has been sent." });
+
+        var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
+        var resetUrl = $"{baseUrl}/auth/reset-password?token={Uri.EscapeDataString(resetToken)}&email={Uri.EscapeDataString(user.Email!)}";
+
+        await _emailService.SendForgotPasswordEmailAsync(user.Email!, user.FullName, resetUrl);
+
+        return Ok(new { success = true, message = "If an account exists with that email, a reset link has been sent." });
+    }
+
+    [HttpGet("/auth/reset-password")]
+    public IActionResult ResetPassword([FromQuery] string token, [FromQuery] string email)
+    {
+        ViewBag.Token = token;
+        ViewBag.Email = email;
+        return View();
+    }
+
+    [HttpPost("/api/auth/reset-password")]
+    public async Task<IActionResult> ResetPasswordApi([FromBody] AuthResetPasswordRequest req)
+    {
+        if (string.IsNullOrEmpty(req.Email) || string.IsNullOrEmpty(req.Token) || string.IsNullOrEmpty(req.NewPassword))
+            return BadRequest(new { error = "All fields are required." });
+
+        var user = await _userManager.FindByEmailAsync(req.Email);
+        if (user == null)
+            return BadRequest(new { error = "Invalid request." });
+
+        var result = await _userManager.ResetPasswordAsync(user, req.Token, req.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        return Ok(new { success = true, message = "Password has been reset. You can now sign in." });
     }
 
     private void SetJwtCookie(string token)
@@ -321,4 +449,16 @@ public class LoginRequest
     public string? Password { get; set; }
     public string? CaptchaId { get; set; }
     public string? CaptchaAnswer { get; set; }
+}
+
+public class ForgotPasswordRequest
+{
+    public string? Email { get; set; }
+}
+
+public class AuthResetPasswordRequest
+{
+    public string? Email { get; set; }
+    public string? Token { get; set; }
+    public string? NewPassword { get; set; }
 }

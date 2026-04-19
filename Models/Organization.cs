@@ -22,6 +22,11 @@ public class Organization
     public DateTime? SubscriptionStartDate { get; set; }
     public DateTime? SubscriptionNextBillingDate { get; set; }
 
+    // ── Email Verification ──
+    public bool IsEmailVerified { get; set; } = false;
+    public string? EmailVerificationToken { get; set; }
+    public DateTime? EmailVerificationTokenExpiry { get; set; }
+
     // ── Blocking ──
     public bool IsBlocked { get; set; } = false;
     public string? BlockedReason { get; set; }

@@ -1,8 +1,22 @@
+<div id="emailVerifyBannerContainer"></div>
 <div id="trialBannerContainer"></div>
 <script>
 (function() {
     const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
     if (!user) return;
+
+    // Email verification banner
+    if (user.organizationId) {
+        fetch('/api/auth/org-verified?orgId=' + user.organizationId, { credentials: 'same-origin' })
+            .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+            .then(function(d) {
+                if (d && d.isVerified === false) {
+                    var c = document.getElementById('emailVerifyBannerContainer');
+                    if (c) c.innerHTML = '<div class="cp-trial-banner expired" style="background:linear-gradient(135deg,#ff6b35,#f72585);"><i class="bi bi-envelope-exclamation me-2"></i>Your email is not verified. Please check your inbox for the confirmation link. <a href="#" onclick="resendVerification()" class="trial-upgrade-link" style="color:#fff;text-decoration:underline;">Resend</a></div>';
+                }
+            }).catch(function() {});
+    }
+
     const plan = JSON.parse(localStorage.getItem('cp_plan') || 'null');
     if (!plan) return;
     const licenseType = String(plan.licenseType || plan.plan || '').toLowerCase();
@@ -24,4 +38,9 @@
         </div>`;
     }
 })();
+function resendVerification() {
+    fetch('/api/auth/resend-confirmation', { method: 'POST', credentials: 'same-origin' })
+        .then(function(r) { if (r.ok) alert('Confirmation email sent! Please check your inbox.'); else throw new Error(); })
+        .catch(function() { alert('Failed to resend. Please try again later.'); });
+}
 </script>

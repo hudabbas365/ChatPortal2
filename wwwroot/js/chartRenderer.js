@@ -157,7 +157,10 @@ class ChartRenderer {
             canvasEl.style.display = 'none';
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
-            noData.innerHTML = '<div class="chart-no-data"><i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>No records returned on this query.</div>';
+            const errMsg = data.error
+                ? `<i class="bi bi-exclamation-triangle" style="font-size:2rem;display:block;margin-bottom:8px;color:#dc3545"></i><span style="color:#dc3545;font-weight:500">Connection Error</span><br><span style="font-size:0.78rem;color:#6c757d;margin-top:4px;display:inline-block">${data.error.replace(/</g,'&lt;')}</span>`
+                : '<i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>No records returned on this query.';
+            noData.innerHTML = '<div class="chart-no-data">' + errMsg + '</div>';
             wrap.appendChild(noData);
             return;
         }
@@ -263,6 +266,12 @@ class ChartRenderer {
         return dsType.indexOf('power bi') !== -1 || dsType.indexOf('powerbi') !== -1;
     }
 
+    // ── REST API detection helper ──
+    _isRestApi() {
+        var dsType = (window.currentDatasourceType || '').toLowerCase();
+        return dsType.indexOf('rest api') !== -1 || dsType.indexOf('restapi') !== -1;
+    }
+
     // ── DAX table name: single-quoted for Power BI ──
     _formatDaxTableName(tableName) {
         return "'" + String(tableName).replace(/'/g, "''") + "'";
@@ -342,7 +351,39 @@ class ChartRenderer {
         // ── Real datasource path ──
         const dsId = chartDef.datasourceId || window.currentDatasourceId || null;
 
+        // ── REST API path: fetch all data from the API (no SQL needed) ──
+        if (dsId && this._isRestApi()) {
+            try {
+                const r = await fetch('/api/data/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'REST_API', datasourceId: dsId })
+                });
+                const result = await r.json();
+                if (result.success && result.data && result.data.length > 0) {
+                    const keys = Object.keys(result.data[0]);
+                    const resolvedLabel = (labelField && keys.find(k => k.toLowerCase() === labelField.toLowerCase())) || keys.find(k => typeof result.data[0][k] === 'string') || keys[0];
+                    const resolvedValue = (valueField && keys.find(k => k.toLowerCase() === valueField.toLowerCase())) || keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
+                    const out = {
+                        labels: result.data.map(r => String(r[resolvedLabel] ?? '')),
+                        values: result.data.map(r => parseFloat(r[resolvedValue]) || 0),
+                        rawData: result.data
+                    };
+                    const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                    if (mvf.length > 0) {
+                        out.multiValues = mvf.map(f => {
+                            const rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
+                            return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
+                        });
+                    }
+                    return out;
+                }
+                return { labels: [], values: [], error: result.error || 'REST API returned no data.' };
+            } catch(e) { console.warn('REST API data fetch failed:', e); return { labels: [], values: [], error: e.message || 'REST API request failed.' }; }
+        }
+
         // ── Table-based path (PRIMARY): always build query from table + current filterWhere/rowLimit ──
+        let lastFetchError = null;
         if (dsId && chartDef.datasetName) {
             try {
                 let tableName = chartDef.datasetName;
@@ -356,29 +397,48 @@ class ChartRenderer {
                 const fmtTable = this._formatTableName(tableName);
                 const rowLimit = chartDef.rowLimit || 100;
                 const whereClause = chartDef.filterWhere || '';
-                const mvFields = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                const mvFieldsRaw = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                // Normalize multi-value fields: support both string[] and {field,agg}[]
+                const mvFields = mvFieldsRaw.map(f => typeof f === 'string' ? f : (f.field || ''));
+                const mvFieldAggs = mvFieldsRaw.map(f => typeof f === 'object' ? (f.agg || 'SUM') : 'SUM');
+                // Per-field aggregation for primary value field
+                const primaryAgg = chartDef.mapping?.valueFieldAgg || agg.function || 'SUM';
                 let query;
 
                 // ── Power BI → DAX (parallel path, SQL untouched) ──
                 if (this._isPowerBi()) {
                     query = this._buildDaxQuery(tableName, rowLimit, labelField, valueField, agg, mvFields);
                 } else {
-                    // ── SQL datasources (unchanged) ──
+                    // ── SQL datasources ──
                     const whereSQL = whereClause ? ` WHERE ${whereClause}` : '';
+                    const dsType = (window.currentDatasourceType || '').toLowerCase();
+                    const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
                     let selectedCols;
                     if (chartDef.chartType === 'table') {
                         selectedCols = '*';
                     } else if (labelField && valueField) {
                         const allCols = [`[${labelField}]`, `[${valueField}]`];
-                        mvFields.forEach(f => { if (f !== valueField) allCols.push(`[${f}]`); });
+                        mvFields.forEach(f => { if (f && f !== valueField) allCols.push(`[${f}]`); });
                         selectedCols = allCols.join(', ');
                     } else {
                         selectedCols = '*';
                     }
-                    if (agg.enabled && labelField && valueField) {
-                        const dsType = (window.currentDatasourceType || '').toLowerCase();
-                        const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
-                        const aggCols = `[${labelField}], ${agg.function || 'SUM'}([${valueField}]) as [${valueField}]`;
+                    // Build per-field aggregated query when aggregation is enabled
+                    const useAgg = primaryAgg !== 'None' && labelField && valueField && chartDef.chartType !== 'table';
+                    if (useAgg) {
+                        const aggExpr = (fn, col) => {
+                            if (fn === 'COUNT_DISTINCT') return `COUNT(DISTINCT [${col}])`;
+                            if (fn === 'MEDIAN') return `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY [${col}])`;
+                            return `${fn}([${col}])`;
+                        };
+                        let aggColParts = [`[${labelField}]`, `${aggExpr(primaryAgg, valueField)} as [${valueField}]`];
+                        mvFields.forEach((f, i) => {
+                            if (f && f !== valueField) {
+                                const mAgg = mvFieldAggs[i] || 'SUM';
+                                aggColParts.push(`${aggExpr(mAgg, f)} as [${f}]`);
+                            }
+                        });
+                        const aggCols = aggColParts.join(', ');
                         if (isSqlServer) {
                             query = `SELECT TOP ${rowLimit} ${aggCols} FROM ${fmtTable}${whereSQL} GROUP BY [${labelField}]`;
                         } else {
@@ -414,8 +474,12 @@ class ChartRenderer {
                     }
                     return out;
                 }
-                // Query failed — retry with simple SELECT * preserving WHERE and LIMIT
+                // Query failed — return error for REST API (no SQL fallback), retry SQL with SELECT *
                 if (!result.success) {
+                    const isRestApi = (window.currentDatasourceType || '').toLowerCase().replace(/\s+/g, '').includes('restapi');
+                    if (isRestApi) {
+                        return { labels: [], values: [], error: result.error || 'REST API request failed.' };
+                    }
                     const fallbackQuery = this._buildLimitQuery('*', tableName, rowLimit, whereClause);
                     const r2 = await fetch('/api/data/execute', {
                         method: 'POST',
@@ -433,8 +497,9 @@ class ChartRenderer {
                             rawData: result2.data
                         };
                     }
+                    if (!result2.success) return { labels: [], values: [], error: result2.error || result.error };
                 }
-            } catch(e) { console.warn('Datasource table fetch failed, falling back:', e); }
+            } catch(e) { console.warn('Datasource table fetch failed, falling back:', e); lastFetchError = e.message || 'Data fetch failed'; }
         }
 
         // ── DataQuery fallback: use pre-built query when no table name is available ──
@@ -465,11 +530,11 @@ class ChartRenderer {
                     }
                     return out;
                 }
-            } catch(e) { console.warn('Datasource query fetch failed:', e); }
+            } catch(e) { console.warn('Datasource query fetch failed:', e); lastFetchError = lastFetchError || e.message; }
         }
 
         // No data available from any real datasource path
-        return { labels: [], values: [] };
+        return { labels: [], values: [], error: lastFetchError || window._lastDatasourceError || null };
     }
 
     _baseOptions(chartDef, extraScales) {

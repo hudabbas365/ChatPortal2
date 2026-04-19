@@ -57,9 +57,10 @@
                 });
 
                 // Dashboard branch
+                var dashAgentGuid = boundAgents.length > 0 ? boundAgents[0].guid : '';
                 html += '<div class="wf-flow-branch-row wf-flow-branch-bottom">';
                 html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
-                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '" data-agent-id="' + self._esc(dashAgentGuid) + '">';
                 html += '<div class="wf-flow-label">Dashboard</div>';
                 html += '<div class="wf-flow-sublabel">Designer</div>';
                 html += '</div>';
@@ -96,7 +97,7 @@
                 html += '<div class="wf-flow-branch-wrap single-branch">';
                 html += '<div class="wf-flow-branch-row">';
                 html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
-                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '" data-agent-id="">';
                 html += '<div class="wf-flow-label">Dashboard</div>';
                 html += '<div class="wf-flow-sublabel">Designer</div>';
                 html += '</div>';
@@ -121,7 +122,7 @@
                 html += '<div class="wf-flow-branch-wrap single-branch">';
                 html += '<div class="wf-flow-branch-row">';
                 html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
-                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<div class="wf-flow-node wf-flow-dashboard" data-action="dashboard" data-ws-id="' + self._esc(wsData.guid) + '" data-agent-id="">';
                 html += '<div class="wf-flow-label">Dashboard</div>';
                 html += '<div class="wf-flow-sublabel">Designer</div>';
                 html += '</div>';
@@ -319,6 +320,27 @@
                             <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
                         </div>
                     </div>
+                    <div id="wfDsRestApiFields" style="display:none">
+                        <div class="wf-setup-field">
+                            <label>HTTP Method</label>
+                            <select id="wfDsApiMethod" style="width:100%;padding:6px 10px;border:1.5px solid var(--cp-border);border-radius:8px;font-size:0.875rem;">
+                                <option value="GET" selected>GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="PATCH">PATCH</option>
+                                <option value="DELETE">DELETE</option>
+                                <option value="HEAD">HEAD</option>
+                            </select>
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>API URL</label>
+                            <input type="text" id="wfDsApiUrl" placeholder="https://api.example.com/data" />
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>API Key <span class="wfe-opt">(optional)</span></label>
+                            <input type="password" id="wfDsApiKey" placeholder="Bearer token or API key" />
+                        </div>
+                    </div>
                     <div class="wfe-cred-row">
                         <div class="wf-setup-field">
                             <label>Database User <span class="wfe-opt">(optional)</span></label>
@@ -357,14 +379,17 @@
                 document.getElementById('wfDsTypeSelector').style.display = 'none';
                 document.getElementById('wfDsConfigForm').style.display = 'block';
 
-                // Toggle Power BI vs standard fields
+                // Toggle Power BI vs REST API vs standard fields
                 var isPbi = /power\s*bi/i.test(self._selectedDsType);
+                var isRestApi = /rest\s*api/i.test(self._selectedDsType);
                 var connStrField = document.getElementById('wfDsConnStr');
-                if (connStrField) connStrField.closest('.wf-setup-field').style.display = isPbi ? 'none' : '';
+                if (connStrField) connStrField.closest('.wf-setup-field').style.display = (isPbi || isRestApi) ? 'none' : '';
                 var credRow = document.querySelector('.wfe-cred-row');
-                if (credRow) credRow.style.display = isPbi ? 'none' : '';
+                if (credRow) credRow.style.display = (isPbi || isRestApi) ? 'none' : '';
                 var pbiFields = document.getElementById('wfDsPbiFields');
                 if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
+                var restApiFields = document.getElementById('wfDsRestApiFields');
+                if (restApiFields) restApiFields.style.display = isRestApi ? '' : 'none';
             });
         }
         if (search) {
@@ -393,7 +418,9 @@
         var user = JSON.parse(localStorage.getItem('cp_user') || 'null');
         var name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
         var alertEl = document.getElementById('wfDsAlert');
+        var testBtn = document.getElementById('wfDsTestBtn');
         var isPbi = /power\s*bi/i.test(this._selectedDsType);
+        var isRestApi = /rest\s*api/i.test(this._selectedDsType);
 
         var payload = {
             name: name,
@@ -403,7 +430,11 @@
             userId: user?.id || ''
         };
 
-        if (isPbi) {
+        if (isRestApi) {
+            payload.apiUrl = document.getElementById('wfDsApiUrl')?.value.trim() || '';
+            payload.apiKey = document.getElementById('wfDsApiKey')?.value.trim() || '';
+            payload.apiMethod = document.getElementById('wfDsApiMethod')?.value || 'GET';
+        } else if (isPbi) {
             payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
             payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
             payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
@@ -415,8 +446,24 @@
             payload.dbPassword = document.getElementById('wfDsPassword')?.value.trim() || null;
         }
 
+        // Disable button & show testing state
+        if (testBtn) { testBtn.disabled = true; testBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Testing...'; }
+        if (alertEl) { alertEl.className = 'wf-setup-alert'; alertEl.textContent = 'Testing connection...'; }
+
         try {
-            // Skip creation if datasource was already created (e.g. user clicked back)
+            // Step 1: Test the connection first
+            var testR = await fetch('/api/datasources/test-connection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            var testResult = await testR.json();
+            if (!testR.ok || !testResult.connected) {
+                if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = testResult.error || 'Connection failed. Please check your credentials and try again.'; }
+                return;
+            }
+
+            // Step 2: Connection verified — create the datasource (skip if already created)
             if (!this._createdDsId) {
                 var r = await fetch('/api/datasources', {
                     method: 'POST',
@@ -429,7 +476,6 @@
                 this._createdDsGuid = ds.guid;
                 this._createdDsName = ds.name || name;
                 this._createdDsType = ds.type || this._selectedDsType;
-                // Sync local user org from server-resolved value
                 if (ds.organizationId && user) {
                     user.organizationId = ds.organizationId;
                     localStorage.setItem('cp_user', JSON.stringify(user));
@@ -438,7 +484,9 @@
             document.getElementById('wfDsNextBtn').style.display = '';
             if (alertEl) { alertEl.className = 'wf-setup-alert success'; alertEl.textContent = 'Connected successfully.'; }
         } catch {
-            if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Connection test failed.'; }
+            if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Connection test failed. Please verify your connection string.'; }
+        } finally {
+            if (testBtn) { testBtn.disabled = false; testBtn.innerHTML = '<i class="bi bi-wifi me-1"></i>Test Connection'; }
         }
     };
 
@@ -568,7 +616,10 @@
             var result = await r.json();
             if (pf) pf.value = result.prompt;
         } catch {
-            if (pf) pf.value = 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You have access to ' + (self._createdDsName || 'the datasource') + ' (' + (self._createdDsType || 'database') + '). Available tables: ' + (self._selectedTables || []).join(', ') + '. Help users query data, generate SQL, analyze results, and create visualizations.';
+            var isRest = (self._createdDsType || '').toLowerCase().indexOf('rest api') !== -1;
+            if (pf) pf.value = isRest
+                ? 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You are connected to ' + (self._createdDsName || 'a REST API') + ' (' + (self._createdDsType || 'REST API') + '). Data is fetched automatically from the API. Help users analyze the API data, suggest charts and visualizations. Always set query to "REST_API".'
+                : 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You have access to ' + (self._createdDsName || 'the datasource') + ' (' + (self._createdDsType || 'database') + '). Available tables: ' + (self._selectedTables || []).join(', ') + '. Help users query data, generate SQL, analyze results, and create visualizations.';
         }
         document.getElementById('wfGenPromptBtn')?.addEventListener('click', async function (e) {
             var btn = e.currentTarget;

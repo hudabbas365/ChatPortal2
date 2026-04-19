@@ -4,6 +4,7 @@ using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AIInsights.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417211937_AddEmailVerificationFields")]
+    partial class AddEmailVerificationFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -329,15 +332,6 @@ namespace AIInsights.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ApiKey")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ApiMethod")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ApiUrl")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ConnectionString")
                         .IsRequired()
@@ -733,34 +727,6 @@ namespace AIInsights.Migrations
                         .IsUnique();
 
                     b.ToTable("SeoEntries");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.SharedReport", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ReportId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("SharedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ReportId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("SharedReports");
                 });
 
             modelBuilder.Entity("AIInsights.Models.SubscriptionPlan", b =>
@@ -1192,25 +1158,6 @@ namespace AIInsights.Migrations
                     b.Navigation("Datasource");
 
                     b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.SharedReport", b =>
-                {
-                    b.HasOne("AIInsights.Models.Report", "Report")
-                        .WithMany()
-                        .HasForeignKey("ReportId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AIInsights.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Report");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("AIInsights.Models.SubscriptionPlan", b =>

@@ -25,6 +25,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
     public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
+    public DbSet<SharedReport> SharedReports => Set<SharedReport>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -183,5 +184,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(m => m.WorkspaceId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<SharedReport>()
+            .HasOne(sr => sr.Report)
+            .WithMany()
+            .HasForeignKey(sr => sr.ReportId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<SharedReport>()
+            .HasOne(sr => sr.User)
+            .WithMany()
+            .HasForeignKey(sr => sr.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<SharedReport>()
+            .HasIndex(sr => new { sr.ReportId, sr.UserId })
+            .IsUnique();
     }
 }

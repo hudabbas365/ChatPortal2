@@ -1,0 +1,297 @@
+/* auto-report.css — Styles for Auto Generate Report feature */
+
+/* ── Generate Report Button in Chat Panel ─────────────────────────── */
+.dcp-auto-report-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px dashed var(--cp-primary, #4A90D9);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(74,144,217,0.06) 0%, rgba(155,89,182,0.06) 100%);
+    color: var(--cp-primary, #4A90D9);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
+}
+.dcp-auto-report-btn:hover {
+    background: linear-gradient(135deg, rgba(74,144,217,0.14) 0%, rgba(155,89,182,0.14) 100%);
+    border-color: var(--cp-purple, #9B59B6);
+    color: var(--cp-purple, #9B59B6);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(74,144,217,0.15);
+}
+.dcp-auto-report-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+.dcp-auto-report-btn i {
+    font-size: 1rem;
+}
+
+/* ── Progress Modal ──────────────────────────────────────────────── */
+.ar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.ar-overlay.ar-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.ar-modal {
+    background: var(--cp-surface, #fff);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    width: 420px;
+    max-width: 92vw;
+    overflow: hidden;
+}
+
+.ar-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, var(--cp-primary, #4A90D9) 0%, var(--cp-purple, #9B59B6) 100%);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.ar-modal-header i {
+    font-size: 1.2rem;
+}
+
+.ar-modal-body {
+    padding: 20px;
+}
+
+.ar-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--cp-bg-alt, #e9ecef);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+.ar-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cp-primary, #4A90D9), var(--cp-purple, #9B59B6));
+    border-radius: 3px;
+    transition: width 0.4s ease;
+    width: 0%;
+}
+
+.ar-status {
+    font-size: 0.82rem;
+    color: var(--cp-text-secondary, #6c757d);
+    margin-bottom: 12px;
+    min-height: 1.4em;
+}
+
+.ar-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px 0;
+}
+.ar-steps li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 0.78rem;
+    color: var(--cp-text-muted, #adb5bd);
+    transition: color 0.2s;
+}
+.ar-steps li.ar-step-active {
+    color: var(--cp-primary, #4A90D9);
+    font-weight: 600;
+}
+.ar-steps li.ar-step-done {
+    color: var(--cp-success, #27AE60);
+}
+.ar-steps li .ar-step-icon {
+    width: 18px;
+    text-align: center;
+    font-size: 0.8rem;
+}
+
+.ar-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px 20px;
+    border-top: 1px solid var(--cp-border, #e2e8f0);
+    gap: 8px;
+}
+
+.ar-cancel-btn {
+    padding: 6px 16px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    border-radius: 6px;
+    background: var(--cp-surface, #fff);
+    color: var(--cp-text-secondary, #6c757d);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.ar-cancel-btn:hover {
+    background: var(--cp-bg-alt, #f0f0f0);
+}
+
+/* ── Prompt Input in Modal ──────────────────────────────────────── */
+.ar-prompt-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    resize: none;
+    margin-bottom: 12px;
+    font-family: inherit;
+    background: var(--cp-surface, #fff);
+    color: var(--cp-text, #1e2d3d);
+}
+.ar-prompt-input:focus {
+    outline: none;
+    border-color: var(--cp-primary, #4A90D9);
+    box-shadow: 0 0 0 2px rgba(74,144,217,0.15);
+}
+
+.ar-generate-btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--cp-primary, #4A90D9) 0%, var(--cp-purple, #9B59B6) 100%);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+}
+.ar-generate-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+.ar-generate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ── Done state ──────────────────────────────────────────────────── */
+.ar-done-msg {
+    text-align: center;
+    padding: 12px 0;
+}
+.ar-done-msg i {
+    font-size: 2rem;
+    color: var(--cp-success, #27AE60);
+    display: block;
+    margin-bottom: 8px;
+}
+.ar-done-msg .ar-done-text {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--cp-text, #1e2d3d);
+}
+.ar-done-msg .ar-done-sub {
+    font-size: 0.76rem;
+    color: var(--cp-text-secondary, #6c757d);
+    margin-top: 4px;
+}
+
+/* ── Table Selection in Prompt Modal ──────────────────────────────── */
+.ar-table-select {
+    margin-bottom: 12px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.ar-table-select-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--cp-bg-alt, #f8f9fa);
+    border-bottom: 1px solid var(--cp-border, #e2e8f0);
+}
+.ar-table-toggle-all {
+    background: none;
+    border: none;
+    color: var(--cp-primary, #4A90D9);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+.ar-table-toggle-all:hover {
+    background: rgba(74,144,217,0.1);
+}
+.ar-table-list {
+    padding: 8px 12px;
+    max-height: 160px;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.ar-table-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    border-radius: 6px;
+    font-size: 0.74rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    background: var(--cp-surface, #fff);
+}
+.ar-table-item:hover {
+    border-color: var(--cp-primary, #4A90D9);
+    background: rgba(74,144,217,0.04);
+}
+.ar-table-item:has(input:checked) {
+    border-color: var(--cp-primary, #4A90D9);
+    background: rgba(74,144,217,0.08);
+    color: var(--cp-primary, #4A90D9);
+    font-weight: 500;
+}
+.ar-table-item input[type="checkbox"] {
+    accent-color: var(--cp-primary, #4A90D9);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+/* ── Elapsed timer ────────────────────────────────────────────────── */
+.ar-elapsed {
+    font-size: 0.72rem;
+    color: var(--cp-text-muted, #adb5bd);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ── Active step animation ────────────────────────────────────────── */
+.ar-steps li.ar-step-active .ar-step-icon i {
+    animation: ar-spin 1s linear infinite;
+}
+@keyframes ar-spin {
+    to { transform: rotate(360deg); }
+}

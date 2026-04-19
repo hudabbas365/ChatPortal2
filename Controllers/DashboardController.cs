@@ -18,7 +18,8 @@ public class DashboardController : Controller
     private readonly IDataService _dataService;
     private readonly AppDbContext _db;
     private readonly IWorkspacePermissionService _permissions;
-    private const string SessionKey = "canvas_state";
+    private const string SessionKeyPrefix = "canvas_state_";
+    private const string SessionKeyLegacy = "canvas_state";
 
     private static readonly JsonSerializerSettings CamelCaseSettings = new()
     {
@@ -35,7 +36,7 @@ public class DashboardController : Controller
     }
 
     [HttpGet("/dashboard")]
-    public async Task<IActionResult> Index([FromQuery] string? report, [FromQuery] string? workspace)
+    public async Task<IActionResult> Index([FromQuery] string? report, [FromQuery] string? workspace, [FromQuery] string? agent)
     {
         CanvasState canvas;
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
@@ -67,7 +68,8 @@ public class DashboardController : Controller
                 canvas.CanvasName = rpt.Name ?? canvas.CanvasName;
                 ViewBag.ReportGuid = rpt.Guid;
                 // Persist to session so chart operations work on this canvas
-                HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+                var sessionKey = SessionKeyPrefix + (report ?? "");
+                HttpContext.Session.SetString(sessionKey, JsonConvert.SerializeObject(canvas));
                 // Load datasource from the linked report
                 if (rpt.Datasource != null)
                 {
@@ -123,17 +125,26 @@ public class DashboardController : Controller
                     canvas = JsonConvert.DeserializeObject<CanvasState>(latestReport.CanvasJson!) ?? new CanvasState();
                     canvas.CanvasName = latestReport.Name ?? canvas.CanvasName;
                     ViewBag.ReportGuid = latestReport.Guid;
-                    HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+                    var sessionKey = SessionKeyPrefix + workspace;
+                    HttpContext.Session.SetString(sessionKey, JsonConvert.SerializeObject(canvas));
                 }
                 else
                 {
-                    canvas = LoadOrCreateCanvas();
+                    // Fresh canvas for this workspace — don't reuse another workspace's session state
+                    canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
                 }
 
-                // Resolve datasource context for the workspace so charts can query real data
-                var ds = await _db.Datasources
+                // Resolve datasource context — prefer agent's bound datasource if ?agent= is provided
+                Datasource? ds = null;
+                if (!string.IsNullOrEmpty(agent))
+                {
+                    // Try to find agent by guid or id and use its datasource
+                    var resolvedAgent = await _db.Agents.Include(a => a.Datasource)
+                        .FirstOrDefaultAsync(a => a.Guid == agent || a.Id.ToString() == agent);
+                    ds = resolvedAgent?.Datasource;
+                }
+                ds ??= await _db.Datasources
                     .Where(d => d.WorkspaceId == ws.Id)
-                    .Select(d => new { d.Id, d.Name, d.Type })
                     .FirstOrDefaultAsync();
                 if (ds != null)
                 {
@@ -167,11 +178,11 @@ public class DashboardController : Controller
 
     private CanvasState LoadOrCreateCanvas()
     {
-        var canvasJson = HttpContext.Session.GetString(SessionKey);
+        var canvasJson = HttpContext.Session.GetString(SessionKeyLegacy);
         if (string.IsNullOrEmpty(canvasJson))
         {
             var canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
-            HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+            HttpContext.Session.SetString(SessionKeyLegacy, JsonConvert.SerializeObject(canvas));
             return canvas;
         }
         return JsonConvert.DeserializeObject<CanvasState>(canvasJson) ?? new CanvasState();

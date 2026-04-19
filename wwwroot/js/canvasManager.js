@@ -1,4 +1,12 @@
 // Canvas manager - manages charts on a free-form absolute-positioned canvas
+
+// Helper: append ?ctx= to chart/page API URLs for session key isolation
+function _chartApiUrl(path) {
+    const p = new URLSearchParams(window.location.search);
+    const ctx = p.get('report') || p.get('workspace') || p.get('ws') || '';
+    return ctx ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx) : path;
+}
+
 class CanvasManager {
     constructor() {
         this.charts = [];
@@ -135,7 +143,7 @@ class CanvasManager {
             } : null)
         };
 
-        const resp = await fetch('/api/chart/add', {
+        const resp = await fetch(_chartApiUrl('/api/chart/add'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(chart)
@@ -152,7 +160,7 @@ class CanvasManager {
     async deleteChart(chartId) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
         this._pushUndo();
-        await fetch(`/api/chart/${chartId}`, { method: 'DELETE' });
+        await fetch(_chartApiUrl(`/api/chart/${chartId}`), { method: 'DELETE' });
         this.charts = this.charts.filter(c => c.id !== chartId);
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
         if (card) card.remove();
@@ -202,7 +210,7 @@ class CanvasManager {
         const idx = this.charts.findIndex(c => c.id === chartDef.id);
         if (idx >= 0) this.charts[idx] = chartDef;
 
-        await fetch(`/api/chart/${chartDef.id}`, {
+        await fetch(_chartApiUrl(`/api/chart/${chartDef.id}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(chartDef)
@@ -467,7 +475,7 @@ class CanvasManager {
                     chart.posX = chartDef.posX;
                     chart.posY = chartDef.posY;
                     // Persist position change
-                    fetch(`/api/chart/${chartDef.id}`, {
+                    fetch(_chartApiUrl(`/api/chart/${chartDef.id}`), {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(chart)
@@ -524,7 +532,7 @@ class CanvasManager {
                 if (chart) {
                     chart.width = chartDef.width;
                     chart.height = chartDef.height;
-                    fetch(`/api/chart/${chartDef.id}`, {
+                    fetch(_chartApiUrl(`/api/chart/${chartDef.id}`), {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(chart)
@@ -580,7 +588,7 @@ class CanvasManager {
         this.charts = this.pages[index].charts;
         this.renderAll();
         this.renderPageTabs();
-        this._pageSwitchPromise = fetch(`/api/page/switch/${index}`, { method: 'POST' })
+        this._pageSwitchPromise = fetch(_chartApiUrl(`/api/page/switch/${index}`), { method: 'POST' })
             .catch(err => console.warn('Could not persist page switch:', err))
             .finally(() => { this._pageSwitchPromise = null; });
     }
@@ -592,7 +600,7 @@ class CanvasManager {
             const newPage = { name: this._getNextPageName(), charts: [] };
             this.pages.push(newPage);
             try {
-                const resp = await fetch('/api/page/add', { method: 'POST' });
+                const resp = await fetch(_chartApiUrl('/api/page/add'), { method: 'POST' });
                 if (resp.ok) {
                     const data = await resp.json();
                     newPage.name = data.name || newPage.name;
@@ -623,23 +631,68 @@ class CanvasManager {
         if (!name || !name.trim()) return;
         this.pages[index].name = name.trim();
         this.renderPageTabs();
-        fetch('/api/page/rename', {
+        fetch(_chartApiUrl('/api/page/rename'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ index, name: name.trim() })
         }).catch(err => console.warn('Could not persist page rename:', err));
     }
 
-    deletePage(index) {
+    async deletePage(index) {
         if (this.pages.length <= 1) { alert('Cannot delete the only page.'); return; }
-        if (!confirm(`Delete "${this.pages[index].name}"? All charts on this page will be lost.`)) return;
+        var confirmed = await this._showDeletePageConfirm(this.pages[index].name);
+        if (!confirmed) return;
         this.pages.splice(index, 1);
         if (this.activePageIndex >= this.pages.length) this.activePageIndex = this.pages.length - 1;
         this.charts = this.pages[this.activePageIndex].charts || [];
         this.renderAll();
         this.renderPageTabs();
-        fetch(`/api/page/${index}`, { method: 'DELETE' })
+        fetch(_chartApiUrl(`/api/page/${index}`), { method: 'DELETE' })
             .catch(err => console.warn('Could not persist page delete:', err));
+    }
+
+    _showDeletePageConfirm(pageName) {
+        return new Promise(function (resolve) {
+            var overlay = document.createElement('div');
+            overlay.className = 'ar-overlay';
+            overlay.innerHTML =
+                '<div class="ar-modal" style="width:420px">' +
+                    '<div class="ar-modal-header" style="background:linear-gradient(135deg,#dc3545 0%,#c82333 100%)">' +
+                        '<i class="bi bi-trash3-fill"></i>Delete Page' +
+                    '</div>' +
+                    '<div class="ar-modal-body" style="text-align:center;padding:24px 20px">' +
+                        '<i class="bi bi-file-earmark-x" style="font-size:2.2rem;color:#dc3545;display:block;margin-bottom:12px"></i>' +
+                        '<div style="font-size:0.88rem;font-weight:600;color:var(--cp-text,#1e2d3d);margin-bottom:6px">Delete \u201c' + (typeof escapeHtml === 'function' ? escapeHtml(pageName) : pageName.replace(/</g,'&lt;').replace(/>/g,'&gt;')) + '\u201d?</div>' +
+                        '<div style="font-size:0.78rem;color:var(--cp-text-secondary,#6c757d)">All charts on this page will be permanently removed.<br>This action cannot be undone.</div>' +
+                    '</div>' +
+                    '<div class="ar-modal-footer" style="justify-content:center;gap:12px">' +
+                        '<button class="ar-cancel-btn" id="arDelPageNo" style="min-width:90px">Cancel</button>' +
+                        '<button class="ar-generate-btn" id="arDelPageYes" style="min-width:90px;background:#dc3545"><i class="bi bi-trash3 me-1"></i>Delete</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            requestAnimationFrame(function () { overlay.classList.add('ar-open'); });
+
+            function close(result) {
+                overlay.classList.remove('ar-open');
+                setTimeout(function () { overlay.remove(); }, 260);
+                resolve(result);
+            }
+
+            document.getElementById('arDelPageYes').addEventListener('click', function () { close(true); });
+            document.getElementById('arDelPageNo').addEventListener('click', function () { close(false); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+        });
+    }
+
+    async deleteAllPages() {
+        // Clear all pages on server and reset to single empty page
+        try { await fetch(_chartApiUrl('/api/chart/reset-all'), { method: 'POST' }); } catch (e) {}
+        this.pages = [{ name: 'Page 1', charts: [] }];
+        this.activePageIndex = 0;
+        this.charts = this.pages[0].charts;
+        this.renderAll();
+        this.renderPageTabs();
     }
 
     updateEmptyState() {
@@ -647,13 +700,51 @@ class CanvasManager {
         if (empty) empty.style.display = this.charts.length === 0 ? 'flex' : 'none';
     }
 
-    async resetCanvas() {
-        if (!confirm('Reset canvas to default charts?')) return;
+    async resetCanvas(skipConfirm) {
+        if (!skipConfirm) {
+            var confirmed = await this._showResetConfirm();
+            if (!confirmed) return;
+        }
         this._pushUndo();
-        const resp = await fetch('/api/chart/reset', { method: 'POST' });
+        const resp = await fetch(_chartApiUrl('/api/chart/reset'), { method: 'POST' });
         const canvas = await resp.json();
         this.charts = canvas.charts || [];
+        this.pages[this.activePageIndex].charts = this.charts;
         this.renderAll();
+    }
+
+    _showResetConfirm() {
+        return new Promise(function (resolve) {
+            var overlay = document.createElement('div');
+            overlay.className = 'ar-overlay';
+            overlay.innerHTML =
+                '<div class="ar-modal" style="width:400px">' +
+                    '<div class="ar-modal-header" style="background:linear-gradient(135deg,#dc3545 0%,#c82333 100%)">' +
+                        '<i class="bi bi-exclamation-triangle-fill"></i>Reset Canvas' +
+                    '</div>' +
+                    '<div class="ar-modal-body" style="text-align:center;padding:24px 20px">' +
+                        '<i class="bi bi-arrow-counterclockwise" style="font-size:2.2rem;color:#dc3545;display:block;margin-bottom:12px"></i>' +
+                        '<div style="font-size:0.88rem;font-weight:600;color:var(--cp-text,#1e2d3d);margin-bottom:6px">Reset canvas to default?</div>' +
+                        '<div style="font-size:0.78rem;color:var(--cp-text-secondary,#6c757d)">All charts on the current page will be removed.<br>This action can be undone with <kbd style="background:var(--cp-bg-alt,#e9ecef);padding:1px 5px;border-radius:3px;font-size:0.72rem">Ctrl+Z</kbd></div>' +
+                    '</div>' +
+                    '<div class="ar-modal-footer" style="justify-content:center;gap:12px">' +
+                        '<button class="ar-cancel-btn" id="arResetNo" style="min-width:90px">Cancel</button>' +
+                        '<button class="ar-generate-btn" id="arResetYes" style="min-width:90px;background:#dc3545"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            requestAnimationFrame(function () { overlay.classList.add('ar-open'); });
+
+            function close(result) {
+                overlay.classList.remove('ar-open');
+                setTimeout(function () { overlay.remove(); }, 260);
+                resolve(result);
+            }
+
+            document.getElementById('arResetYes').addEventListener('click', function () { close(true); });
+            document.getElementById('arResetNo').addEventListener('click', function () { close(false); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+        });
     }
 }
 

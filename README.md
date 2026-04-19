@@ -1,6 +1,6 @@
-# AIInsights
+# AI Insights 365
 
-AI-Powered Data Conversations Portal with integrated charting (migrated from ManageCharts).
+AI-Powered Data Conversations Portal
 
 ## Features
 - JWT Authentication with role-based access

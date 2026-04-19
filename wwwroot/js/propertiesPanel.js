@@ -111,21 +111,25 @@ class PropertiesPanel {
     _populateDatasetSelect(tableNames, currentValue) {
         const sel = document.getElementById('prop-dataset');
         if (!sel) return;
+        // Fallback to globally-loaded table names if schema returned empty
+        let names = (tableNames && tableNames.filter(n => n).length > 0)
+            ? tableNames.filter(n => n)
+            : (window._realTableNames || []);
         const existingValue = currentValue || sel.value || '';
         sel.innerHTML = '<option value="">-- Select table --</option>' +
-            tableNames.map(n => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(n) : n}">${typeof escapeHtml === 'function' ? escapeHtml(n) : n}</option>`).join('');
+            names.map(n => `<option value="${typeof escapeHtml === 'function' ? escapeHtml(n) : n}">${typeof escapeHtml === 'function' ? escapeHtml(n) : n}</option>`).join('');
         // Restore previously selected value if it exists in the new list
-        if (existingValue && tableNames.includes(existingValue)) {
+        if (existingValue && names.includes(existingValue)) {
             sel.value = existingValue;
         } else if (existingValue) {
             const lower = existingValue.toLowerCase();
             // Try case-insensitive match
-            const match = tableNames.find(n => n.toLowerCase() === lower);
+            const match = names.find(n => n.toLowerCase() === lower);
             if (match) {
                 sel.value = match;
             } else {
                 // Try matching without schema prefix (e.g. 'Sales' matches 'dbo.Sales')
-                const suffixMatch = tableNames.find(n => n.toLowerCase().endsWith('.' + lower) || lower.endsWith('.' + n.toLowerCase()));
+                const suffixMatch = names.find(n => n.toLowerCase().endsWith('.' + lower) || lower.endsWith('.' + n.toLowerCase()));
                 if (suffixMatch) sel.value = suffixMatch;
             }
         }
@@ -177,10 +181,13 @@ class PropertiesPanel {
         this.setFieldVal('prop-y-field', c.mapping?.yField || '');
         this.setFieldVal('prop-r-field', c.mapping?.rField || '');
         this.setFieldVal('prop-group-by-field', c.mapping?.groupByField || '');
-        const aggFn = c.aggregation?.function || (c.aggregation?.enabled ? 'SUM' : 'None');
-        this.setVal('prop-agg-enabled', aggFn !== 'None', 'checkbox');
-        this.setVal('prop-agg-function', aggFn);
-        this._updateAggLabel();
+        // Per-field aggregation for primary value field
+        const primaryAgg = c.mapping?.valueFieldAgg || c.aggregation?.function || (c.aggregation?.enabled ? 'SUM' : 'SUM');
+        this.setVal('prop-value-field-agg', primaryAgg);
+        // Legacy compat
+        this.setVal('prop-agg-enabled', primaryAgg !== 'None', 'checkbox');
+        this.setVal('prop-agg-function', primaryAgg);
+        this._updateAggVisibility(c.chartType);
         this.setVal('prop-row-limit', c.rowLimit || 100);
         // Populate condition builder from filterWhere
         this._populateConditions(c.filterWhere || '');
@@ -277,12 +284,13 @@ class PropertiesPanel {
                 yField: this._resolveFieldName(this.getVal('prop-y-field')),
                 rField: this._resolveFieldName(this.getVal('prop-r-field')),
                 groupByField: this._resolveFieldName(this.getVal('prop-group-by-field')),
+                valueFieldAgg: this.getVal('prop-value-field-agg') || 'SUM',
                 multiValueFields: this._collectMultiValueFields(),
                 tableFields: this._collectTableFields(),
             },
             aggregation: {
-                enabled: (this.getVal('prop-agg-function') || 'None') !== 'None',
-                function: this.getVal('prop-agg-function') || 'None',
+                enabled: (this.getVal('prop-value-field-agg') || 'None') !== 'None',
+                function: this.getVal('prop-value-field-agg') || 'None',
             },
             rowLimit: parseInt(this.getVal('prop-row-limit')) || 100,
             filterWhere: this._collectConditionsSQL(),
@@ -326,7 +334,13 @@ class PropertiesPanel {
 
     /** Auto-enable aggregation if the value field is numeric, otherwise disable it. */
     _autoAggregation(valueFieldName) {
-        this._updateAggLabel();
+        const aggSel = document.getElementById('prop-value-field-agg');
+        if (!aggSel) return;
+        if (this._isNumericField(valueFieldName)) {
+            if (aggSel.value === 'None') aggSel.value = 'SUM';
+        } else {
+            aggSel.value = 'None';
+        }
     }
 
     async datasetChanged() {
@@ -418,7 +432,9 @@ class PropertiesPanel {
             if (this._chartTypeChangeHandler) {
                 chartTypeEl.removeEventListener('change', this._chartTypeChangeHandler);
             }
-            this._chartTypeChangeHandler = () => this.updateTypeSpecificFields(chartTypeEl.value);
+            this._chartTypeChangeHandler = () => {
+                this.updateTypeSpecificFields(chartTypeEl.value);
+            };
             chartTypeEl.addEventListener('change', this._chartTypeChangeHandler);
         }
 
@@ -445,6 +461,7 @@ class PropertiesPanel {
                 el.style.display = '';
             }
         });
+        this._updateAggVisibility(chartType);
     }
 
     renderDataFields() {
@@ -693,8 +710,11 @@ class PropertiesPanel {
             [m.labelField, m.valueField, m.lineValueField, m.xField, m.yField, m.rField, m.groupByField]
                 .filter(Boolean)
                 .forEach(f => mapped.add(f.toLowerCase()));
-            // Include additional value fields
-            (m.multiValueFields || []).filter(Boolean).forEach(f => mapped.add(f.toLowerCase()));
+            // Include additional value fields (support string[] and {field,agg}[])
+            (m.multiValueFields || []).filter(Boolean).forEach(f => {
+                const name = typeof f === 'string' ? f : (f.field || '');
+                if (name) mapped.add(name.toLowerCase());
+            });
         }
         container.querySelectorAll('.data-field-row').forEach(row => {
             const fieldName = (row.dataset.field || '').toLowerCase();
@@ -903,7 +923,7 @@ class PropertiesPanel {
         const tableName = this.getVal('prop-dataset') || '';
         const labelField = this.getVal('prop-label-field') || '';
         const valueField = this.getVal('prop-value-field') || '';
-        const aggFn = this.getVal('prop-agg-function') || 'None';
+        const aggFn = this.getVal('prop-value-field-agg') || 'None';
         const aggEnabled = aggFn !== 'None';
         const rowLimit = this.getVal('prop-row-limit') || '100';
         const whereClause = this._collectConditionsSQL();
@@ -922,9 +942,15 @@ class PropertiesPanel {
             }
         }
         if (mvFields.length > 0) {
-            prompt += ` Also include these value fields: ${mvFields.map(f => `[${f}]`).join(', ')}.`;
+            const mvDescriptions = mvFields.map(f => {
+                const name = typeof f === 'object' ? f.field : f;
+                const agg = typeof f === 'object' ? f.agg : 'SUM';
+                return agg !== 'None' ? `${agg}([${name}])` : `[${name}]`;
+            });
+            prompt += ` Also include these value fields: ${mvDescriptions.join(', ')}.`;
         }
         if (whereClause) prompt += ` Add WHERE clause: ${whereClause}.`;
+        prompt += ` ALWAYS wrap every column name in square brackets (e.g., [Database Version], [ModifiedDate]).`;
         prompt += ` Limit to ${rowLimit} rows. Return only the SQL statement, no explanation.`;
 
         // Show spinner on button
@@ -1058,33 +1084,55 @@ class PropertiesPanel {
         form.addEventListener('input', this._shapeInputHandler);
     }
 
-    /** Render the additional value field selects from an array of field names. */
+    /** Render the additional value field selects from an array of field names or {field,agg} objects. */
     _renderMultiValueFields(fields) {
         const container = document.getElementById('multi-value-fields-container');
         if (!container) return;
         container.innerHTML = '';
-        (fields || []).forEach(f => this._addMultiValueFieldSelect(f));
+        (fields || []).forEach(f => {
+            if (typeof f === 'string') {
+                this._addMultiValueFieldSelect(f, 'SUM');
+            } else {
+                this._addMultiValueFieldSelect(f.field || '', f.agg || 'SUM');
+            }
+        });
     }
 
     /** Add a single additional value field select to the container. */
-    _addMultiValueFieldSelect(selectedValue) {
+    _addMultiValueFieldSelect(selectedValue, selectedAgg) {
         const container = document.getElementById('multi-value-fields-container');
         if (!container) return;
+        // Support legacy string format or new {field, agg} format
+        let fieldVal = selectedValue;
+        let aggVal = selectedAgg || 'SUM';
+        if (typeof selectedValue === 'object' && selectedValue !== null) {
+            fieldVal = selectedValue.field || '';
+            aggVal = selectedValue.agg || 'SUM';
+        }
         const wrapper = document.createElement('div');
         wrapper.className = 'd-flex align-items-center gap-1 mb-1 multi-value-field-row';
         const sel = document.createElement('select');
         sel.className = 'form-select form-select-sm field-select multi-value-field-select';
-        sel.style.fontSize = '0.75rem';
-        // Populate options from current fields
+        sel.style.cssText = 'font-size:0.75rem;flex:1;';
         sel.innerHTML = '<option value="">-- none --</option>' +
             this.fields.map(f => '<option value="' + (typeof escapeHtml === 'function' ? escapeHtml(f) : f) + '">' + (typeof escapeHtml === 'function' ? escapeHtml(f) : f) + '</option>').join('');
-        if (selectedValue) {
-            this.setFieldValOnEl(sel, selectedValue);
+        if (fieldVal) {
+            this.setFieldValOnEl(sel, fieldVal);
         }
+        // Per-field aggregation dropdown
+        const aggSel = document.createElement('select');
+        aggSel.className = 'form-select form-select-sm multi-value-agg-select';
+        aggSel.style.cssText = 'width:auto;min-width:80px;font-size:0.72rem;';
+        aggSel.title = 'Aggregation';
+        aggSel.innerHTML = '<option value="None">No Agg</option><option value="SUM">Sum</option><option value="AVG">Average</option><option value="COUNT">Count</option><option value="COUNT_DISTINCT">Count (Distinct)</option><option value="MIN">Minimum</option><option value="MAX">Maximum</option><option value="STDEV">Std Dev</option><option value="VAR">Variance</option><option value="MEDIAN">Median</option>';
+        aggSel.value = aggVal;
+        // Hide agg for table charts
+        const isTable = this.currentChart?.chartType === 'table';
+        aggSel.style.display = isTable ? 'none' : '';
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'btn btn-xs';
-        removeBtn.style.cssText = 'font-size:0.68rem;padding:1px 4px;border:1px solid #e2e8f0;border-radius:4px;color:#ef4444;background:#fff;';
+        removeBtn.style.cssText = 'font-size:0.68rem;padding:1px 4px;border:1px solid #e2e8f0;border-radius:4px;color:#ef4444;background:#fff;flex-shrink:0;';
         removeBtn.title = 'Remove field';
         removeBtn.innerHTML = '<i class="bi bi-x"></i>';
         removeBtn.addEventListener('click', () => {
@@ -1092,7 +1140,9 @@ class PropertiesPanel {
             this.apply();
         });
         sel.addEventListener('change', () => this.apply());
+        aggSel.addEventListener('change', () => this.apply());
         wrapper.appendChild(sel);
+        wrapper.appendChild(aggSel);
         wrapper.appendChild(removeBtn);
         container.appendChild(wrapper);
     }
@@ -1107,41 +1157,45 @@ class PropertiesPanel {
         else sel.value = val;
     }
 
-    /** Collect all additional value field names from the UI. */
+    /** Collect all additional value fields with per-field aggregation from the UI. */
     _collectMultiValueFields() {
         const container = document.getElementById('multi-value-fields-container');
         if (!container) return [];
         const values = [];
-        container.querySelectorAll('.multi-value-field-select').forEach(sel => {
-            if (sel.value) values.push(this._resolveFieldName(sel.value));
+        container.querySelectorAll('.multi-value-field-row').forEach(row => {
+            const sel = row.querySelector('.multi-value-field-select');
+            const aggSel = row.querySelector('.multi-value-agg-select');
+            if (sel && sel.value) {
+                values.push({
+                    field: this._resolveFieldName(sel.value),
+                    agg: aggSel?.value || 'SUM'
+                });
+            }
         });
         return values;
     }
 
     _wireAggMenu() {
-        const btn = document.getElementById('value-agg-menu-btn');
-        const menu = document.getElementById('value-agg-menu');
-        if (!btn || !menu) return;
-        btn.onclick = () => {
-            menu.style.display = menu.style.display === 'none' ? '' : 'none';
-        };
-        menu.querySelectorAll('[data-agg-value]').forEach(item => {
-            item.onclick = () => {
-                const val = item.getAttribute('data-agg-value') || 'None';
-                this.setVal('prop-agg-function', val);
-                this.setVal('prop-agg-enabled', val !== 'None', 'checkbox');
-                menu.style.display = 'none';
-                this._updateAggLabel();
+        // Per-field agg is now inline selects; wire change on primary agg select
+        const aggSel = document.getElementById('prop-value-field-agg');
+        if (aggSel) {
+            aggSel.addEventListener('change', () => {
+                this.setVal('prop-agg-function', aggSel.value);
+                this.setVal('prop-agg-enabled', aggSel.value !== 'None', 'checkbox');
                 this.apply();
-            };
-        });
-        this._updateAggLabel();
+            });
+        }
+        this._updateAggVisibility(this.currentChart?.chartType);
     }
 
-    _updateAggLabel() {
-        const aggFn = this.getVal('prop-agg-function') || 'None';
-        const label = document.getElementById('agg-selected-label');
-        if (label) label.textContent = `(${aggFn})`;
+    /** Show/hide aggregation selects based on chart type (table = no agg). */
+    _updateAggVisibility(chartType) {
+        const isTable = chartType === 'table';
+        const primaryAgg = document.getElementById('prop-value-field-agg');
+        if (primaryAgg) primaryAgg.style.display = isTable ? 'none' : '';
+        document.querySelectorAll('.multi-value-agg-select').forEach(el => {
+            el.style.display = isTable ? 'none' : '';
+        });
     }
 
     _renderTableFields(fields) {

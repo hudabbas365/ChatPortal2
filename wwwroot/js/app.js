@@ -20,21 +20,23 @@
 
         let user = JSON.parse(localStorage.getItem('cp_user') || 'null');
 
-        // Verify auth state with server
-        try {
-            const r = await fetch('/api/auth/me');
-            if (r.ok) {
-                const data = await r.json();
-                user = data;
-                localStorage.setItem('cp_user', JSON.stringify(user));
-            } else {
-                // Server says not authenticated — clear stale local data
-                user = null;
-                localStorage.removeItem('cp_user');
-                localStorage.removeItem('cp_token');
+        // Verify auth state with server (only if we have a token)
+        if (localStorage.getItem('cp_token')) {
+            try {
+                const r = await fetch('/api/auth/me');
+                if (r.ok) {
+                    const data = await r.json();
+                    user = data;
+                    localStorage.setItem('cp_user', JSON.stringify(user));
+                } else {
+                    // Server says not authenticated — clear stale local data
+                    user = null;
+                    localStorage.removeItem('cp_user');
+                    localStorage.removeItem('cp_token');
+                }
+            } catch (e) {
+                console.error('Auth verification failed:', e);
             }
-        } catch (e) {
-            console.error('Auth verification failed:', e);
         }
 
         if (user) {
@@ -79,7 +81,9 @@
         // Update left panel org name
         const orgNameEl = document.getElementById('orgName');
         if (orgNameEl && user) {
-            orgNameEl.textContent = user.orgName || user.fullName || 'My Organization';
+            const displayName = user.orgName || user.fullName || 'My Organization';
+            orgNameEl.textContent = displayName;
+            orgNameEl.title = displayName;
         }
     }
 
@@ -114,6 +118,25 @@
                 list.querySelectorAll('.panel-list-item').forEach(function (el, i) {
                     el.title = workspaces[i]?.description || '';
                 });
+            }
+        } catch {}
+
+        // Load shared reports
+        try {
+            const sr = await fetch('/api/reports/shared');
+            if (sr.ok) {
+                const shared = await sr.json();
+                const section = document.getElementById('sharedWithMeSection');
+                const sharedList = document.getElementById('sharedReportList');
+                if (section && sharedList && shared.length > 0) {
+                    section.style.display = '';
+                    sharedList.innerHTML = shared.map(r =>
+                        `<a class="panel-list-item" href="/report/view/${_escHtml(r.guid)}" style="text-decoration:none;color:inherit;">
+                            <i class="bi bi-file-earmark-bar-graph me-2"></i>${_escHtml(r.name)}
+                            ${r.workspaceName ? `<small class="text-muted ms-auto" style="font-size:0.7rem">${_escHtml(r.workspaceName)}</small>` : ''}
+                        </a>`
+                    ).join('');
+                }
             }
         } catch {}
     }

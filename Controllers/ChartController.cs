@@ -14,7 +14,8 @@ namespace AIInsights.Controllers;
 public class ChartController : ControllerBase
 {
     private readonly IChartService _chartService;
-    private const string SessionKey = "canvas_state";
+    private const string SessionKeyPrefix = "canvas_state_";
+    private const string SessionKeyLegacy = "canvas_state";
     private static readonly Regex _pageNameRegex = new Regex(@"^Page\s+(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ChartController(IChartService chartService)
@@ -22,13 +23,20 @@ public class ChartController : ControllerBase
         _chartService = chartService;
     }
 
+    private string ResolveSessionKey()
+    {
+        var ctx = HttpContext.Request.Query["ctx"].FirstOrDefault();
+        return string.IsNullOrEmpty(ctx) ? SessionKeyLegacy : SessionKeyPrefix + ctx;
+    }
+
     private CanvasState GetCanvas()
     {
-        var json = HttpContext.Session.GetString(SessionKey);
+        var key = ResolveSessionKey();
+        var json = HttpContext.Session.GetString(key);
         if (string.IsNullOrEmpty(json))
         {
             var canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
-            HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+            HttpContext.Session.SetString(key, JsonConvert.SerializeObject(canvas));
             return canvas;
         }
         return JsonConvert.DeserializeObject<CanvasState>(json) ?? new CanvasState();
@@ -36,8 +44,9 @@ public class ChartController : ControllerBase
 
     private void SaveCanvas(CanvasState canvas)
     {
+        var key = ResolveSessionKey();
         canvas.LastModified = DateTime.UtcNow;
-        HttpContext.Session.SetString(SessionKey, JsonConvert.SerializeObject(canvas));
+        HttpContext.Session.SetString(key, JsonConvert.SerializeObject(canvas));
     }
 
     [HttpGet]
@@ -125,6 +134,18 @@ public class ChartController : ControllerBase
         var canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
         SaveCanvas(canvas);
         return Ok(canvas);
+    }
+
+    [HttpPost("reset-all")]
+    public IActionResult ResetAll()
+    {
+        var canvas = new CanvasState
+        {
+            Pages = new List<ReportPage> { new ReportPage { Name = "Page 1" } },
+            ActivePageIndex = 0
+        };
+        SaveCanvas(canvas);
+        return Ok(new { success = true });
     }
 
     [HttpGet("types")]

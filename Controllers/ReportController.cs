@@ -37,14 +37,16 @@ public class ReportController : Controller
         if (User.Identity?.IsAuthenticated != true && report.Status != "Published")
             return Redirect("/access-denied?statusCode=401");
 
-        // Authenticated users must have workspace access (or report must be Published)
+        // Authenticated users must have workspace access, shared report access, or report must be Published
         string? workspaceRole = null;
         if (User.Identity?.IsAuthenticated == true && report.WorkspaceId > 0)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
             if (report.Status != "Published")
             {
-                if (!await _permissions.CanViewAsync(report.WorkspaceId, userId))
+                var hasSharedAccess = await _db.SharedReports
+                    .AnyAsync(sr => sr.ReportId == report.Id && sr.UserId == userId);
+                if (!hasSharedAccess && !await _permissions.CanViewAsync(report.WorkspaceId, userId))
                 {
                     var appUser = await _db.Users.FindAsync(userId);
                     if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
@@ -79,19 +81,18 @@ public class ReportController : Controller
             .FirstOrDefaultAsync(r => r.ShareToken == token);
         if (report == null) return NotFound("Invalid or expired share link.");
 
-        // If user is authenticated, add them as Viewer to the workspace
-        if (User.Identity?.IsAuthenticated == true && report.WorkspaceId > 0)
+        // If user is authenticated, grant them report-level access (not workspace-level)
+        if (User.Identity?.IsAuthenticated == true)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            var already = await _db.WorkspaceUsers
-                .AnyAsync(wu => wu.WorkspaceId == report.WorkspaceId && wu.UserId == userId);
+            var already = await _db.SharedReports
+                .AnyAsync(sr => sr.ReportId == report.Id && sr.UserId == userId);
             if (!already)
             {
-                _db.WorkspaceUsers.Add(new WorkspaceUser
+                _db.SharedReports.Add(new SharedReport
                 {
-                    WorkspaceId = report.WorkspaceId,
-                    UserId = userId,
-                    Role = "Viewer"
+                    ReportId = report.Id,
+                    UserId = userId
                 });
                 await _db.SaveChangesAsync();
             }
@@ -126,6 +127,34 @@ public class ReportController : Controller
         }
 
         return Ok(new { shareToken = report.ShareToken });
+    }
+
+    [HttpGet("/api/reports/shared")]
+    public async Task<IActionResult> GetSharedWithMe()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var reports = await _db.SharedReports
+            .Where(sr => sr.UserId == userId)
+            .Include(sr => sr.Report)
+                .ThenInclude(r => r!.Workspace)
+            .Include(sr => sr.Report)
+                .ThenInclude(r => r!.Datasource)
+            .Include(sr => sr.Report)
+                .ThenInclude(r => r!.Agent)
+            .OrderByDescending(sr => sr.SharedAt)
+            .Select(sr => new
+            {
+                sr.Report!.Id,
+                sr.Report.Guid,
+                sr.Report.Name,
+                sr.Report.Status,
+                workspaceName = sr.Report.Workspace != null ? sr.Report.Workspace.Name : null,
+                datasourceName = sr.Report.Datasource != null ? sr.Report.Datasource.Name : null,
+                agentName = sr.Report.Agent != null ? sr.Report.Agent.Name : null,
+                sr.SharedAt
+            })
+            .ToListAsync();
+        return Ok(reports);
     }
 
     [HttpGet("/api/reports")]
@@ -191,21 +220,26 @@ public class ReportController : Controller
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
             if (!await _permissions.CanViewReportsAsync(report.WorkspaceId, userId))
             {
-                var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role == "SuperAdmin")
+                // Check report-level shared access
+                var hasSharedAccess = await _db.SharedReports
+                    .AnyAsync(sr => sr.ReportId == report.Id && sr.UserId == userId);
+                if (!hasSharedAccess)
                 {
-                    return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
-                }
-                if (appUser?.Role == "OrgAdmin")
-                {
-                    var ws = await _db.Workspaces.FindAsync(report.WorkspaceId);
-                    if ((appUser.OrganizationId ?? 0) != (ws?.OrganizationId ?? 0))
-                        return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
-                    // OrgAdmin within own org can proceed
-                }
-                else
-                {
-                    return StatusCode(403, new { error = "You do not have access to this report." });
+                    var appUser = await _db.Users.FindAsync(userId);
+                    if (appUser?.Role == "SuperAdmin")
+                    {
+                        return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+                    }
+                    else if (appUser?.Role == "OrgAdmin")
+                    {
+                        var ws = await _db.Workspaces.FindAsync(report.WorkspaceId);
+                        if ((appUser.OrganizationId ?? 0) != (ws?.OrganizationId ?? 0))
+                            return StatusCode(403, new { error = "You do not have access to workspaces in other organizations." });
+                    }
+                    else
+                    {
+                        return StatusCode(403, new { error = "You do not have access to this report." });
+                    }
                 }
             }
         }
@@ -305,6 +339,10 @@ public class ReportController : Controller
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         if (report.WorkspaceId > 0 && !await _permissions.CanDeleteAsync(report.WorkspaceId, userId))
             return StatusCode(403, new { error = "Only Admins can delete reports." });
+
+        // Remove shared report records
+        var sharedRecords = await _db.SharedReports.Where(sr => sr.ReportId == report.Id).ToListAsync();
+        _db.SharedReports.RemoveRange(sharedRecords);
 
         _db.Reports.Remove(report);
         await _db.SaveChangesAsync();

@@ -130,13 +130,17 @@ public class WorkspaceController : Controller
         var datasourceEntities = await _db.Datasources
             .Where(d => d.WorkspaceId == workspace.Id)
             .ToListAsync();
+        var restApiTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "REST API", "RestApi" };
         var datasources = datasourceEntities.Select(d => new
         {
             d.Id,
             d.Guid,
             d.Name,
             d.Type,
-            ConnectionString = MaskConnectionString(_encryption.Decrypt(d.ConnectionString ?? ""))
+            ConnectionString = restApiTypes.Contains(d.Type) ? "" : MaskConnectionString(_encryption.Decrypt(d.ConnectionString ?? "")),
+            ApiUrl = restApiTypes.Contains(d.Type) ? _encryption.Decrypt(d.ApiUrl ?? "") : "",
+            ApiKey = restApiTypes.Contains(d.Type) && !string.IsNullOrEmpty(d.ApiKey) ? "••••••" : "",
+            ApiMethod = d.ApiMethod ?? ""
         }).ToList();
 
         var dashboards = await _db.Dashboards

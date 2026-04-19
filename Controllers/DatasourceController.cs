@@ -18,6 +18,7 @@ public class DatasourceController : ControllerBase
     {
         "SQL Server",
         "Power BI",
+        "REST API",
         // TODO: Additional datasource types are disabled pending SQL Server-first rollout
         // "PostgreSQL", "MySQL", "MariaDB", "Oracle", "MongoDB",
         // "Redis", "Cassandra", "CouchDB", "DynamoDB", "Firebase Realtime DB", "Firestore",
@@ -130,6 +131,34 @@ public class DatasourceController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("test-connection")]
+    public async Task<IActionResult> TestConnection([FromBody] DatasourceRequest req)
+    {
+        var type = req.Type ?? "SQL Server";
+        var isRestApi = string.Equals(type, "REST API", StringComparison.OrdinalIgnoreCase);
+
+        if (isRestApi)
+        {
+            var (success, error) = await _queryService.TestRestApiAsync(req.ApiUrl, req.ApiKey, req.ApiMethod);
+            if (!success)
+                return BadRequest(new { connected = false, error = error ?? "REST API connection failed." });
+            return Ok(new { connected = true });
+        }
+
+        var (dbSuccess, dbError) = await _queryService.TestConnectionAsync(
+            type,
+            req.ConnectionString ?? "",
+            req.DbUser,
+            req.DbPassword,
+            req.XmlaEndpoint,
+            req.MicrosoftAccountTenantId);
+
+        if (!dbSuccess)
+            return BadRequest(new { connected = false, error = dbError ?? "Connection failed." });
+
+        return Ok(new { connected = true });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] DatasourceRequest req)
     {
@@ -156,6 +185,9 @@ public class DatasourceController : ControllerBase
             DbPassword = _encryption.Encrypt(req.DbPassword ?? ""),
             XmlaEndpoint = _encryption.Encrypt(req.XmlaEndpoint ?? ""),
             MicrosoftAccountTenantId = _encryption.Encrypt(req.MicrosoftAccountTenantId ?? ""),
+            ApiUrl = _encryption.Encrypt(req.ApiUrl ?? ""),
+            ApiKey = _encryption.Encrypt(req.ApiKey ?? ""),
+            ApiMethod = req.ApiMethod ?? "GET",
             OrganizationId = orgId,
             WorkspaceId = req.WorkspaceId
         };
@@ -191,7 +223,28 @@ public class DatasourceController : ControllerBase
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
+        // REST API: extract field names from a sample API call
+        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                if (apiResult.Success && apiResult.Data.Count > 0)
+                {
+                    var fields = apiResult.Data.First().Keys.ToList();
+                    if (fields.Count > 0) return Ok(fields);
+                }
+            }
+            catch { /* fall through */ }
+            return Ok(new List<string> { "id", "name", "value", "status" });
+        }
+
+        var isPbiFields = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
+        var hasConnFields = isPbiFields
+            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+
+        if (hasConnFields)
         {
             try
             {
@@ -220,7 +273,9 @@ public class DatasourceController : ControllerBase
     private static string? GetFieldsQuery(string type, string? selectedTables)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
+            return "EVALUATE SELECTCOLUMNS(FILTER(INFO.COLUMNS(), NOT [IsHidden]), \"COLUMN_NAME\", [ExplicitName])";
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
             return "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS ORDER BY COLUMN_NAME";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT DISTINCT column_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY column_name";
@@ -246,7 +301,32 @@ public class DatasourceController : ControllerBase
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
+        // REST API: return a single virtual "table" representing the API endpoint
+        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                if (apiResult.Success && apiResult.Data.Count > 0)
+                {
+                    var tableName = ds.Name.Replace(" ", "_");
+                    return Ok(new[] { new { name = tableName, type = "API Endpoint", rowCount = apiResult.Data.Count } });
+                }
+                // API returned an error — include the virtual table but attach the error message
+                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", rowCount = 0, error = apiResult.Error ?? "REST API returned no data." } });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", rowCount = 0, error = $"REST API connection failed: {ex.Message}" } });
+            }
+        }
+
+        var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
+        var hasConnection = isPbi
+            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+
+        if (hasConnection)
         {
             try
             {
@@ -293,7 +373,9 @@ public class DatasourceController : ControllerBase
     private static string? GetTablesQuery(string type)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
+            return "EVALUATE SELECTCOLUMNS(FILTER(INFO.TABLES(), NOT [IsHidden]), \"table_name\", [Name], \"table_type\", \"Table\")";
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
             return "SELECT TABLE_SCHEMA + '.' + TABLE_NAME as table_name, TABLE_TYPE as table_type FROM INFORMATION_SCHEMA.TABLES ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_type, table_name";
@@ -321,17 +403,49 @@ public class DatasourceController : ControllerBase
 
         List<object>? schema = null;
 
-        // Try real DB introspection
-        if (!string.IsNullOrWhiteSpace(ds.ConnectionString))
+        // REST API: build schema from sample response
+        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
-                schema = await BuildRealSchemaAsync(ds);
+                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+                if (apiResult.Success && apiResult.Data.Count > 0)
+                {
+                    var firstRow = apiResult.Data.First();
+                    var columns = firstRow.Select(kv => (object)new
+                    {
+                        name = kv.Key,
+                        dataType = InferJsonType(kv.Value),
+                        isPrimaryKey = string.Equals(kv.Key, "id", StringComparison.OrdinalIgnoreCase)
+                    }).ToList();
+                    schema = new List<object>
+                    {
+                        new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", columns }
+                    };
+                }
             }
-            catch { /* fall through to placeholder */ }
+            catch { /* fall through */ }
+            schema ??= new List<object>();
         }
+        else
+        {
+            // Try real DB introspection
+            var isPbiSchema = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
+            var hasConnSchema = isPbiSchema
+                ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+                : !string.IsNullOrWhiteSpace(ds.ConnectionString);
 
-        schema ??= BuildPlaceholderSchema(ds);
+            if (hasConnSchema)
+            {
+                try
+                {
+                    schema = await BuildRealSchemaAsync(ds);
+                }
+                catch { /* fall through to placeholder */ }
+            }
+
+            schema ??= BuildPlaceholderSchema(ds);
+        }
 
         return Ok(new
         {
@@ -374,7 +488,12 @@ public class DatasourceController : ControllerBase
     private static string? GetSchemaQuery(string type)
     {
         var t = type?.Trim() ?? "";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) || t.Equals("Power BI", StringComparison.OrdinalIgnoreCase))
+        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
+            return "EVALUATE VAR _tables = SELECTCOLUMNS(FILTER(INFO.TABLES(), NOT [IsHidden]), \"TableID\", [ID], \"table_name\", [Name]) " +
+                   "VAR _cols = SELECTCOLUMNS(FILTER(INFO.COLUMNS(), NOT [IsHidden]), \"TableID\", [TableID], \"column_name\", [ExplicitName], " +
+                   "\"data_type\", SWITCH([DataType], 2, \"String\", 6, \"Int64\", 8, \"Double\", 9, \"DateTime\", 10, \"Decimal\", 11, \"Boolean\", \"Other\")) " +
+                   "RETURN SELECTCOLUMNS(NATURALLEFTOUTERJOIN(_tables, _cols), \"table_name\", [table_name], \"table_type\", \"Table\", \"column_name\", [column_name], \"data_type\", [data_type])";
+        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.TABLE_SCHEMA + '.' + t.TABLE_NAME as table_name, t.TABLE_TYPE as table_type, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION";
         if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
             return "SELECT t.table_name, t.table_type, c.column_name, c.data_type FROM information_schema.tables t JOIN information_schema.columns c ON c.table_name = t.table_name AND c.table_schema = t.table_schema WHERE t.table_schema = 'public' ORDER BY t.table_name, c.ordinal_position";
@@ -491,6 +610,9 @@ public class DatasourceController : ControllerBase
         if (req.XmlaEndpoint != null) ds.XmlaEndpoint = _encryption.Encrypt(req.XmlaEndpoint);
         if (req.MicrosoftAccountTenantId != null) ds.MicrosoftAccountTenantId = _encryption.Encrypt(req.MicrosoftAccountTenantId);
         if (req.SelectedTables != null) ds.SelectedTables = req.SelectedTables;
+        if (req.ApiUrl != null) ds.ApiUrl = _encryption.Encrypt(req.ApiUrl);
+        if (req.ApiKey != null) ds.ApiKey = _encryption.Encrypt(req.ApiKey);
+        if (req.ApiMethod != null) ds.ApiMethod = req.ApiMethod;
 
         await _db.SaveChangesAsync();
         return Ok(new { ds.Id, ds.Guid, ds.Name, ds.SelectedTables });
@@ -538,6 +660,17 @@ public class DatasourceController : ControllerBase
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return masked;
     }
+
+    private static string InferJsonType(object? value)
+    {
+        if (value == null) return "string";
+        if (value is bool) return "boolean";
+        if (value is int or long or short or byte) return "integer";
+        if (value is float or double or decimal) return "decimal";
+        var s = value.ToString() ?? "";
+        if (DateTime.TryParse(s, out _)) return "datetime";
+        return "string";
+    }
 }
 
 public class DatasourceRequest
@@ -550,6 +683,9 @@ public class DatasourceRequest
     public string? SelectedTables { get; set; }
     public string? XmlaEndpoint { get; set; }
     public string? MicrosoftAccountTenantId { get; set; }
+    public string? ApiUrl { get; set; }
+    public string? ApiKey { get; set; }
+    public string? ApiMethod { get; set; }
     public int OrganizationId { get; set; }
     public int? WorkspaceId { get; set; }
     public string? UserId { get; set; }

@@ -178,11 +178,11 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="~/js/chartRenderer.js"></script>
-    <script src="~/js/shapeManager.js"></script>
+    <script src="~/js/chartRenderer.js" asp-append-version="true"></script>
+    <script src="~/js/shapeManager.js" asp-append-version="true"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-    <script src="~/js/aiStream.js"></script>
+    <script src="~/js/aiStream.js" asp-append-version="true"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
     <script>
@@ -193,8 +193,8 @@
     window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
     window._rvWorkspaceName  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceName ?? ""));
     </script>
-    <script src="~/js/report-qa-panel.js"></script>
-    <script src="~/js/report-share.js"></script>
+    <script src="~/js/report-qa-panel.js" asp-append-version="true"></script>
+    <script src="~/js/report-share.js" asp-append-version="true"></script>
     <script>
     (function() {
         'use strict';

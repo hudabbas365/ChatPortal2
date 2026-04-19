@@ -342,7 +342,7 @@
                     datasourceId : window.currentDatasourceId || null,
                     reportGuid   : window._currentReportGuid || null,
                     pageIndex    : window.canvasManager?.activePageIndex ?? null,
-                    agentId      : (window._dashboardWsData?.agents || [])[0]?.id || window._dashboardWsData?.agentId || null
+                    agentId      : window.currentAgentGuid || (window._dashboardWsData?.agents || [])[0]?.id || window._dashboardWsData?.agentId || null
                 }),
                 signal: _abortController.signal
             });
@@ -415,15 +415,23 @@
         var prev = container.querySelector('.dcp-followup-chips');
         if (prev) prev.remove();
 
-        var tables = window._realTableNames || [];
-        var t1 = tables[0] || 'data';
-        var t2 = tables.length > 1 ? tables[1] : t1;
-        var suggestions = [
+        var tables = (window._realTableNames || []).filter(Boolean);
+        // Pick random tables so suggestions aren't always about the first table
+        var shuffled = tables.length > 0 ? tables.slice().sort(function () { return Math.random() - 0.5; }) : ['data'];
+        var t1 = shuffled[0] || 'data';
+        var t2 = shuffled[1] || shuffled[0] || 'data';
+        var allSuggestions = [
             'Show a bar chart from ' + t1,
             'Summarize ' + t2 + ' data',
             'Add a trend line chart',
-            'Compare top records in ' + t1
+            'Compare top records in ' + t1,
+            'Show total counts from ' + t2,
+            'List recent records in ' + (shuffled[2] || t1),
+            'What are the top values in ' + t2,
+            'Create a pie chart from ' + (shuffled[Math.min(2, shuffled.length - 1)] || t1)
         ];
+        // Pick 4 random suggestions
+        var suggestions = allSuggestions.sort(function () { return Math.random() - 0.5; }).slice(0, 4);
 
         var wrap = document.createElement('div');
         wrap.className = 'dcp-followup-chips dcp-chips';

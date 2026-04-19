@@ -273,12 +273,31 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
 .cp-trial-banner {
     display: none;
     align-items: center;
-    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 12px;
     padding: 8px 20px;
     font-size: 0.82rem;
     font-weight: 500;
     background: var(--cp-primary-light);
     border-bottom: 1px solid var(--cp-border);
+    text-align: center;
+}
+@media (max-width: 576px) {
+    .cp-trial-banner {
+        padding: 6px 10px;
+        font-size: 0.72rem;
+        gap: 4px 6px;
+    }
+    .cp-trial-banner i { font-size: 0.8rem; }
+}
+
+/* Banners inside chat-main — compact single-line */
+.chat-main > #emailVerifyBannerContainer .cp-trial-banner,
+.chat-main > #trialBannerContainer .cp-trial-banner {
+    font-size: 0.76rem;
+    padding: 5px 14px;
+    gap: 4px 8px;
 }
 .cp-trial-banner.active {
     display: flex;
@@ -891,12 +910,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     display: flex;
     align-items: center;
     height: 52px;
+    min-height: 52px;
     padding: 0 16px;
     background: var(--cp-surface);
     border-bottom: 1px solid var(--cp-border);
     gap: 10px;
     flex-shrink: 0;
     z-index: 10;
+    overflow: hidden;
 }
 .chat-topbar-title {
     font-size: 0.9rem;
@@ -1208,6 +1229,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     border-radius: 8px;
     padding: 7px 10px;
     font-weight: 500;
+    overflow: hidden;
+    min-width: 0;
+}
+.org-name-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 .panel-list {
     display: flex;
@@ -1525,6 +1554,22 @@ h1, h2, h3, h4, h5, h6 { font-weight: 700; color: var(--cp-text); }
     border-color: var(--cp-primary);
     color: var(--cp-primary);
     background: var(--cp-primary-light);
+}
+
+/* ── Persistent chat suggestions bar (above input) ───────────── */
+.chat-suggestions-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.chat-suggestions-bar::-webkit-scrollbar { display: none; }
+.chat-suggestions-bar .suggestion-chip {
+    font-size: 0.78rem;
+    padding: 5px 13px;
+    white-space: nowrap;
 }
 
 /* ── Analyze-with-AI suggestion chips (data result cards) ──────── */
@@ -3309,7 +3354,7 @@ body.embed-body {
     .navbar-actions-cp {
         padding: 10px 0;
         border-top: 1px solid var(--cp-border);
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         margin-left: 0;
     }
     .cp-navbar .collapse.navbar-collapse.show {

@@ -62,6 +62,8 @@
     }
 
     // ── Load dynamic suggestion prompts from API ─────────────────────
+    var _cachedSuggestions = null;
+
     async function loadSuggestions(agentGuid) {
         var container = document.getElementById('welcomeSuggestions');
         if (!container) return;
@@ -80,11 +82,37 @@
             var suggestions = await r.json();
             if (!suggestions || !suggestions.length) return;
 
+            _cachedSuggestions = suggestions;
             renderChips(container, suggestions);
+            renderPersistentSuggestions(suggestions);
         } catch (e) {
             // Keep fallback suggestions on error
         }
     }
+
+    function renderPersistentSuggestions(items) {
+        var bar = document.getElementById('chatSuggestionsBar');
+        if (!bar) return;
+        bar.innerHTML = '';
+        items.forEach(function (s) {
+            var btn = document.createElement('button');
+            btn.className = 'suggestion-chip';
+            btn.onclick = function () { if (window.sendSuggestion) window.sendSuggestion(btn); };
+            var icon = s.icon || 'bi-chat-dots';
+            btn.innerHTML = '<i class="bi ' + _esc(icon) + ' me-1"></i>' + _esc(s.text);
+            bar.appendChild(btn);
+        });
+        // Bar starts hidden; shown once the welcome block is removed
+    }
+
+    function showPersistentSuggestions() {
+        var bar = document.getElementById('chatSuggestionsBar');
+        if (bar && bar.children.length > 0) bar.style.display = '';
+    }
+
+    // Expose for chat.js to call when welcome is removed
+    window.ChatAgentContext = window.ChatAgentContext || {};
+    window.ChatAgentContext.showPersistentSuggestions = showPersistentSuggestions;
 
     function renderChips(container, items) {
         container.innerHTML = '';

@@ -17,17 +17,17 @@ public class SmtpEmailService : IEmailService
     private SmtpClient? TryCreateClient(out string? fromEmail)
     {
         fromEmail = null;
-        var host = _config["Email:Host"];
-        var portStr = _config["Email:Port"];
-        var user = _config["Email:Username"];
-        var pass = _config["Email:Password"];
+        var host = _config["Smtp:Host"] ?? _config["Email:Host"];
+        var portStr = _config["Smtp:Port"]?.ToString() ?? _config["Email:Port"];
+        var user = _config["Smtp:Username"] ?? _config["Email:Username"];
+        var pass = _config["Smtp:Password"] ?? _config["Email:Password"];
         fromEmail = _config["Smtp:From"] ?? _config["Email:From"] ?? user;
 
         if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(portStr)) return null;
         if (!int.TryParse(portStr, out var port)) return null;
 
         var enableSsl = true;
-        if (bool.TryParse(_config["Email:EnableSsl"], out var parsedSsl))
+        if (bool.TryParse(_config["Smtp:EnableSsl"] ?? _config["Email:EnableSsl"], out var parsedSsl))
             enableSsl = parsedSsl;
 
         var client = new SmtpClient(host, port)
@@ -40,82 +40,107 @@ public class SmtpEmailService : IEmailService
         return client;
     }
 
-    public async Task<bool> SendCredentialsEmailAsync(string toEmail, string fullName, string username, string password, string loginUrl)
+    private async Task<bool> SendHtmlEmailAsync(string toEmail, string subject, string htmlBody)
     {
         var client = TryCreateClient(out var from);
         if (client == null)
         {
-            _logger.LogInformation("SMTP not configured. Credentials for user '{Username}' would be sent.", username);
+            _logger.LogWarning("SMTP not configured. Email '{Subject}' to '{To}' was not sent.", subject, toEmail);
             return false;
         }
 
-        var body = $@"Hello {fullName},
-
-Your AIInsights account has been created.
-
-  Username: {username}
-  Login URL: {loginUrl}
-
-For security reasons, your password is not included in this email.
-Please use the Forgot Password feature on the login page to set your password.
-
-Regards,
-AIInsights Team";
-
-        var mail = new MailMessage(from ?? "sales@aiinsights.io", toEmail)
+        var mail = new MailMessage(from ?? "support@aiinsights365.net", toEmail)
         {
-            Subject = "Your AIInsights Account Credentials",
-            Body = body
+            Subject = subject,
+            Body = htmlBody,
+            IsBodyHtml = true
         };
 
         try
         {
             await client.SendMailAsync(mail);
+            _logger.LogInformation("Email '{Subject}' sent to '{To}'.", subject, toEmail);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send credentials email");
+            _logger.LogError(ex, "Failed to send email '{Subject}' to '{To}'.", subject, toEmail);
             return false;
         }
     }
 
+    public async Task<bool> SendCredentialsEmailAsync(string toEmail, string fullName, string username, string password, string loginUrl)
+    {
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>Welcome to AI Insights 365</h2>
+<p>Hello {fullName},</p>
+<p>Your account has been created.</p>
+<p><strong>Username:</strong> {username}<br/><strong>Login:</strong> <a href='{loginUrl}'>{loginUrl}</a></p>
+<p>Please use the Forgot Password feature on the login page to set your password.</p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
+        return await SendHtmlEmailAsync(toEmail, "Your AI Insights 365 Account", body);
+    }
+
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string fullName, string newPassword, string loginUrl)
     {
-        var client = TryCreateClient(out var from);
-        if (client == null)
-        {
-            _logger.LogInformation("SMTP not configured. Password reset email would be sent.");
-            return false;
-        }
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>Password Reset — AI Insights 365</h2>
+<p>Hello {fullName},</p>
+<p>Your password has been reset by an administrator.</p>
+<p>Please use the Forgot Password feature at <a href='{loginUrl}'>{loginUrl}</a> to set a new password.</p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
+        return await SendHtmlEmailAsync(toEmail, "Your AI Insights 365 Password Has Been Reset", body);
+    }
 
-        var body = $@"Hello {fullName},
+    public async Task<bool> SendEmailConfirmationAsync(string toEmail, string fullName, string confirmUrl)
+    {
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>Verify Your Email — AI Insights 365</h2>
+<p>Hello {fullName},</p>
+<p>Thank you for registering with AI Insights 365! Please confirm your email address by clicking the button below:</p>
+<p style='text-align:center;margin:30px 0;'>
+  <a href='{confirmUrl}' style='background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;'>
+    Confirm Email Address
+  </a>
+</p>
+<p style='color:#666;font-size:13px;'>Or copy and paste this link into your browser:<br/><a href='{confirmUrl}'>{confirmUrl}</a></p>
+<p style='color:#666;font-size:13px;'>This link expires in 24 hours.</p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
+        return await SendHtmlEmailAsync(toEmail, "Confirm Your Email — AI Insights 365", body);
+    }
 
-Your AIInsights password has been reset by an administrator.
+    public async Task<bool> SendForgotPasswordEmailAsync(string toEmail, string fullName, string resetUrl)
+    {
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>Reset Your Password — AI Insights 365</h2>
+<p>Hello {fullName},</p>
+<p>We received a request to reset your password. Click the button below to set a new password:</p>
+<p style='text-align:center;margin:30px 0;'>
+  <a href='{resetUrl}' style='background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;'>
+    Reset Password
+  </a>
+</p>
+<p style='color:#666;font-size:13px;'>Or copy and paste this link into your browser:<br/><a href='{resetUrl}'>{resetUrl}</a></p>
+<p style='color:#666;font-size:13px;'>This link expires in 1 hour. If you didn't request this, please ignore this email.</p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
+        return await SendHtmlEmailAsync(toEmail, "Reset Your Password — AI Insights 365", body);
+    }
 
-  Login URL: {loginUrl}
-
-For security reasons, your new password is not included in this email.
-Please use the Forgot Password feature on the login page to set a new password, or contact your administrator for assistance.
-
-Regards,
-AIInsights Team";
-
-        var mail = new MailMessage(from ?? "sales@aiinsights.io", toEmail)
-        {
-            Subject = "Your AIInsights Password Has Been Reset",
-            Body = body
-        };
-
-        try
-        {
-            await client.SendMailAsync(mail);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send password reset email");
-            return false;
-        }
+    public async Task<bool> SendInvoiceEmailAsync(string toEmail, string fullName, string orgName, string description, decimal amount, string currency, string paymentId, DateTime date)
+    {
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>Payment Invoice — AI Insights 365</h2>
+<p>Hello {fullName},</p>
+<p>Thank you for your purchase! Here is your invoice summary:</p>
+<table style='width:100%;border-collapse:collapse;margin:20px 0;'>
+  <tr style='border-bottom:2px solid #e2e8f0;'><td style='padding:10px;font-weight:600;'>Organization</td><td style='padding:10px;'>{orgName}</td></tr>
+  <tr style='border-bottom:1px solid #e2e8f0;'><td style='padding:10px;font-weight:600;'>Description</td><td style='padding:10px;'>{description}</td></tr>
+  <tr style='border-bottom:1px solid #e2e8f0;'><td style='padding:10px;font-weight:600;'>Amount</td><td style='padding:10px;'>{amount:C2} {currency}</td></tr>
+  <tr style='border-bottom:1px solid #e2e8f0;'><td style='padding:10px;font-weight:600;'>Payment ID</td><td style='padding:10px;'>{paymentId}</td></tr>
+  <tr><td style='padding:10px;font-weight:600;'>Date</td><td style='padding:10px;'>{date:MMMM dd, yyyy HH:mm} UTC</td></tr>
+</table>
+<p style='color:#666;font-size:13px;'>If you have any questions about this invoice, please contact <a href='mailto:support@aiinsights365.net'>support@aiinsights365.net</a>.</p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
+        return await SendHtmlEmailAsync(toEmail, $"Invoice — AI Insights 365 ({amount:C2})", body);
     }
 }

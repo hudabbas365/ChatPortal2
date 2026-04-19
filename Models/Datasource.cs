@@ -12,6 +12,10 @@ public class Datasource
     public string? SelectedTables { get; set; }
     public string? XmlaEndpoint { get; set; }
     public string? MicrosoftAccountTenantId { get; set; }
+    // REST API fields
+    public string? ApiUrl { get; set; }
+    public string? ApiKey { get; set; }
+    public string? ApiMethod { get; set; } // GET, POST, PUT, DELETE, PATCH
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
     public int? WorkspaceId { get; set; }
