@@ -41,6 +41,6 @@
                 Content="Login"
                 Command="{Binding LoginCommand}"
                 CommandParameter="{Binding ElementName=PasswordBox}"
-                Style="{StaticResource PrimaryButtonStyle}" />
+                Style="{StaticResource PrimaryButtonStyle}" Click="Button_Click" />
     </Grid>
 </Window>
