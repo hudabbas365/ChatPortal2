@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatPortal2.SuperAdmin", "C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ComingSoon", "..\ComingSoon\ComingSoon.csproj", "{E2C96DBD-0574-4881-8616-07006ED8268A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GatewayApp", "GatewayApp\GatewayApp.csproj", "{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x64.Build.0 = Release|Any CPU
 		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x86.ActiveCfg = Release|Any CPU
 		{E2C96DBD-0574-4881-8616-07006ED8268A}.Release|x86.Build.0 = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|x64.Build.0 = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Debug|x86.Build.0 = Debug|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|x64.ActiveCfg = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|x64.Build.0 = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|x86.ActiveCfg = Release|Any CPU
+		{B41382C6-7334-45DB-83B9-A5BFEC6CDBB2}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

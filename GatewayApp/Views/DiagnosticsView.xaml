@@ -1,0 +1,28 @@
+<UserControl x:Class="GatewayApp.Views.DiagnosticsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <DockPanel>
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,10">
+            <DatePicker SelectedDate="{Binding StartDate}" Width="140" />
+            <DatePicker SelectedDate="{Binding EndDate}" Width="140" Margin="8,0,0,0" />
+            <TextBox Text="{Binding DatasourceFilter, UpdateSourceTrigger=PropertyChanged}" Width="180" Margin="8,0,0,0" />
+            <ComboBox SelectedItem="{Binding StatusFilter}" Width="120" Margin="8,0,0,0">
+                <sys:String>All</sys:String>
+                <sys:String>Success</sys:String>
+                <sys:String>Failed</sys:String>
+            </ComboBox>
+            <Button Content="Apply" Command="{Binding ApplyFilterCommand}" Margin="8,0,0,0" />
+        </StackPanel>
+
+        <DataGrid ItemsSource="{Binding Logs}" AutoGenerateColumns="False" Style="{StaticResource DataGridStyle}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="200" />
+                <DataGridTextColumn Header="Query Summary" Binding="{Binding Query}" Width="*" />
+                <DataGridTextColumn Header="Datasource" Binding="{Binding DatasourceName}" Width="180" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
+                <DataGridTextColumn Header="Duration (ms)" Binding="{Binding DurationMs}" Width="130" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

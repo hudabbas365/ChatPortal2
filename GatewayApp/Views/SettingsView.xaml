@@ -1,0 +1,33 @@
+<UserControl x:Class="GatewayApp.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="Settings" FontSize="26" FontWeight="Bold" Margin="0,0,0,12" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Organization Name" Style="{StaticResource LabelStyle}" />
+                    <TextBox Text="{Binding OrganizationName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" />
+
+                    <TextBlock Text="Gateway Name / Alias" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding GatewayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" />
+
+                    <CheckBox Content="Enable AI Gateway"
+                              IsChecked="{Binding IsAIGatewayEnabled}"
+                              Margin="0,12,0,8" />
+
+                    <TextBlock Text="{Binding ReleaseVersion, StringFormat=Version {0}}" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding ReleaseDate, StringFormat=Released {0}}" FontSize="13" />
+
+                    <Button Content="Save Settings"
+                            Command="{Binding SaveCommand}"
+                            Margin="0,16,0,0"
+                            Style="{StaticResource PrimaryButtonStyle}" />
+
+                    <TextBlock Text="{Binding StatusMessage}" Margin="0,8,0,0" Foreground="#1F7A1F" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
