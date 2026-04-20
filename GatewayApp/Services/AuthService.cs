@@ -19,30 +19,92 @@ public sealed class AuthService
     public bool IsAuthenticated => _session.IsAuthenticated;
     public string CurrentUser => _session.CurrentUser;
     public string Token => _session.Token;
-    public string OrganizationId => _session.OrganizationId;
+    public string? OrganizationId => _session.OrganizationId;
+    public string? FullName => _session.FullName;
+    public string? OrgName => _session.OrgName;
 
-    public async Task<AuthResult> LoginAsync(string username, string password)
+    public async Task<CaptchaChallenge> GetCaptchaAsync()
     {
-        var payload = JsonSerializer.Serialize(new { username, password }, JsonDefaults.Options);
+        using var response = await _httpClient.GetAsync("/api/auth/captcha").ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return JsonSerializer.Deserialize<CaptchaChallenge>(json, JsonDefaults.Options)
+            ?? throw new InvalidOperationException("Invalid CAPTCHA response.");
+    }
+
+    public async Task<AuthResult> LoginAsync(string email, string password, string captchaId, string captchaAnswer)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            Email = email,
+            Password = password,
+            CaptchaId = captchaId,
+            CaptchaAnswer = captchaAnswer
+        }, JsonDefaults.Options);
+
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await _httpClient.PostAsync("/api/auth/login", content).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException("Authentication failed. Please verify your credentials.");
+            throw new InvalidOperationException(ExtractError(body));
         }
 
-        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        var authResult = JsonSerializer.Deserialize<AuthResult>(responseBody, JsonDefaults.Options)
-            ?? throw new InvalidOperationException("Authentication response was invalid.");
+        using var responseDoc = JsonDocument.Parse(body);
+        var root = responseDoc.RootElement;
+
+        var token = GetCaseInsensitiveString(root, "token");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException("Server returned an empty token.");
+        }
+
+        string? fullName = null;
+        string? role = null;
+        string? orgName = null;
+        string? userId = null;
+        string? orgIdStr = null;
+
+        if (TryGetCaseInsensitiveProperty(root, "user", out var userEl))
+        {
+            fullName = GetCaseInsensitiveString(userEl, "fullName");
+            role = GetCaseInsensitiveString(userEl, "role");
+            orgName = GetCaseInsensitiveString(userEl, "orgName");
+            userId = GetCaseInsensitiveString(userEl, "id");
+
+            if (TryGetCaseInsensitiveProperty(userEl, "organizationId", out var orgEl))
+            {
+                orgIdStr = orgEl.ValueKind switch
+                {
+                    JsonValueKind.Number => orgEl.TryGetInt32(out var value) ? value.ToString() : orgEl.GetRawText(),
+                    JsonValueKind.String => orgEl.GetString(),
+                    _ => null
+                };
+            }
+        }
 
         _session.IsAuthenticated = true;
-        _session.CurrentUser = username;
-        _session.Token = authResult.Token;
-        _session.OrganizationId = authResult.OrganizationId;
-        _session.TokenExpiryUtc = authResult.Expiry;
+        _session.CurrentUser = email;
+        _session.Token = token;
+        _session.OrganizationId = orgIdStr;
+        _session.FullName = fullName;
+        _session.OrgName = orgName;
+        _session.TokenExpiryUtc = DateTime.UtcNow.AddHours(24);
 
-        return authResult;
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return new AuthResult
+        {
+            Token = token,
+            Expiry = _session.TokenExpiryUtc,
+            UserId = userId,
+            OrganizationId = orgIdStr,
+            FullName = fullName,
+            OrgName = orgName,
+            Role = role
+        };
     }
 
     public async Task<bool> RefreshTokenAsync()
@@ -81,5 +143,73 @@ public sealed class AuthService
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.Token);
+    }
+
+    public void Logout()
+    {
+        _session.IsAuthenticated = false;
+        _session.Token = string.Empty;
+        _session.CurrentUser = string.Empty;
+        _session.OrganizationId = null;
+        _session.FullName = null;
+        _session.OrgName = null;
+        _httpClient.DefaultRequestHeaders.Authorization = null;
+    }
+
+    private static string ExtractError(string body)
+    {
+        const string fallback = "Authentication failed. Please check your credentials.";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            var message = GetCaseInsensitiveString(root, "message");
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message;
+            }
+
+            var error = GetCaseInsensitiveString(root, "error");
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                return error;
+            }
+        }
+        catch
+        {
+            // Ignore parse failures and use fallback message.
+        }
+
+        return fallback;
+    }
+
+    private static string? GetCaseInsensitiveString(JsonElement element, string propertyName)
+    {
+        if (!TryGetCaseInsensitiveProperty(element, propertyName, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
+    }
+
+    private static bool TryGetCaseInsensitiveProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
     }
 }
