@@ -1,0 +1,30 @@
+<Window x:Class="GatewayApp.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}"
+        Height="680"
+        Width="1100"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <DockPanel>
+        <Border Width="220" Background="{StaticResource PrimaryBrush}" DockPanel.Dock="Left" Padding="12">
+            <StackPanel>
+                <TextBlock Text="Navigation" Foreground="White" FontWeight="Bold" Margin="0,0,0,10" />
+                <ListBox ItemsSource="{Binding NavigationItems}" Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding Name}"
+                                    Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    Style="{StaticResource NavButtonStyle}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <Grid Margin="16">
+            <ContentControl Content="{Binding CurrentView}" />
+        </Grid>
+    </DockPanel>
+</Window>

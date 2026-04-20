@@ -1,0 +1,15 @@
+<UserControl x:Class="GatewayApp.Views.RecoveryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="Recovery" FontSize="26" FontWeight="Bold" Margin="0,0,0,12" />
+        <Border Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <TextBlock Text="Backup and restore gateway configuration." Margin="0,0,0,8" />
+                <Button Content="Open Recovery Wizard"
+                        Command="{Binding OpenRecoveryWizardCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>
