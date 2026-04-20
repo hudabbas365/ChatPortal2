@@ -72,7 +72,7 @@ public sealed class SettingsViewModel : ViewModelBase
         var version = _versionService.GetVersionInfo();
         _settings = await _settingsService.LoadAsync() ?? new GatewaySettings
         {
-            OrganizationId = _authService.OrganizationId,
+            OrganizationId = _authService.OrganizationId ?? string.Empty,
             OrganizationName = "Organization",
             GatewayName = Environment.MachineName,
             ReleaseVersion = version.Version,
