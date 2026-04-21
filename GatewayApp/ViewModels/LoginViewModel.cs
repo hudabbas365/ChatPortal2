@@ -16,6 +16,7 @@ public sealed class LoginViewModel : ViewModelBase
     private bool _isLoading;
     private string _captchaId = string.Empty;
     private string _captchaImageDataUri = string.Empty;
+    private string _captchaText = string.Empty;
 
     public LoginViewModel(AuthService authService, GatewaySettingsService settingsService, VersionService versionService)
     {
@@ -63,6 +64,12 @@ public sealed class LoginViewModel : ViewModelBase
         set => SetProperty(ref _captchaImageDataUri, value);
     }
 
+    public string CaptchaText
+    {
+        get => _captchaText;
+        set => SetProperty(ref _captchaText, value);
+    }
+
     public string AppVersion => $"v{_versionService.Version}";
 
     public ICommand LoginCommand { get; }
@@ -85,6 +92,7 @@ public sealed class LoginViewModel : ViewModelBase
             var challenge = await _authService.GetCaptchaAsync();
             _captchaId = challenge.CaptchaId;
             CaptchaImageDataUri = challenge.Image;
+            CaptchaText = challenge.Text;
             CaptchaAnswer = string.Empty;
         }
         catch (Exception ex)

@@ -28,6 +28,137 @@
             global._dashboardWsData?.guid || global.currentWorkspaceGuid || null;
     }
 
+    // Validate that every chart on the current page sits fully inside the
+    // chart-canvas-drop element horizontally. Vertical bounds are NOT clamped —
+    // the drop zone grows/scrolls vertically, so forcing posY to fit the current
+    // min-height would pull charts up and cause overlap.
+    function _validateAndFixPagePositions(cm, margin) {
+        if (!cm || !cm.charts) return;
+        var dropZone = document.getElementById('chart-canvas-drop');
+        if (!dropZone) return;
+        var zoneW = dropZone.clientWidth;
+        var m = margin || 20;
+        var changed = false;
+        cm.charts.forEach(function (c) {
+            var cardW = cm.colsToPixels(c.width || 6);
+            var fixed = false;
+
+            if (c.posX == null || c.posX < m) { c.posX = m; fixed = true; }
+            if (c.posY == null || c.posY < m) { c.posY = m; fixed = true; }
+            if (c.posX + cardW > zoneW - m) {
+                c.posX = Math.max(m, zoneW - m - cardW);
+                fixed = true;
+            }
+            if (fixed) {
+                changed = true;
+                console.warn('[auto-report] Clamped out-of-range chart:', c.title, 'to', c.posX, c.posY);
+                // Update DOM card element if already rendered
+                var el = document.querySelector('[data-chart-id="' + c.id + '"]');
+                if (el) {
+                    el.style.left = c.posX + 'px';
+                    el.style.top = c.posY + 'px';
+                }
+            }
+        });
+        // Grow the drop zone to contain the tallest chart so nothing ever appears
+        // outside the visible canvas area even after scrolling.
+        var maxBottom = 0;
+        cm.charts.forEach(function (c) {
+            var cardH = (c.height || 300) + 44;
+            var bottom = (c.posY || 0) + cardH;
+            if (bottom > maxBottom) maxBottom = bottom;
+        });
+        if (maxBottom + m > (dropZone.clientHeight || 0)) {
+            dropZone.style.minHeight = (maxBottom + m) + 'px';
+        }
+        if (changed && typeof cm.saveState === 'function') {
+            try { cm.saveState(); } catch (e) {}
+        }
+    }
+
+    // Second verification pass — after charts render, measure each card's ACTUAL
+    // width from the DOM (which may differ from colsToPixels at plan-time due to
+    // window resize, scrollbars, or CSS min/max constraints) and re-pack the
+    // page so rows are tight, left-aligned, and nothing drifts off-canvas.
+    function _repackPageFromDom(cm, margin, rowGap, colGap) {
+        if (!cm || !cm.charts || cm.charts.length === 0) return;
+        var dropZone = document.getElementById('chart-canvas-drop');
+        if (!dropZone) return;
+
+        var scrollEl = dropZone.parentElement;
+        var viewportW = scrollEl ? scrollEl.clientWidth : dropZone.clientWidth;
+        var zoneW = dropZone.clientWidth;
+        var canvasBase = Math.max(
+            cm.colsToPixels(12),
+            Math.min(viewportW, zoneW) - margin * 2
+        );
+
+        // Preserve the original order the charts were added in.
+        var items = cm.charts.slice().sort(function (a, b) {
+            var ay = a.posY || 0, by = b.posY || 0;
+            if (ay !== by) return ay - by;
+            return (a.posX || 0) - (b.posX || 0);
+        });
+
+        var cursorX = margin;
+        var rowY = margin;
+        var rowMaxH = 0;
+        var touched = false;
+
+        items.forEach(function (c) {
+            var el = document.querySelector('[data-chart-id="' + c.id + '"]');
+            var measuredW = el ? el.offsetWidth : cm.colsToPixels(c.width || 6);
+            var measuredH = el ? el.offsetHeight : ((c.height || 300) + 44);
+            if (measuredW > canvasBase) measuredW = canvasBase;
+
+            // Full-width cards always start a new row.
+            var isFullWidth = (c.width || 6) >= 10 || measuredW > canvasBase * 0.75;
+            if (isFullWidth && cursorX > margin) {
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
+            }
+
+            // Wrap if this card won't fit in the remaining space.
+            if (cursorX > margin && cursorX + measuredW > margin + canvasBase) {
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
+            }
+
+            var newX = cursorX;
+            var newY = rowY;
+            if (c.posX !== newX || c.posY !== newY) {
+                c.posX = newX;
+                c.posY = newY;
+                touched = true;
+                if (el) {
+                    el.style.left = newX + 'px';
+                    el.style.top = newY + 'px';
+                }
+            }
+
+            cursorX += measuredW + colGap;
+            if (measuredH > rowMaxH) rowMaxH = measuredH;
+            if (isFullWidth) {
+                // Full-width → close the row immediately.
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
+            }
+        });
+
+        // Grow drop zone to contain the last row.
+        var lastBottom = rowY + rowMaxH + margin;
+        if (lastBottom > (dropZone.clientHeight || 0)) {
+            dropZone.style.minHeight = lastBottom + 'px';
+        }
+
+        if (touched && typeof cm.saveState === 'function') {
+            try { cm.saveState(); } catch (e) {}
+        }
+    }
+
     // ── Inject button into chat panel ────────────────────────────────
     function _injectButton() {
         var messagesEl = document.getElementById('dcpMessages');
@@ -441,17 +572,57 @@
                     }
                 }
 
-                // Add charts to this page using grid-aware layout
+                // Add charts to this page using pixel-packing layout
                 _setStep('charts');
                 var charts = pageDef.charts || [];
 
-                // Grid layout: position by grid column so cards align exactly with renderChart widths
-                var margin = 10;   // 10px margin on all sides
-                var rowGap = 14;   // vertical gap between rows
-                var rowY = margin; // top margin
-                var rowX = 0;      // grid columns consumed in current row
-                var rowMaxH = 0;   // tallest chart in current row
-                var canvasBase = Math.min(window.innerWidth - 600, 900) - (margin * 2); // subtract left+right margins
+                // Pixel-packing layout: position cards using their ACTUAL rendered width
+                // (cm.colsToPixels) so the card and its x-coordinate never disagree. This
+                // avoids the old bug where colsToPixels hit its 200px floor while grid math
+                // still used full canvas-width/12 slots, producing tiny cards with huge gaps.
+                var margin = 20;        // gutter on all sides of the canvas
+                var rowGap = 20;        // vertical gap between rows
+                var colGap = 16;        // horizontal gap between cards in a row
+                var MIN_CHART_PX = 189; // 5 cm @ 96dpi — minimum rendered chart width
+
+                // Determine the real usable layout width by measuring the DOM. We lay
+                // out inside the VIEWPORT (so charts are visible without scrolling) but
+                // never wider than the drop-zone, and never narrower than a single
+                // full-width card (so a 12-col card always fits).
+                var canvasEl = document.getElementById('chart-canvas-drop');
+                var scrollEl = canvasEl ? canvasEl.parentElement : null;
+                var dropZoneTotal = canvasEl ? canvasEl.clientWidth : 0;
+                var viewportW = scrollEl ? scrollEl.clientWidth : (canvasEl ? canvasEl.clientWidth : 0);
+                var cardMaxW = cm.colsToPixels(12);
+
+                var canvasTotal = Math.max(cardMaxW + margin * 2, viewportW || cardMaxW + margin * 2);
+                if (dropZoneTotal > 0) canvasTotal = Math.min(canvasTotal, dropZoneTotal);
+                if (canvasTotal < MIN_CHART_PX + margin * 2) {
+                    canvasTotal = MIN_CHART_PX + margin * 2;
+                }
+                var canvasBase = canvasTotal - (margin * 2); // usable width between side margins
+
+                // Minimum col count needed for a card to reach 5 cm after colsToPixels
+                // (accounting for its 200 px floor).
+                var MIN_COLS = 3;
+                for (var _w = 3; _w <= 12; _w++) {
+                    if (cm.colsToPixels(_w) >= MIN_CHART_PX) { MIN_COLS = _w; break; }
+                }
+
+                // Row bookkeeping for pixel packing.
+                var rowY = margin;
+                var rowItems = [];
+                var rowWidth = 0;
+                var rowMaxH = 0;
+
+                // Close the current row and start a new one below.
+                function _commitRow() {
+                    if (rowItems.length === 0) return;
+                    rowY += rowMaxH + rowGap;
+                    rowItems = [];
+                    rowWidth = 0;
+                    rowMaxH = 0;
+                }
 
                 for (var ci = 0; ci < charts.length; ci++) {
                     var chartDef = charts[ci];
@@ -459,56 +630,95 @@
                     _setStatus('Adding: ' + (chartDef.title || 'Chart') + ' (' + chartsDone + '/' + totalCharts + ')');
                     _setProgress(55 + (chartsDone / totalCharts) * 40);
 
-                    var chartWidth = Math.max(3, Math.min(12, chartDef.width || 6));
-                    // Use better default heights per chart type for presentable layout
-                    var defaultH = 300;
-                    if (chartDef.chartType === 'kpi') defaultH = 200;
-                    else if (chartDef.chartType === 'shape-textbox') defaultH = 80;
-                    else if (chartDef.chartType === 'table') defaultH = 380;
-                    else if (chartDef.chartType === 'pie' || chartDef.chartType === 'doughnut') defaultH = 320;
+                    // Clamp AI-provided width into [MIN_COLS..12] so every chart is ≥ 5cm wide
+                    var requestedW = parseInt(chartDef.width, 10);
+                    if (!requestedW || isNaN(requestedW)) requestedW = 6;
+                    var chartWidth = Math.max(MIN_COLS, Math.min(12, requestedW));
+
+                    // Dashboard rhythm: choose col counts that produce a proper
+                    // dashboard look & feel instead of a pile of narrow 3-col cards.
+                    var ct = (chartDef.chartType || '').toLowerCase();
+                    var isKpi = (ct === 'kpi' || ct === 'kpicard' || ct === 'card' || ct === 'metrictile');
+                    var isCircular = (ct === 'pie' || ct === 'doughnut' || ct === 'donut' ||
+                        ct === 'piechart' || ct === 'doughnutchart' || ct === 'gauge' ||
+                        ct === 'radar' || ct === 'polararea' || ct === 'nightingalerose' ||
+                        ct === 'radialprogress' || ct === 'sunburst');
+                    var isSeries = (ct === 'bar' || ct === 'column' || ct === 'horizontalbar' ||
+                        ct === 'stackedbar' || ct === 'groupedbar' || ct === 'line' ||
+                        ct === 'area' || ct === 'stepline' || ct === 'mixedbarline' ||
+                        ct === 'histogram' || ct === 'pareto' || ct === 'waterfall' ||
+                        ct === 'funnel' || ct === 'scatter' || ct === 'bubble' ||
+                        ct === 'timeline' || ct === 'controlchart');
+                    if (isKpi) {
+                        // Count total single-metric cards on this page so the top row
+                        // forms a balanced 2/3/4-up grid. Also verify the row actually
+                        // fits the canvas — colsToPixels has a 200px floor that can push
+                        // 4-up over the edge on narrow canvases, leaving an ugly wrap.
+                        var kpiCount = charts.filter(function (x) {
+                            var xt = (x.chartType || '').toLowerCase();
+                            return xt === 'kpi' || xt === 'kpicard' || xt === 'card' || xt === 'metrictile';
+                        }).length;
+                        var desiredN = Math.max(1, Math.min(4, kpiCount || 1));
+                        chartWidth = 6; // 2-up fallback
+                        for (var _n = desiredN; _n >= 2; _n--) {
+                            var _w = Math.max(3, Math.floor(12 / _n));
+                            var _total = _n * cm.colsToPixels(_w) + (_n - 1) * colGap;
+                            if (_total <= canvasBase) { chartWidth = _w; break; }
+                        }
+                    } else if (ct === 'table') {
+                        chartWidth = 12; // tables always span full canvas width
+                    } else if (isSeries) {
+                        chartWidth = Math.max(chartWidth, 8); // dense axes need width
+                    } else if (isCircular) {
+                        chartWidth = Math.max(chartWidth, 6); // circular charts 2-up
+                    } else {
+                        // Any other chart type: never render as a cramped 3-col tile.
+                        chartWidth = Math.max(chartWidth, 6);
+                    }
+
+                    // Shrink cols if colsToPixels at render time would overflow the real canvas
+                    // (canvasManager sizes the card from its own colsToPixels, so we must reduce cols,
+                    // not just the local posX math, to prevent the visual from escaping).
+                    while (chartWidth > MIN_COLS && cm.colsToPixels(chartWidth) > canvasBase) {
+                        chartWidth--;
+                    }
+                    // Use better default heights per chart type for presentable layout.
+                    // Kept compact so rows don't leave huge vertical whitespace.
+                    var defaultH = 260;
+                    if (chartDef.chartType === 'kpi' || chartDef.chartType === 'kpiCard' ||
+                        chartDef.chartType === 'card' || chartDef.chartType === 'metricTile') defaultH = 150;
+                    else if (chartDef.chartType === 'shape-textbox') defaultH = 70;
+                    else if (chartDef.chartType === 'table') defaultH = 340;
+                    else if (isCircular) defaultH = 280;
                     var chartHeight = Math.max(80, Math.min(500, chartDef.height || defaultH));
 
-                    // Full-width charts always start a new row
-                    if (chartWidth >= 10 && rowX > 0) {
-                        rowY += rowMaxH + rowGap;
-                        rowX = 0;
-                        rowMaxH = 0;
-                    }
-                    // If chart won't fit in remaining cols, wrap to next row
-                    if (rowX > 0 && rowX + chartWidth > 12) {
-                        rowY += rowMaxH + rowGap;
-                        rowX = 0;
-                        rowMaxH = 0;
+                    // Full-width charts always start a fresh row
+                    if (chartWidth >= 10 && rowItems.length > 0) {
+                        _commitRow();
                     }
 
-                    // Position by grid column using the same base formula as colsToPixels (without min-200 floor)
+                    // Pixel-packing: use the ACTUAL rendered width so posX and card size
+                    // are always in sync. Wrap to a new row if this card won't fit.
                     var renderedW = cm.colsToPixels(chartWidth);
-                    var posX = margin + Math.round(canvasBase * rowX / 12);
-                    // On small screens the 200px floor in colsToPixels can cause overlap —
-                    // if the card would overflow the canvas, force it to a new row
-                    if (rowX > 0 && posX + renderedW > canvasBase + 2) {
-                        rowY += rowMaxH + rowGap;
-                        rowX = 0;
-                        rowMaxH = 0;
-                        posX = 0;
-                    }
-                    var posY = rowY;
+                    if (renderedW > canvasBase) renderedW = canvasBase;
 
-                    // Track full rendered card height: canvas-wrap + header + resize handle + borders
-                    // Shapes have no header; regular charts have .chart-card-header (~36px) + resize handle (~8px)
+                    var projected = (rowItems.length === 0 ? 0 : rowWidth + colGap) + renderedW;
+                    if (rowItems.length > 0 && projected > canvasBase) {
+                        _commitRow();
+                    }
+
+                    // Track full rendered card height (canvas-wrap + header + resize + borders)
                     var isShape = chartDef.chartType === 'shape-textbox' || chartDef.chartType === 'navigation';
-                    var cardOverhead = isShape ? 4 : 44; // header(~36) + resize(~4) + borders(~4)
+                    var cardOverhead = isShape ? 4 : 44;
                     var fullCardH = chartHeight + cardOverhead;
 
-                    rowX += chartWidth;
-                    rowMaxH = Math.max(rowMaxH, fullCardH);
+                    // Provisional posX before row is committed; may be adjusted by _commitRow
+                    var posX = margin + (rowItems.length === 0 ? 0 : rowWidth + colGap);
+                    var posY = rowY;
 
-                    // If row is full, advance to next row
-                    if (rowX >= 12) {
-                        rowY += rowMaxH + rowGap;
-                        rowX = 0;
-                        rowMaxH = 0;
-                    }
+                    rowItems.push({ posX: posX, w: renderedW, h: fullCardH });
+                    rowWidth = (rowItems.length === 1) ? renderedW : (rowWidth + colGap + renderedW);
+                    rowMaxH = Math.max(rowMaxH, fullCardH);
 
                     // Resolve tableName from AI response to a matching real table name
                     var aiTable = chartDef.tableName || '';
@@ -533,7 +743,7 @@
                     if (chartDef.chartType === 'table' || chartDef.chartType === 'shape-textbox') {
                         aggFunc = 'None';
                         aggEnabled = false;
-                    } else if (chartDef.chartType === 'kpi') {
+                    } else if (chartDef.chartType === 'kpi' || chartDef.chartType === 'card') {
                         aggFunc = 'SUM';
                     }
 
@@ -565,12 +775,12 @@
                         style: {
                             backgroundColor: '#4A90D9',
                             borderColor: '#2C6FAC',
-                            showLegend: chartDef.chartType !== 'kpi' && chartDef.chartType !== 'shape-textbox',
+                            showLegend: chartDef.chartType !== 'kpi' && chartDef.chartType !== 'card' && chartDef.chartType !== 'shape-textbox',
                             legendPosition: 'top',
                             showTooltips: true,
                             fillArea: chartDef.chartType === 'area',
                             colorPalette: 'default',
-                            showDataLabels: chartDef.chartType === 'kpi' || chartDef.chartType === 'pie' || chartDef.chartType === 'doughnut',
+                            showDataLabels: chartDef.chartType === 'kpi' || chartDef.chartType === 'card' || chartDef.chartType === 'pie' || chartDef.chartType === 'doughnut',
                             fontFamily: 'Inter, sans-serif',
                             titleFontSize: 14,
                             animated: true,
@@ -606,6 +816,18 @@
                     // Small delay so UI can breathe
                     await new Promise(function (r) { setTimeout(r, 100); });
                 }
+
+                // Post-layout validation: walk every chart just added to this page
+                // and verify its rendered DOM element is inside chart-canvas-drop.
+                // If anything ended up out of range (e.g. AI-provided posX/posY
+                // survived somewhere, or colsToPixels grew on resize), snap it back.
+                _validateAndFixPagePositions(cm, margin);
+
+                // Second verification pass — re-pack using ACTUAL rendered widths
+                // from the DOM so cards tile tightly with uniform gaps regardless
+                // of any drift between plan-time col math and render-time sizing.
+                await new Promise(function (r) { setTimeout(r, 60); });
+                _repackPageFromDom(cm, margin, rowGap, colGap);
             }
 
             // 5. Switch back to first generated page

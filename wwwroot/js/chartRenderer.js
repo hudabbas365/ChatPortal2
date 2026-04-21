@@ -47,7 +47,7 @@ class ChartRenderer {
             'choropleth','bubbleMap','heatMapGeo','flowMap','spikeMap',
             'networkGraph','chordDiagram','arcDiagram','forceDirected','matrix',
             'waffleChart','pictograph',
-            'kpiCard','metricTile','card',
+            'kpi','kpiCard','metricTile','card',
             'marimekko','dumbbell',
             'table','slicer','navigation'
         ]);
@@ -59,6 +59,21 @@ class ChartRenderer {
         const d = document.createElement('div');
         d.appendChild(document.createTextNode(String(str ?? '')));
         return d.innerHTML;
+    }
+
+    // Shorten long ISO/date-like strings so chart axes don't overlap.
+    // "2008-06-01T00:00:00(.xxx)(Z)" → "2008-06-01" ; "2008-06-01 00:00:00" → "2008-06-01".
+    // Pure numeric and short labels pass through unchanged.
+    _formatLabel(raw) {
+        const s = String(raw ?? '');
+        if (s.length < 11) return s;
+        // Strip trailing midnight time component from ISO/SQL datetimes
+        const isoMid = s.match(/^(\d{4}-\d{2}-\d{2})[T\s]00:00(?::00(?:\.\d+)?)?Z?$/);
+        if (isoMid) return isoMid[1];
+        // Any ISO datetime → "YYYY-MM-DD HH:mm" (drop seconds/ms/Z)
+        const iso = s.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/);
+        if (iso) return iso[1] + ' ' + iso[2];
+        return s;
     }
 
     getColors(palette, count) {
@@ -576,7 +591,7 @@ class ChartRenderer {
     buildConfig(chartDef, data) {
         const style = chartDef.style || {};
         const palette = style.colorPalette || 'default';
-        const labels = (data.labels || []).map(String);
+        const labels = (data.labels || []).map(s => this._formatLabel(s));
         const values = (data.values || []).map(Number);
         const colors = this.getColors(palette, Math.max(labels.length, 8));
         const ct = chartDef.chartType;
@@ -1359,6 +1374,7 @@ class ChartRenderer {
             case 'matrix':       this.renderMatrix(chartDef, container, data, colors, h); break;
             case 'waffleChart':  this.renderWaffleChart(chartDef, container, data, colors, h); break;
             case 'pictograph':   this.renderPictograph(chartDef, container, data, colors, h); break;
+            case 'kpi':          this.renderKpiCard(chartDef, container, data, colors, h); break;
             case 'kpiCard':      this.renderKpiCard(chartDef, container, data, colors, h); break;
             case 'metricTile':   this.renderMetricTile(chartDef, container, data, colors, h); break;
             case 'card':         this.renderCard(chartDef, container, data, colors, h); break;
@@ -1939,19 +1955,32 @@ class ChartRenderer {
     }
 
     renderKpiCard(chartDef, container, data, colors, h) {
-        const val = (data.values||[])[0] || 12345;
-        const prev = val * (0.85 + Math.random() * 0.3);
-        const change = ((val - prev) / prev * 100).toFixed(1);
-        const up = change >= 0;
-        container.style.cssText += 'background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;';
-        container.innerHTML = `<div style="text-align:center;font-family:Inter,sans-serif;padding:16px">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#8492a6;margin-bottom:8px">${this._esc(chartDef.title||'KPI')}</div>
-            <div style="font-size:42px;font-weight:700;color:${colors[0]};line-height:1">${typeof val==='number'?val.toLocaleString():val}</div>
-            <div style="margin-top:8px;font-size:14px;color:${up?'#4CAF50':'#E87C3E'};font-weight:600">
-                ${up?'▲':'▼'} ${Math.abs(change)}% vs prior period
-            </div>
-            <div style="font-size:10px;color:#adb5bd;margin-top:4px">${(data.labels||[])[0]||'Current Period'}</div>
+        const val = this._scalarFromData(data);
+        const color = colors[0] || '#4A90D9';
+        const title = chartDef.title || 'KPI';
+        const display = (val === null || val === undefined)
+            ? '—'
+            : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
+        const len = display.length;
+        const valFont = len > 12 ? 24 : (len > 8 ? 30 : 38);
+        // Card-relative layout: accent bar on the left, title wraps to 2 lines,
+        // big number below. No ellipsis on the title so the full KPI name is visible.
+        container.style.cssText += `background:#fff;display:block;border-radius:8px;overflow:hidden;border-left:3px solid ${color};`;
+        container.innerHTML = `<div style="font-family:Inter,sans-serif;padding:12px 14px;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between">
+            <div style="font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#64748b;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${this._esc(title)}</div>
+            <div style="font-size:${valFont}px;font-weight:700;color:${color};line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:6px">${this._esc(display)}</div>
         </div>`;
+    }
+
+    // Extract a single scalar from a data payload. Aggregates (sum) when multiple
+    // numeric rows are returned so multi-row queries still render a sensible KPI.
+    _scalarFromData(data) {
+        const vals = (data && data.values) || [];
+        if (!vals.length) return null;
+        if (vals.length === 1) return vals[0];
+        const nums = vals.filter(v => typeof v === 'number' && isFinite(v));
+        if (!nums.length) return vals[0];
+        return nums.reduce((s, v) => s + v, 0);
     }
 
     renderMetricTile(chartDef, container, data, colors, h) {
@@ -1971,18 +2000,21 @@ class ChartRenderer {
     }
 
     renderCard(chartDef, container, data, colors, h) {
-        const title = chartDef.title || (data.labels||[])[0] || 'Value';
-        const val = (data.values||[])[0] || 0;
-        const subtitle = (data.labels||[])[1] || '';
+        const title = chartDef.title || 'Value';
+        const val = this._scalarFromData(data);
         const color = colors[0] || '#4A90D9';
-        container.style.cssText += 'background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;';
-        container.innerHTML = `<div style="text-align:center;font-family:Inter,sans-serif;padding:20px;width:100%">
-            <div style="width:48px;height:48px;border-radius:12px;background:${color}18;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
-                <div style="width:24px;height:24px;border-radius:6px;background:${color};"></div>
+        const display = (val === null || val === undefined)
+            ? '—'
+            : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
+        const len = display.length;
+        const valFont = len > 12 ? 22 : (len > 8 ? 28 : 34);
+        container.style.cssText += `background:linear-gradient(135deg,${color}10,${color}05);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;overflow:hidden;border:1px solid ${color}22;`;
+        container.innerHTML = `<div style="text-align:center;font-family:Inter,sans-serif;padding:14px 12px;width:100%;box-sizing:border-box">
+            <div style="width:36px;height:36px;border-radius:10px;background:${color}22;display:inline-flex;align-items:center;justify-content:center;margin-bottom:8px">
+                <div style="width:18px;height:18px;border-radius:5px;background:${color};"></div>
             </div>
-            <div style="font-size:36px;font-weight:700;color:#1e293b;line-height:1.1">${typeof val==='number'?val.toLocaleString():this._esc(String(val))}</div>
-            <div style="font-size:13px;font-weight:600;color:#64748b;margin-top:8px;text-transform:uppercase;letter-spacing:0.5px">${this._esc(title)}</div>
-            ${subtitle ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px">' + this._esc(subtitle) + '</div>' : ''}
+            <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._esc(display)}</div>
+            <div style="font-size:10.5px;font-weight:600;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:0.4px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${this._esc(title)}</div>
         </div>`;
     }
 

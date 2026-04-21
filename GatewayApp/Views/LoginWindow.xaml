@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="AI Insights 365 Gateway Login"
         Width="900"
-        Height="560"
+        Height="760"
+        MinHeight="680"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -185,8 +186,8 @@
                                     Cursor="Hand" />
                         </DockPanel>
 
-                        <Border CornerRadius="6" BorderBrush="#294163" BorderThickness="1" Background="#0F172A" Padding="2">
-                            <WebBrowser x:Name="CaptchaBrowser" Height="88" />
+                        <Border CornerRadius="6" BorderBrush="#294163" BorderThickness="1" Background="#F0F4F8" Padding="2">
+                            <Canvas x:Name="CaptchaCanvas" Height="88" ClipToBounds="True" />
                         </Border>
 
                         <TextBox Margin="0,10,0,0"

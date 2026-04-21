@@ -82,7 +82,19 @@ public class ChartController : ControllerBase
                 return Ok(chart);
             }
         }
-        return NotFound();
+        // Upsert: the session may have been recreated (different ctx, server restart,
+        // or canvas reset) while the client still holds the chart. Add it to the
+        // active page instead of returning 404 so drag/resize/edit self-heal.
+        chart.Id = id;
+        if (canvas.Pages == null || canvas.Pages.Count == 0)
+        {
+            canvas.Pages = new List<ReportPage> { new ReportPage { Name = "Page 1" } };
+            canvas.ActivePageIndex = 0;
+        }
+        var activeIdx = Math.Clamp(canvas.ActivePageIndex, 0, canvas.Pages.Count - 1);
+        canvas.Pages[activeIdx].Charts.Add(chart);
+        SaveCanvas(canvas);
+        return Ok(chart);
     }
 
     [HttpDelete("{id}")]

@@ -76,7 +76,9 @@ public class AuthController : Controller
         var svg = GenerateCaptchaSvg(question);
         var svgBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
 
-        return Ok(new { captchaId, image = $"data:image/svg+xml;base64,{svgBase64}" });
+        // `text` is included so non-browser clients (e.g. the WPF GatewayApp) can render
+        // the CAPTCHA natively without needing an SVG/HTML renderer.
+        return Ok(new { captchaId, image = $"data:image/svg+xml;base64,{svgBase64}", text = question });
     }
 
     private static string GenerateCaptchaSvg(string text)

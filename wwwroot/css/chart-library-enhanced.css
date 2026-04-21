@@ -1,0 +1,222 @@
+/* ============================================================
+   Chart Library — Enhanced polish (additive, does not override
+   existing site.css rules except through higher specificity).
+   Scope is restricted to .library-panel and its children.
+   ============================================================ */
+
+/* --- Search bar --- */
+.library-panel .search-wrap { padding: 8px 10px; }
+.library-panel .search-wrap .input-group-sm > .form-control,
+.library-panel .search-wrap .input-group-sm > .input-group-text {
+    border-radius: 6px;
+}
+.library-panel .search-wrap .input-group-text {
+    background: var(--cp-bg);
+    border-right: 0;
+}
+.library-panel #chart-search {
+    border-left: 0;
+    font-size: 0.8rem;
+}
+.library-panel .clear-search-btn {
+    display: none;
+    border: 1px solid var(--cp-border);
+    border-left: 0;
+    background: var(--cp-bg);
+    color: var(--cp-text-muted);
+    padding: 0 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+.library-panel .clear-search-btn.visible { display: inline-flex; align-items: center; }
+.library-panel .clear-search-btn:hover { color: var(--cp-danger); }
+
+/* --- Category filter chips --- */
+.cl-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 10px 8px 10px;
+    border-bottom: 1px solid var(--cp-border);
+}
+.cl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--cp-text-muted);
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: var(--cp-transition);
+    white-space: nowrap;
+}
+.cl-chip:hover {
+    color: var(--cp-primary);
+    border-color: var(--cp-primary);
+    background: var(--cp-primary-light);
+}
+.cl-chip.active {
+    color: #fff;
+    background: var(--cp-primary);
+    border-color: var(--cp-primary);
+}
+.cl-chip .cl-chip-count {
+    font-size: 0.65rem;
+    opacity: 0.75;
+    font-weight: 600;
+}
+
+/* --- Group header refinement --- */
+.library-panel .library-group-header {
+    padding: 6px 12px;
+    font-size: 0.7rem;
+    border-top: none;
+    background: transparent;
+    border-bottom: 1px solid transparent;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    backdrop-filter: saturate(120%) blur(4px);
+}
+.library-panel .library-group-header:hover { background: var(--cp-primary-light); }
+.library-panel .library-group-header .badge {
+    background: var(--cp-bg) !important;
+    color: var(--cp-text-muted) !important;
+    border: 1px solid var(--cp-border);
+    font-weight: 600;
+    font-size: 0.62rem;
+    padding: 2px 6px;
+    margin-left: 6px;
+}
+.library-panel .library-group.is-recent .library-group-header { color: var(--cp-primary); }
+.library-panel .library-group.is-recent .library-group-header i.group-icon { color: var(--cp-primary); }
+
+/* --- Library item polish --- */
+.library-panel .library-item {
+    margin: 1px 6px;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    position: relative;
+}
+.library-panel .library-item:hover {
+    background: var(--cp-primary-light);
+    transform: translateX(1px);
+}
+.library-panel .library-item .cl-item-icon {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    color: var(--cp-primary);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+.library-panel .library-item:hover .cl-item-icon {
+    background: #fff;
+    border-color: var(--cp-primary);
+}
+.library-panel .library-item .cl-item-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.library-panel .library-item mark.cl-hl {
+    background: #fff3a3;
+    color: inherit;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+.library-panel .library-item .cl-add-btn {
+    display: none;
+    border: none;
+    background: transparent;
+    color: var(--cp-primary);
+    padding: 0 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.library-panel .library-item:hover .cl-add-btn { display: inline-flex; }
+.library-panel .library-item .cl-add-btn:hover { background: var(--cp-primary); color: #fff; }
+.library-panel .library-item.kb-focus {
+    background: var(--cp-primary-light);
+    outline: 1px solid var(--cp-primary);
+}
+
+/* --- Empty results state --- */
+.cl-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--cp-text-muted);
+    font-size: 0.78rem;
+}
+.cl-empty i {
+    font-size: 1.6rem;
+    display: block;
+    margin-bottom: 6px;
+    opacity: 0.5;
+}
+.cl-empty .cl-empty-reset {
+    display: inline-block;
+    margin-top: 8px;
+    color: var(--cp-primary);
+    background: none;
+    border: 1px solid var(--cp-primary);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+.cl-empty .cl-empty-reset:hover { background: var(--cp-primary); color: #fff; }
+
+/* --- Results count --- */
+.cl-result-count {
+    padding: 6px 12px 2px;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--cp-text-muted);
+}
+.cl-result-count strong { color: var(--cp-primary); }
+
+/* ============================================================
+   Properties panel — small polish (scoped, additive)
+   ============================================================ */
+.properties-panel .panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+.properties-panel .prop-section-title {
+    position: relative;
+}
+.properties-panel .prop-section-title::after {
+    content: "";
+    display: block;
+    height: 1px;
+    background: linear-gradient(to right, var(--cp-border), transparent);
+    margin-top: 4px;
+}
+.properties-panel .right-panel-section-body { scroll-behavior: smooth; }
+.properties-panel .right-panel-section-body::-webkit-scrollbar { width: 6px; }
+.properties-panel .right-panel-section-body::-webkit-scrollbar-thumb {
+    background: var(--cp-border);
+    border-radius: 3px;
+}
+.properties-panel .right-panel-section-body::-webkit-scrollbar-thumb:hover {
+    background: var(--cp-primary);
+}

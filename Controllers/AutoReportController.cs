@@ -146,8 +146,8 @@ public class AutoReportController : ControllerBase
 - The JSON must be an object with a ""pages"" array.
 - Each page has: ""name"" (string), ""charts"" (array).
 - Each chart has:
-  - ""chartType"": one of ""bar"", ""line"", ""pie"", ""doughnut"", ""area"", ""scatter"", ""table"", ""kpi"", ""shape-textbox""
-  - ""title"": descriptive title
+  - ""chartType"": one of ""bar"", ""line"", ""pie"", ""doughnut"", ""area"", ""scatter"", ""table"", ""kpi"", ""card"" (single-metric card visual, interchangeable with kpi), ""shape-textbox""
+  - ""title"": short descriptive title (max ~40 chars)
   - ""dataQuery"": see query rules below
   - ""labelField"": the column/field for labels/categories (MUST be an actual column name from the schema, NOT a SQL alias)
   - ""valueField"": the primary numeric column/field (MUST be an actual column name from the schema, NOT a SQL alias)
@@ -156,14 +156,36 @@ public class AutoReportController : ControllerBase
   - ""width"": grid width 3-12 (default 6)
   - ""height"": pixel height (shape-textbox: 80, kpi: 200, table: 380, charts: 300-320)
 {queryRules}
+
+## Chart-Type Guidance — pick SIMPLE, SENSIBLE visuals the user can actually read
+- PREFER these basic chart types: kpi/card, bar, line, pie/doughnut, table. Use scatter/area sparingly and only when the data clearly supports them.
+- ""kpi"" and ""card"" = the single-metric card visual. Use them for ANY single-number metric (total, average, count, max, min). Use ""kpi"" when a delta-vs-prior indicator is meaningful; use ""card"" for a cleaner, plain single-value tile.
+- CRITICAL KPI/CARD QUERY RULE — the query MUST return EXACTLY ONE ROW with ONE numeric column aliased [Value]:
+  - CORRECT:  SELECT COUNT(*) AS [Value] FROM [dbo].[Products]
+  - CORRECT:  SELECT AVG([ListPrice]) AS [Value] FROM [dbo].[Products]
+  - CORRECT:  SELECT SUM([Revenue]) AS [Value] FROM [dbo].[Sales]
+  - CORRECT:  SELECT COUNT(*) AS [Value] FROM [dbo].[Products] WHERE [Discontinued] = 1
+  - WRONG:    SELECT [Name], [Price] FROM [dbo].[Products]   (multi-row → renders as bar chart)
+  - WRONG:    SELECT [Category], COUNT(*) AS [Value] FROM ... GROUP BY [Category]   (multi-row)
+  - NEVER use GROUP BY in a kpi/card query. NEVER select more than one column. NEVER use TOP N for kpi/card — it must aggregate to a scalar.
+  - For kpi/card, set both ""labelField"" and ""valueField"" to ""Value"".
+- ""bar"" / ""column"" — use for categorical comparisons (top N items, counts by category). Query: GROUP BY a category + aggregate, ORDER BY the aggregate DESC, LIMIT/TOP 10.
+- ""line"" / ""area"" — use ONLY when you have a real date/time column and want a trend. Group by month/year and order chronologically.
+- ""pie"" / ""doughnut"" — use ONLY for part-of-whole with a small category count (≤ 8 slices). Never use on high-cardinality columns (IDs, names, descriptions).
+- ""table"" — use for detail rows (top-N lists). NEVER select long-text columns (Description, Notes, Comment, XML/JSON blobs); pick short ID/name/numeric columns only.
+- DO NOT invent charts over unknown columns. If a column's purpose is unclear, skip it. Better to generate fewer, meaningful charts than many confusing ones.
+- Every chart's query MUST make obvious sense: aggregating a clearly numeric field, grouping by a clearly categorical field.
 - Use ""shape-textbox"" charts for page titles and report descriptions. Set ""text"" field with the content.
-- For KPI cards, use chartType ""kpi"" with a query that returns a single aggregated value.
-- Each page MUST have 7-8 charts (including KPI cards and text boxes). Fill every page thoroughly.
+- For KPI cards, use chartType ""kpi"" with a query that returns a single aggregated value aliased [Value].
+
+## Layout Rules
+- Each page MUST have 6-8 charts (including KPI cards and text boxes).
 - Spread charts across 2-4 pages. Name pages descriptively (e.g. ""Overview"", ""Sales Analysis"", ""Trends"").
 - On page 1, include a shape-textbox (width 12) with a report title and brief description.
-- Start each page with 3-4 KPI cards (width 3, height 200) in a row, then add larger charts below.
-- Use a variety of chart types across the report (bar, line, pie, area, table, etc.).
-- Plan chart widths so they tile in rows of 12 columns total (e.g. four width-3 cards, two width-6 charts, one width-12 full-width, etc.). Avoid leftover gaps.
+- Start each page with 3-4 KPI cards (width 3, height 200) in a row — these are the ""cards"" at the top of the dashboard.
+- Follow the KPI row with 1-2 medium charts side by side (width 6 each), then a full-width chart or table (width 12) below.
+- Use a variety of chart types across the report (kpi, bar, line, pie, table).
+- Plan chart widths so they tile in rows of 12 columns total (e.g. four width-3 cards, two width-6 charts, one width-12 full-width). Avoid leftover gaps.
 {redesignNote}
 ## Available Tables
 {tables}

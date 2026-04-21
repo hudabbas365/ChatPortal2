@@ -4,7 +4,7 @@ namespace GatewayApp.Services;
 
 public static class AppServices
 {
-    private const string DefaultApiBaseUrl = "https://localhost:5001";
+    private const string DefaultApiBaseUrl = "https://aiinsights365.net/";
 
     public static readonly FileEncryptionService Encryption = new();
     public static readonly VersionService Version = new();
