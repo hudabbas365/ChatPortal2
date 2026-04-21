@@ -708,16 +708,17 @@ class ChartRenderer {
         const lbls = labels.length ? labels : ['Start','Q1','Q2','Q3','Q4','End'];
         const vals = values.length ? values : [0, 120, -30, 80, -20, 150];
         let cumulative = 0;
+        const last = lbls.length - 1;
         const floatData = lbls.map((l, i) => {
             const v = vals[i] || 0;
             let y;
-            if (i === 0 || i === vals.length - 1) { y = [0, v]; }
+            if (i === 0 || i === last) { y = [0, v]; }
             else { y = [cumulative, cumulative + v]; }
             cumulative += v;
             return { x: l, y };
         });
         const barColors = floatData.map((d, i) => {
-            if (i === 0 || i === vals.length - 1) return colors[0];
+            if (i === 0 || i === last) return colors[0];
             return (vals[i] || 0) >= 0 ? '#4CAF50' : '#E87C3E';
         });
         const opts = this._baseApexOptions(chartDef);
