@@ -83,7 +83,7 @@
     <div class="col-md-6">
         <div class="card-panel">
             <div class="card-panel-title">Plan Distribution</div>
-            <canvas id="planChart" height="160"></canvas>
+            <div id="planChart" style="min-height:160px"></div>
         </div>
     </div>
 </div>
@@ -126,26 +126,21 @@
 </div>
 
 @section Scripts {
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.54.0/dist/apexcharts.min.js"></script>
 <script>
 (function () {
-    var ctx = document.getElementById('planChart');
-    if (!ctx) return;
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Professional', 'Enterprise', 'Free Trial'],
-            datasets: [{
-                data: [@ViewBag.ProCount, @ViewBag.EnterpriseCount, @ViewBag.ActiveTrials],
-                backgroundColor: ['rgba(74,142,201,0.7)', 'rgba(52,211,153,0.7)', 'rgba(245,158,11,0.6)'],
-                borderWidth: 0
-            }]
-        },
-        options: {
-            plugins: { legend: { labels: { color: '#596d82', font: { size: 12, family: 'Inter' } } } },
-            cutout: '65%'
-        }
-    });
+    var el = document.getElementById('planChart');
+    if (!el) return;
+    new ApexCharts(el, {
+        chart: { type: 'donut', height: 220, fontFamily: 'Inter, sans-serif', toolbar: { show: false }, animations: { speed: 500 } },
+        series: [@ViewBag.ProCount, @ViewBag.EnterpriseCount, @ViewBag.ActiveTrials],
+        labels: ['Professional', 'Enterprise', 'Free Trial'],
+        colors: ['rgba(74,142,201,0.9)', 'rgba(52,211,153,0.9)', 'rgba(245,158,11,0.85)'],
+        plotOptions: { pie: { donut: { size: '65%' } } },
+        legend: { labels: { colors: '#596d82' }, fontFamily: 'Inter', fontSize: '12px' },
+        dataLabels: { enabled: false },
+        tooltip: { theme: 'dark' }
+    }).render();
 })();
 </script>
 }

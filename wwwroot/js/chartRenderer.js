@@ -1,28 +1,6 @@
-// ── Chart.js global defaults ─────────────────────────────────────────────────
-// Applied once when the script loads (before any charts are created).
-(function applyChartDefaults() {
-    if (typeof Chart === 'undefined') return;
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    Chart.defaults.color = '#7A90A8';
+// ── Chart renderer using ApexCharts ──────────────────────────────────────────
 
-    // Tooltip
-    Chart.defaults.plugins.tooltip.backgroundColor = '#1E2D3D';
-    Chart.defaults.plugins.tooltip.titleFont = { weight: '600', family: "'Inter', sans-serif" };
-    Chart.defaults.plugins.tooltip.bodyFont  = { size: 12, family: "'Inter', sans-serif" };
-    Chart.defaults.plugins.tooltip.cornerRadius = 8;
-    Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.displayColors = true;
-    Chart.defaults.plugins.tooltip.boxPadding = 4;
-
-    // Legend
-    Chart.defaults.plugins.legend.labels.font          = { size: 11, family: "'Inter', sans-serif" };
-    Chart.defaults.plugins.legend.labels.color         = '#7A90A8';
-    Chart.defaults.plugins.legend.labels.padding       = 12;
-    Chart.defaults.plugins.legend.labels.usePointStyle = true;
-    Chart.defaults.plugins.legend.labels.pointStyleWidth = 8;
-}());
-
-// Chart rendering engine using Chart.js
+// Chart rendering engine using ApexCharts
 class ChartRenderer {
     constructor() {
         this.instances = {};
@@ -117,30 +95,37 @@ class ChartRenderer {
         }
     }
 
-    async render(chartDef, canvasEl) {
+    async render(chartDef, containerEl) {
         this.destroy(chartDef.id);
 
-        // If a wrapper element was passed instead of a <canvas>, find or create the canvas inside it
-        if (canvasEl && canvasEl.tagName !== 'CANVAS') {
-            let actual = canvasEl.querySelector('canvas');
-            if (!actual) {
-                actual = document.createElement('canvas');
-                canvasEl.appendChild(actual);
-            }
-            canvasEl = actual;
+        // Accept either a <canvas> (legacy call) or a wrapper div.
+        // For ApexCharts we always use the wrapper div as the mount point.
+        let wrap, canvasEl;
+        if (containerEl && containerEl.tagName === 'CANVAS') {
+            canvasEl = containerEl;
+            wrap = containerEl.parentElement;
+            // Hide the canvas — ApexCharts renders its own SVG into the div
+            canvasEl.style.display = 'none';
+        } else {
+            wrap = containerEl;
+            // Make sure there is no stale canvas blocking layout
+            const staleCanvas = wrap ? wrap.querySelector('canvas') : null;
+            if (staleCanvas) staleCanvas.style.display = 'none';
+            canvasEl = null;
         }
 
-        const wrap = canvasEl.parentElement;
+        if (!wrap) return;
 
-        // Show loading skeleton while fetching
+        // Remove stale overlays / skeletons
         const existingEmpty = wrap.querySelector('.chart-no-data-overlay');
         if (existingEmpty) existingEmpty.remove();
         const existingSkeleton = wrap.querySelector('.chart-loading-skeleton');
         if (existingSkeleton) existingSkeleton.remove();
+
+        // Show loading skeleton while fetching
         const skeleton = document.createElement('div');
         skeleton.className = 'chart-loading-skeleton';
         wrap.appendChild(skeleton);
-        canvasEl.style.display = 'none';
 
         let data;
         try { data = await this.fetchData(chartDef); }
@@ -154,7 +139,6 @@ class ChartRenderer {
         const hasRawRows = Array.isArray(data.rawData) && data.rawData.length > 0;
         const skipNoData = chartDef.chartType === 'navigation';
         if (!skipNoData && !hasRawRows && (!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
-            canvasEl.style.display = 'none';
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
             const errMsg = data.error
@@ -164,10 +148,9 @@ class ChartRenderer {
             wrap.appendChild(noData);
             return;
         }
-        canvasEl.style.display = '';
 
+        // Custom chart types use their own HTML/canvas rendering (unchanged)
         if (this._customRenderTypes.has(chartDef.chartType)) {
-            canvasEl.style.display = 'none';
             const existing = wrap.querySelector('.custom-chart-render');
             if (existing) existing.remove();
             const div = document.createElement('div');
@@ -178,25 +161,27 @@ class ChartRenderer {
             return;
         }
 
-        canvasEl.style.display = '';
-        const existing = wrap.querySelector('.custom-chart-render');
-        if (existing) existing.remove();
+        // Remove any previous ApexCharts mount and custom render
+        const existingApex = wrap.querySelector('.apex-chart-wrap');
+        if (existingApex) existingApex.remove();
+        const existingCustom = wrap.querySelector('.custom-chart-render');
+        if (existingCustom) existingCustom.remove();
 
-        // Destroy any Chart.js instance still attached to this canvas element
-        const existingChart = Chart.getChart(canvasEl);
-        if (existingChart) existingChart.destroy();
+        // Create a fresh div for ApexCharts
+        const apexDiv = document.createElement('div');
+        apexDiv.className = 'apex-chart-wrap';
+        apexDiv.style.cssText = 'width:100%;height:100%;position:relative;';
+        wrap.appendChild(apexDiv);
 
-        const ctx = canvasEl.getContext('2d');
-        const config = this.buildConfig(chartDef, data);
+        const options = this.buildApexConfig(chartDef, data);
 
-        // Add cross-filter click handler
+        // Wire up cross-filter click events via ApexCharts events
         const labelField = chartDef.mapping?.labelField || 'label';
-        if (!config.options) config.options = {};
-        if (!config.options.plugins) config.options.plugins = {};
-        config.options.onClick = (event, elements) => {
-            if (!elements || !elements.length) return;
-            const idx = elements[0].index;
-            const label = config.data?.labels?.[idx];
+        if (!options.chart) options.chart = {};
+        if (!options.chart.events) options.chart.events = {};
+        options.chart.events.dataPointSelection = (event, chartCtx, config) => {
+            const labels = options.xaxis?.categories || options.labels || [];
+            const label = labels[config.dataPointIndex];
             if (label !== undefined && window.CrossFilter) {
                 if (window.CrossFilter.activeFilter?.value === label) {
                     window.CrossFilter.clear();
@@ -207,32 +192,49 @@ class ChartRenderer {
         };
 
         try {
-            this.instances[chartDef.id] = new Chart(ctx, config);
+            const chart = new ApexCharts(apexDiv, options);
+            await chart.render();
+            this.instances[chartDef.id] = chart;
         } catch(e) {
-            console.warn('Chart render error:', e);
+            console.warn('ApexCharts render error:', e);
         }
 
-        // Listen for cross-filter events and re-render with filtered data
+        // Helper: push updated data into the existing ApexCharts instance
+        const _updateApex = (inst, newLabels, newValues) => {
+            const apexType = inst.w?.config?.chart?.type || 'bar';
+            if (['pie', 'donut', 'polarArea'].includes(apexType)) {
+                inst.updateOptions({ labels: newLabels }, false, false, false);
+                inst.updateSeries(newValues);
+            } else {
+                const sName = (inst.w?.globals?.seriesNames || [])[0] || 'Data';
+                inst.updateOptions({ xaxis: { categories: newLabels } }, false, false, false);
+                inst.updateSeries([{ name: sName, data: newValues }]);
+            }
+        };
+
+        // Cross-filter listener
         this._crossFilterListener = this._crossFilterListener || {};
         if (this._crossFilterListener[chartDef.id]) {
             document.removeEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
         }
-        this._crossFilterListener[chartDef.id] = async (e) => {
+        this._crossFilterListener[chartDef.id] = (e) => {
             const filter = e.detail;
-            let filtered = data;
-            if (filter && data.rawData) {
-                const fData = data.rawData.filter(row => String(row[filter.field]) === String(filter.value));
-                filtered = { labels: fData.map(r => r[labelField]), values: fData.map(r => parseFloat(r[chartDef.mapping?.valueField || 'value']) || 0), rawData: data.rawData };
-            }
             const inst = this.instances[chartDef.id];
             if (!inst) return;
-            inst.data.labels = filtered.labels || data.labels;
-            inst.data.datasets[0].data = filtered.values || data.values;
-            inst.update();
+            let newValues, newLabels;
+            if (filter && data.rawData) {
+                const fData = data.rawData.filter(row => String(row[filter.field]) === String(filter.value));
+                newLabels = fData.map(r => String(r[labelField] ?? ''));
+                newValues = fData.map(r => parseFloat(r[chartDef.mapping?.valueField || 'value']) || 0);
+            } else {
+                newLabels = data.labels || [];
+                newValues = data.values || [];
+            }
+            _updateApex(inst, newLabels, newValues);
         };
         document.addEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
 
-        // Listen for filter-panel changes and apply client-side filtering
+        // Filter-panel listener
         this._filterPanelListener = this._filterPanelListener || {};
         if (this._filterPanelListener[chartDef.id]) {
             document.removeEventListener('filters:change', this._filterPanelListener[chartDef.id]);
@@ -242,20 +244,17 @@ class ChartRenderer {
             const filters = filterPanel.getFiltersForChart(chartDef.id);
             const inst = this.instances[chartDef.id];
             if (!inst) return;
-            let filtered;
+            let newValues, newLabels;
             if (filters.length > 0 && data.rawData) {
-                const fData = FilterPanel.filterData(data.rawData, filters);
                 const vField = chartDef.mapping?.valueField || 'value';
-                filtered = {
-                    labels: fData.map(r => String(r[labelField] ?? '')),
-                    values: fData.map(r => parseFloat(r[vField]) || 0)
-                };
+                const fData = FilterPanel.filterData(data.rawData, filters);
+                newLabels = fData.map(r => String(r[labelField] ?? ''));
+                newValues = fData.map(r => parseFloat(r[vField]) || 0);
             } else {
-                filtered = data;
+                newLabels = data.labels || [];
+                newValues = data.values || [];
             }
-            inst.data.labels = filtered.labels || data.labels;
-            inst.data.datasets[0].data = filtered.values || data.values;
-            inst.update();
+            _updateApex(inst, newLabels, newValues);
         };
         document.addEventListener('filters:change', this._filterPanelListener[chartDef.id]);
     }
@@ -537,43 +536,38 @@ class ChartRenderer {
         return { labels: [], values: [], error: lastFetchError || window._lastDatasourceError || null };
     }
 
-    _baseOptions(chartDef, extraScales) {
+    _baseApexOptions(chartDef) {
         const style = chartDef.style || {};
         const fontFamily = style.fontFamily || "'Inter', sans-serif";
-        const gridColor = 'rgba(0,0,0,0.04)';
-        const tickFont = { size: 11, family: fontFamily };
         return {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: style.animated !== false ? 700 : 0 },
-            plugins: {
-                legend: {
-                    display: style.showLegend !== false,
-                    position: style.legendPosition || 'top',
-                    labels: {
-                        font: { family: fontFamily, size: 11 },
-                        color: '#7A90A8',
-                        padding: 12,
-                        usePointStyle: true,
-                        pointStyleWidth: 8
-                    }
-                },
-                tooltip: { enabled: style.showTooltips !== false },
-                title: {
-                    display: !!chartDef.title,
-                    text: chartDef.title || '',
-                    font: { size: style.titleFontSize || 14, family: fontFamily, weight: '600' },
-                    color: '#1E2D3D'
-                }
+            chart: {
+                height: '100%',
+                fontFamily,
+                toolbar: { show: false },
+                animations: { enabled: style.animated !== false, speed: 700 },
+                background: 'transparent'
             },
-            scales: extraScales || {
-                x: { grid: { color: gridColor }, ticks: { font: tickFont, color: '#7A90A8' } },
-                y: { grid: { color: gridColor }, ticks: { font: tickFont, color: '#7A90A8' }, beginAtZero: true }
-            }
+            legend: {
+                show: style.showLegend !== false,
+                position: style.legendPosition || 'top',
+                fontFamily,
+                fontSize: '11px',
+                labels: { colors: '#7A90A8' },
+                markers: { width: 8, height: 8, radius: 2 }
+            },
+            tooltip: { enabled: style.showTooltips !== false, theme: 'dark' },
+            title: {
+                text: chartDef.title || '',
+                style: { fontSize: `${style.titleFontSize || 14}px`, fontFamily, fontWeight: '600', color: '#1E2D3D' }
+            },
+            grid: { borderColor: 'rgba(0,0,0,0.04)', strokeDashArray: 0 },
+            dataLabels: { enabled: !!style.showDataLabels },
+            xaxis: { labels: { style: { colors: '#7A90A8', fontFamily, fontSize: '11px' } } },
+            yaxis: { labels: { style: { colors: '#7A90A8', fontFamily, fontSize: '11px' } } }
         };
     }
 
-    buildConfig(chartDef, data) {
+    buildApexConfig(chartDef, data) {
         const style = chartDef.style || {};
         const palette = style.colorPalette || 'default';
         const labels = (data.labels || []).map(String);
@@ -581,245 +575,272 @@ class ChartRenderer {
         const colors = this.getColors(palette, Math.max(labels.length, 8));
         const ct = chartDef.chartType;
 
-        // ---- Special dispatch ----
-        if (ct === 'gauge')           return this.buildGaugeConfig(chartDef, values, style);
-        if (ct === 'waterfall')       return this.buildWaterfallConfig(chartDef, labels, values, style, colors);
-        if (ct === 'funnel')          return this.buildFunnelConfig(chartDef, labels, values, style, colors);
-        if (ct === 'mixedBarLine')    return this.buildMixedBarLineConfig(chartDef, labels, values, style, colors);
-        if (ct === 'groupedBar')      return this.buildGroupedBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'histogram')       return this.buildHistogramConfig(chartDef, labels, values, style, colors);
-        if (ct === 'pareto')          return this.buildParetoConfig(chartDef, labels, values, style, colors);
-        if (ct === 'bellCurve')       return this.buildBellCurveConfig(chartDef, labels, values, style, colors);
-        if (ct === 'regressionLine')  return this.buildRegressionConfig(chartDef, labels, values, style, colors);
-        if (ct === 'confidenceBand')  return this.buildConfidenceBandConfig(chartDef, labels, values, style, colors);
-        if (ct === 'controlChart')    return this.buildControlChartConfig(chartDef, labels, values, style, colors);
-        if (ct === 'errorBar')        return this.buildErrorBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'stepLine')        return this.buildStepLineConfig(chartDef, labels, values, style, colors);
-        if (ct === 'rangeArea')       return this.buildRangeAreaConfig(chartDef, labels, values, style, colors);
-        if (ct === 'burnDown')        return this.buildBurnDownConfig(chartDef, labels, values, style, colors);
-        if (ct === 'gantt')           return this.buildGanttConfig(chartDef, labels, values, style, colors);
-        if (ct === 'bulletChart')     return this.buildBulletChartConfig(chartDef, labels, values, style, colors);
-        if (ct === 'lollipop')        return this.buildLollipopConfig(chartDef, labels, values, style, colors);
-        if (ct === 'slope')           return this.buildSlopeConfig(chartDef, labels, values, style, colors);
-        if (ct === 'divergingBar')    return this.buildDivergingBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'populationPyramid') return this.buildPopulationPyramidConfig(chartDef, labels, values, style, colors);
-        if (ct === 'spanChart')       return this.buildSpanChartConfig(chartDef, labels, values, style, colors);
-        if (ct === 'pairedBar')       return this.buildPairedBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'stackedBar100')   return this.buildStackedBar100Config(chartDef, labels, values, style, colors);
-        if (ct === 'stackedArea100')  return this.buildStackedArea100Config(chartDef, labels, values, style, colors);
-        if (ct === 'streamGraph')     return this.buildStreamGraphConfig(chartDef, labels, values, style, colors);
-        if (ct === 'velocityChart')   return this.buildVelocityChartConfig(chartDef, labels, values, style, colors);
-        if (ct === 'sparkline')       return this.buildSparklineConfig(chartDef, labels, values, style, colors);
-        if (ct === 'progressBar')     return this.buildProgressBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'radialProgress')  return this.buildRadialProgressConfig(chartDef, values, style);
-        if (ct === 'nightingaleRose') return this.buildNightingaleRoseConfig(chartDef, labels, values, style, colors);
-        if (ct === 'dotPlot')         return this.buildDotPlotConfig(chartDef, labels, values, style, colors);
-        if (ct === 'timeLine')        return this.buildTimeLineConfig(chartDef, labels, values, style, colors);
+        if (ct === 'gauge')           return this.buildApexGaugeConfig(chartDef, values, style, colors);
+        if (ct === 'waterfall')       return this.buildApexWaterfallConfig(chartDef, labels, values, style, colors);
+        if (ct === 'funnel')          return this.buildApexFunnelConfig(chartDef, labels, values, style, colors);
+        if (ct === 'mixedBarLine')    return this.buildApexMixedBarLineConfig(chartDef, labels, values, style, colors);
+        if (ct === 'groupedBar')      return this.buildApexGroupedBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'histogram')       return this.buildApexHistogramConfig(chartDef, labels, values, style, colors);
+        if (ct === 'pareto')          return this.buildApexParetoConfig(chartDef, labels, values, style, colors);
+        if (ct === 'bellCurve')       return this.buildApexBellCurveConfig(chartDef, labels, values, style, colors);
+        if (ct === 'regressionLine')  return this.buildApexRegressionConfig(chartDef, labels, values, style, colors);
+        if (ct === 'confidenceBand')  return this.buildApexConfidenceBandConfig(chartDef, labels, values, style, colors);
+        if (ct === 'controlChart')    return this.buildApexControlChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'errorBar')        return this.buildApexErrorBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'stepLine')        return this.buildApexStepLineConfig(chartDef, labels, values, style, colors);
+        if (ct === 'rangeArea')       return this.buildApexRangeAreaConfig(chartDef, labels, values, style, colors);
+        if (ct === 'burnDown')        return this.buildApexBurnDownConfig(chartDef, labels, values, style, colors);
+        if (ct === 'gantt')           return this.buildApexGanttConfig(chartDef, labels, values, style, colors);
+        if (ct === 'bulletChart')     return this.buildApexBulletChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'lollipop')        return this.buildApexLollipopConfig(chartDef, labels, values, style, colors);
+        if (ct === 'slope')           return this.buildApexSlopeConfig(chartDef, labels, values, style, colors);
+        if (ct === 'divergingBar')    return this.buildApexDivergingBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'populationPyramid') return this.buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors);
+        if (ct === 'spanChart')       return this.buildApexSpanChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'pairedBar')       return this.buildApexPairedBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'stackedBar100')   return this.buildApexStackedBar100Config(chartDef, labels, values, style, colors);
+        if (ct === 'stackedArea100')  return this.buildApexStackedArea100Config(chartDef, labels, values, style, colors);
+        if (ct === 'streamGraph')     return this.buildApexStreamGraphConfig(chartDef, labels, values, style, colors);
+        if (ct === 'velocityChart')   return this.buildApexVelocityChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'sparkline')       return this.buildApexSparklineConfig(chartDef, labels, values, style, colors);
+        if (ct === 'progressBar')     return this.buildApexProgressBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'radialProgress')  return this.buildApexRadialProgressConfig(chartDef, values, style, colors);
+        if (ct === 'nightingaleRose') return this.buildApexNightingaleRoseConfig(chartDef, labels, values, style, colors);
+        if (ct === 'dotPlot')         return this.buildApexDotPlotConfig(chartDef, labels, values, style, colors);
+        if (ct === 'timeLine')        return this.buildApexTimeLineConfig(chartDef, labels, values, style, colors);
 
-        // ---- Generic fallback ----
-        const type = this.mapType(ct);
-        const options = this._baseOptions(chartDef);
-        // Pie/doughnut/polar charts don't use cartesian axes
-        if (['pie', 'doughnut', 'polarArea'].includes(type)) {
-            options.scales = {};
+        // ── Generic fallback ──
+        const apexType = this.mapApexType(ct);
+        const opts = this._baseApexOptions(chartDef);
+        const isPieLike = ['pie', 'donut', 'polarArea'].includes(apexType);
+
+        if (isPieLike) {
+            return {
+                ...opts,
+                chart: { ...opts.chart, type: apexType },
+                series: values,
+                labels,
+                colors,
+                plotOptions: apexType === 'donut' ? { pie: { donut: { size: '65%' } } } : {}
+            };
         }
-        const isPerPoint = ['pie','doughnut','polarArea','bar'].includes(type);
-        const bgColorArr = isPerPoint ? colors.slice(0, values.length).map(c => c + 'CC') : colors[0] + 'CC';
-        const bdColorArr = isPerPoint ? colors.slice(0, values.length) : colors[0];
-        let datasets = [{
-            label: (chartDef.mapping?.valueField) || chartDef.title || 'Data',
-            data: values,
-            backgroundColor: bgColorArr,
-            borderColor: bdColorArr,
-            borderWidth: 2,
-            fill: style.fillArea || false,
-            tension: 0.4,
-            borderRadius: parseInt(style.borderRadius || '4'),
-            pointRadius: 4,
-            pointHoverRadius: 6
-        }];
-        // Multi-series: add additional datasets from multiValueFields
-        if (data.multiValues && data.multiValues.length > 0 && !isPerPoint) {
-            data.multiValues.forEach((mv, i) => {
-                const ci = (i + 1) % colors.length;
-                datasets.push({
-                    label: mv.field || ('Series ' + (i + 2)),
-                    data: mv.values,
-                    backgroundColor: colors[ci] + 'CC',
-                    borderColor: colors[ci],
-                    borderWidth: 2,
-                    fill: style.fillArea || false,
-                    tension: 0.4,
-                    borderRadius: parseInt(style.borderRadius || '4'),
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                });
-            });
+        if (apexType === 'radar') {
+            return {
+                ...opts,
+                chart: { ...opts.chart, type: 'radar' },
+                series: [{ name: chartDef.mapping?.valueField || chartDef.title || 'Data', data: values }],
+                xaxis: { ...opts.xaxis, categories: labels },
+                colors: [colors[0]],
+                fill: { opacity: 0.4 }
+            };
         }
-        if (type === 'bar' && ct === 'horizontalBar') options.indexAxis = 'y';
-        if (type === 'bar' && ct === 'stackedBar') {
-            options.scales.x.stacked = true;
-            options.scales.y.stacked = true;
+        if (apexType === 'scatter') {
+            return {
+                ...opts,
+                chart: { ...opts.chart, type: 'scatter' },
+                series: [{ name: chartDef.mapping?.valueField || 'Data', data: values.map((v, i) => [i, v]) }],
+                colors: [colors[0]]
+            };
         }
-        return { type, data: { labels, datasets }, options };
+        if (apexType === 'bubble') {
+            return {
+                ...opts,
+                chart: { ...opts.chart, type: 'bubble' },
+                series: [{ name: chartDef.mapping?.valueField || 'Data', data: values.map((v, i) => ({ x: i, y: v, z: Math.max(5, v / 5) })) }],
+                colors: [colors[0]]
+            };
+        }
+
+        // Bar / line / area
+        const isHorizontal = ct === 'horizontalBar';
+        const isStacked    = ct === 'stackedBar';
+        const isArea       = ct === 'area';
+        const actualType   = isArea ? 'area' : apexType;
+
+        let series = [{ name: chartDef.mapping?.valueField || chartDef.title || 'Data', data: values }];
+        if (data.multiValues && data.multiValues.length > 0) {
+            series.push(...data.multiValues.map(mv => ({ name: mv.field || 'Series', data: mv.values })));
+        }
+
+        return {
+            ...opts,
+            chart: { ...opts.chart, type: actualType, stacked: isStacked || undefined },
+            series,
+            xaxis: { ...opts.xaxis, categories: labels },
+            colors,
+            plotOptions: { bar: { horizontal: isHorizontal, borderRadius: parseInt(style.borderRadius || '4'), columnWidth: '60%' } },
+            stroke: (actualType === 'line' || actualType === 'area') ? { curve: 'smooth', width: 2 } : undefined,
+            fill: isArea ? { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } } : undefined
+        };
     }
 
+
     // ============================================================
-    // Chart.js config builders
+    // ApexCharts config builders
     // ============================================================
 
-    buildGaugeConfig(chartDef, values, style) {
+    buildApexGaugeConfig(chartDef, values, style, colors) {
         const val = values[0] || 0;
         const max = Math.max(...values, 100);
-        const pct = Math.min(val / max, 1);
+        const pct = Math.round(Math.min(val / max, 1) * 100);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'doughnut',
-            data: {
-                labels: ['Value', 'Remaining'],
-                datasets: [{ data: [pct*100, (1-pct)*100], backgroundColor: ['#4A90D9','#E9ECEF'], borderWidth: 0 }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                circumference: 180, rotation: -90,
-                plugins: {
-                    legend: { display: false },
-                    title: { display: true, text: `${chartDef.title || 'Gauge'}: ${val.toFixed(1)}`, font: { size: 14, weight: '600' } }
+            ...opts,
+            chart: { ...opts.chart, type: 'radialBar' },
+            series: [pct],
+            plotOptions: {
+                radialBar: {
+                    startAngle: -90, endAngle: 90,
+                    hollow: { size: '60%' },
+                    dataLabels: {
+                        name: { show: true, offsetY: -10, color: '#1E2D3D', fontSize: '13px', fontWeight: '600' },
+                        value: { show: true, fontSize: '24px', fontWeight: '700', color: colors[0], formatter: () => val.toFixed(1) }
+                    }
                 }
-            }
+            },
+            labels: [chartDef.title || 'Gauge'],
+            colors: [colors[0]],
+            legend: { show: false }
         };
     }
 
-    buildWaterfallConfig(chartDef, labels, values, style, colors) {
+    buildApexWaterfallConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Start','Q1','Q2','Q3','Q4','End'];
         const vals = values.length ? values : [0, 120, -30, 80, -20, 150];
-        const floatData = [];
         let cumulative = 0;
-        const bgColors = [];
-        for (let i = 0; i < vals.length; i++) {
-            const v = vals[i];
-            if (i === 0 || i === vals.length - 1) {
-                floatData.push([0, v]);
-                bgColors.push('#4A90D9');
-            } else {
-                const base = cumulative;
-                floatData.push([base, base + v]);
-                bgColors.push(v >= 0 ? '#4CAF50CC' : '#E87C3ECC');
-            }
+        const floatData = lbls.map((l, i) => {
+            const v = vals[i] || 0;
+            let y;
+            if (i === 0 || i === vals.length - 1) { y = [0, v]; }
+            else { y = [cumulative, cumulative + v]; }
             cumulative += v;
-        }
-        const opts = this._baseOptions(chartDef);
-        opts.plugins.tooltip = {
-            callbacks: {
-                label: ctx => {
-                    const d = ctx.raw;
-                    return `Change: ${(d[1]-d[0]).toFixed(1)} (Total: ${d[1].toFixed(1)})`;
+            return { x: l, y };
+        });
+        const barColors = floatData.map((d, i) => {
+            if (i === 0 || i === vals.length - 1) return colors[0];
+            return (vals[i] || 0) >= 0 ? '#4CAF50' : '#E87C3E';
+        });
+        const opts = this._baseApexOptions(chartDef);
+        return {
+            ...opts,
+            chart: { ...opts.chart, type: 'rangeBar' },
+            series: [{ name: chartDef.title || 'Waterfall', data: floatData }],
+            colors: barColors,
+            plotOptions: { bar: { columnWidth: '60%', borderRadius: 2 } },
+            tooltip: {
+                custom: ({ series, seriesIndex, dataPointIndex, w }) => {
+                    const d = w.config.series[0].data[dataPointIndex];
+                    const change = d.y[1] - d.y[0];
+                    return `<div style="padding:8px;font-size:12px"><b>${d.x}</b><br>Change: ${change.toFixed(1)} (Total: ${d.y[1].toFixed(1)})</div>`;
                 }
             }
         };
-        return {
-            type: 'bar',
-            data: { labels: lbls, datasets: [{ label: chartDef.title || 'Waterfall', data: floatData, backgroundColor: bgColors, borderWidth: 1, borderColor: bgColors }] },
-            options: opts
-        };
     }
 
-    buildFunnelConfig(chartDef, labels, values, style, colors) {
+    buildApexFunnelConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Leads','Prospects','Qualified','Proposals','Closed'];
         const vals = values.length ? [...values].sort((a,b) => b - a) : [1000, 750, 500, 250, 100];
-        const sorted = lbls.map((l,i) => ({l, v: vals[i]||0})).sort((a,b) => b.v - a.v);
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
+        const pairs = lbls.map((l,i) => ({l, v: vals[i]||0})).sort((a,b) => b.v - a.v);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: sorted.map(d => d.l),
-                datasets: [{ label: chartDef.title || 'Funnel', data: sorted.map(d => d.v), backgroundColor: colors.map(c => c+'CC'), borderRadius: 4 }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: chartDef.title || 'Funnel', data: pairs.map(p => p.v) }],
+            xaxis: { ...opts.xaxis, categories: pairs.map(p => p.l) },
+            colors: [colors[0]],
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, columnWidth: '60%' } }
         };
     }
 
-    buildMixedBarLineConfig(chartDef, labels, values, style, colors) {
+    buildApexMixedBarLineConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun'];
         const barVals = values.length ? values : [120,150,130,200,180,210];
         const lineVals = barVals.map((v,i) => Math.round(barVals.slice(0,i+1).reduce((a,b)=>a+b,0)/(i+1)));
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { type: 'bar', label: 'Monthly', data: barVals, backgroundColor: colors[0]+'CC', borderRadius: 4 },
-                    { type: 'line', label: 'Trend Avg', data: lineVals, borderColor: colors[1], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 4, tension: 0.3 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: 'Monthly', type: 'bar', data: barVals },
+                { name: 'Trend Avg', type: 'line', data: lineVals }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0], colors[1]],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
+            stroke: { width: [0, 2], curve: 'smooth' },
+            markers: { size: [0, 4] }
         };
     }
 
-    buildGroupedBarConfig(chartDef, labels, values, style, colors) {
+    buildApexGroupedBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Q1','Q2','Q3','Q4'];
         const n = Math.min(lbls.length, 4);
-        const series = ['Product A','Product B','Product C'];
-        const datasets = series.map((s, si) => ({
-            label: s,
-            data: Array.from({length: n}, (_,i) => Math.round(40 + Math.random()*80 + si*20)),
-            backgroundColor: colors[si]+'CC',
-            borderRadius: 3
-        }));
-        const opts = this._baseOptions(chartDef);
-        return { type: 'bar', data: { labels: lbls.slice(0, n), datasets }, options: opts };
-    }
-
-    buildHistogramConfig(chartDef, labels, values, style, colors) {
-        const data = values.length >= 5 ? values : [23,25,27,28,30,31,32,33,34,35,36,37,38,40,42,45,48,50,55,60];
-        const min = Math.min(...data), max = Math.max(...data);
-        const binCount = Math.min(10, Math.ceil(Math.sqrt(data.length)));
-        const binSize = (max - min) / binCount;
-        const bins = Array(binCount).fill(0);
-        data.forEach(v => {
-            const idx = Math.min(Math.floor((v - min) / binSize), binCount - 1);
-            bins[idx]++;
-        });
-        const binLabels = bins.map((_, i) => `${(min + i * binSize).toFixed(1)}-${(min + (i+1) * binSize).toFixed(1)}`);
-        const opts = this._baseOptions(chartDef);
+        const seriesNames = ['Product A','Product B','Product C'];
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: { labels: binLabels, datasets: [{ label: 'Frequency', data: bins, backgroundColor: colors[0]+'CC', borderColor: colors[0], borderWidth: 1, categoryPercentage: 1.0, barPercentage: 1.0 }] },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: seriesNames.map((name, si) => ({
+                name,
+                data: Array.from({length: n}, (_,i) => Math.round(40 + Math.random()*80 + si*20))
+            })),
+            xaxis: { ...opts.xaxis, categories: lbls.slice(0, n) },
+            colors: colors.slice(0, 3),
+            plotOptions: { bar: { borderRadius: 3, columnWidth: '60%', grouped: true } }
         };
     }
 
-    buildParetoConfig(chartDef, labels, values, style, colors) {
+    buildApexHistogramConfig(chartDef, labels, values, style, colors) {
+        const raw = values.length >= 5 ? values : [23,25,27,28,30,31,32,33,34,35,36,37,38,40,42,45,48,50,55,60];
+        const min = Math.min(...raw), max = Math.max(...raw);
+        const binCount = Math.min(10, Math.ceil(Math.sqrt(raw.length)));
+        const binSize = (max - min) / binCount;
+        const bins = Array(binCount).fill(0);
+        raw.forEach(v => { const idx = Math.min(Math.floor((v - min) / binSize), binCount - 1); bins[idx]++; });
+        const binLabels = bins.map((_, i) => `${(min + i*binSize).toFixed(1)}-${(min + (i+1)*binSize).toFixed(1)}`);
+        const opts = this._baseApexOptions(chartDef);
+        return {
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: 'Frequency', data: bins }],
+            xaxis: { ...opts.xaxis, categories: binLabels },
+            colors: [colors[0]],
+            plotOptions: { bar: { columnWidth: '98%', borderRadius: 0 } },
+            dataLabels: { enabled: false }
+        };
+    }
+
+    buildApexParetoConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Defect A','Defect B','Defect C','Defect D','Defect E'];
         const vals = values.length ? values : [80, 50, 30, 20, 10];
         const pairs = lbls.map((l,i) => ({l, v: vals[i]||0})).sort((a,b) => b.v - a.v);
         const total = pairs.reduce((s,p) => s + p.v, 0);
         let cum = 0;
         const cumPct = pairs.map(p => { cum += p.v; return Math.round(cum / total * 100); });
-        const opts = this._baseOptions(chartDef);
-        opts.scales = {
-            x: { grid: { color: 'rgba(0,0,0,0.05)' } },
-            y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Count' } },
-            y2: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: '% Cumulative' } }
-        };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: pairs.map(p => p.l),
-                datasets: [
-                    { type: 'bar', label: 'Frequency', data: pairs.map(p => p.v), backgroundColor: colors[0]+'CC', yAxisID: 'y', borderRadius: 3 },
-                    { type: 'line', label: 'Cumulative %', data: cumPct, borderColor: colors[2], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 4, yAxisID: 'y2', tension: 0 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: 'Frequency', type: 'bar', data: pairs.map(p => p.v) },
+                { name: 'Cumulative %', type: 'line', data: cumPct }
+            ],
+            xaxis: { ...opts.xaxis, categories: pairs.map(p => p.l) },
+            yaxis: [
+                { title: { text: 'Count' }, labels: { style: { colors: '#7A90A8' } } },
+                { opposite: true, min: 0, max: 100, title: { text: '% Cumulative' }, labels: { style: { colors: '#7A90A8' }, formatter: v => v + '%' } }
+            ],
+            colors: [colors[0], colors[2]],
+            plotOptions: { bar: { borderRadius: 3, columnWidth: '55%' } },
+            stroke: { width: [0, 2], curve: 'smooth' },
+            markers: { size: [0, 4] }
         };
     }
 
-    buildBellCurveConfig(chartDef, labels, values, style, colors) {
-        const data = values.length >= 3 ? values : [10,15,20,25,30,35,40,45,50,55,60,65,70];
-        const mean = data.reduce((s,v) => s+v, 0) / data.length;
-        const variance = data.reduce((s,v) => s + Math.pow(v-mean, 2), 0) / data.length;
+    buildApexBellCurveConfig(chartDef, labels, values, style, colors) {
+        const raw = values.length >= 3 ? values : [10,15,20,25,30,35,40,45,50,55,60,65,70];
+        const mean = raw.reduce((s,v) => s+v,0) / raw.length;
+        const variance = raw.reduce((s,v) => s + Math.pow(v-mean,2),0) / raw.length;
         const std = Math.sqrt(variance) || 1;
         const xMin = mean - 4*std, xMax = mean + 4*std;
         const pts = 60;
@@ -827,20 +848,22 @@ class ChartRenderer {
         for (let i = 0; i <= pts; i++) {
             const x = xMin + (xMax - xMin) * i / pts;
             xVals.push(x.toFixed(2));
-            yVals.push(Math.exp(-0.5 * Math.pow((x - mean) / std, 2)) / (std * Math.sqrt(2 * Math.PI)));
+            yVals.push(parseFloat((Math.exp(-0.5 * Math.pow((x - mean) / std, 2)) / (std * Math.sqrt(2 * Math.PI))).toFixed(6)));
         }
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: xVals,
-                datasets: [{ label: 'Distribution', data: yVals, borderColor: colors[0], backgroundColor: this.hexToRgba(colors[0], 0.2), fill: true, tension: 0.4, pointRadius: 0 }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'area' },
+            series: [{ name: 'Distribution', data: yVals }],
+            xaxis: { ...opts.xaxis, categories: xVals, tickAmount: 6 },
+            colors: [colors[0]],
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } },
+            stroke: { curve: 'smooth', width: 2 },
+            dataLabels: { enabled: false }
         };
     }
 
-    buildRegressionConfig(chartDef, labels, values, style, colors) {
+    buildApexRegressionConfig(chartDef, labels, values, style, colors) {
         const pts = values.length >= 4 ? values.map((v,i) => ({x: i, y: v})) :
             [{x:1,y:22},{x:2,y:28},{x:3,y:33},{x:4,y:35},{x:5,y:42},{x:6,y:48},{x:7,y:51},{x:8,y:58}];
         const n = pts.length;
@@ -848,479 +871,451 @@ class ChartRenderer {
         const sumXY = pts.reduce((s,p)=>s+p.x*p.y,0), sumX2 = pts.reduce((s,p)=>s+p.x*p.x,0);
         const slope = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX);
         const intercept = (sumY - slope*sumX) / n;
-        const lineData = pts.map(p => ({x: p.x, y: slope*p.x + intercept}));
-        const opts = this._baseOptions(chartDef, {
-            x: { type: 'linear', grid: { color: 'rgba(0,0,0,0.05)' } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' }, beginAtZero: false }
-        });
+        const lineData = pts.map(p => ({ x: p.x, y: parseFloat((slope*p.x + intercept).toFixed(2)) }));
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'scatter',
-            data: {
-                datasets: [
-                    { label: 'Data Points', data: pts, backgroundColor: colors[0]+'BB', pointRadius: 6 },
-                    { type: 'line', label: 'Regression', data: lineData, borderColor: colors[2], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, tension: 0 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'scatter' },
+            series: [
+                { name: 'Data Points', type: 'scatter', data: pts.map(p => ({ x: p.x, y: p.y })) },
+                { name: 'Regression', type: 'line', data: lineData.map(p => ({ x: p.x, y: p.y })) }
+            ],
+            colors: [colors[0], colors[2]],
+            stroke: { width: [0, 2], curve: 'straight' },
+            markers: { size: [5, 0] }
         };
     }
 
-    buildConfidenceBandConfig(chartDef, labels, values, style, colors) {
+    buildApexConfidenceBandConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
         const vals = values.length ? values : [30,35,32,40,38,45,42,48];
         const ci = vals.map(v => v * 0.12);
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: 'Upper CI', data: vals.map((v,i)=>v+ci[i]), borderColor: 'transparent', backgroundColor: this.hexToRgba(colors[0], 0.15), fill: '+1', pointRadius: 0, tension: 0.4 },
-                    { label: 'Mean', data: vals, borderColor: colors[0], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 4, tension: 0.4 },
-                    { label: 'Lower CI', data: vals.map((v,i)=>v-ci[i]), borderColor: 'transparent', backgroundColor: this.hexToRgba(colors[0], 0.15), fill: '-1', pointRadius: 0, tension: 0.4 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'line' },
+            series: [
+                { name: 'Upper CI', data: vals.map((v,i) => parseFloat((v+ci[i]).toFixed(2))) },
+                { name: 'Mean', data: vals },
+                { name: 'Lower CI', data: vals.map((v,i) => parseFloat((v-ci[i]).toFixed(2))) }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [this.hexToRgba(colors[0], 0.4), colors[0], this.hexToRgba(colors[0], 0.4)],
+            stroke: { width: [1, 2, 1], curve: 'smooth', dashArray: [4, 0, 4] },
+            fill: { type: ['solid', 'solid', 'solid'], opacity: [0.1, 1, 0.1] },
+            markers: { size: [0, 4, 0] }
         };
     }
 
-    buildControlChartConfig(chartDef, labels, values, style, colors) {
+    buildApexControlChartConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : Array.from({length: 15}, (_,i) => `P${i+1}`);
         const vals = values.length ? values : [48,52,51,53,47,50,54,49,51,50,52,55,48,51,50];
         const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
         const std = Math.sqrt(vals.reduce((s,v)=>s+Math.pow(v-mean,2),0)/vals.length);
         const ucl = mean + 3*std, lcl = Math.max(0, mean - 3*std);
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls.slice(0, vals.length),
-                datasets: [
-                    { label: 'UCL', data: Array(vals.length).fill(ucl), borderColor: '#dc3545', borderDash: [5,5], borderWidth: 1.5, pointRadius: 0, fill: false },
-                    { label: 'Mean', data: Array(vals.length).fill(mean), borderColor: '#4CAF50', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, fill: false },
-                    { label: 'LCL', data: Array(vals.length).fill(lcl), borderColor: '#dc3545', borderDash: [5,5], borderWidth: 1.5, pointRadius: 0, fill: false },
-                    { label: 'Data', data: vals, borderColor: colors[0], backgroundColor: colors[0]+'44', fill: false, borderWidth: 2, pointRadius: 4, tension: 0.1 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'line' },
+            series: [
+                { name: 'UCL', data: Array(vals.length).fill(parseFloat(ucl.toFixed(2))) },
+                { name: 'Mean', data: Array(vals.length).fill(parseFloat(mean.toFixed(2))) },
+                { name: 'LCL', data: Array(vals.length).fill(parseFloat(lcl.toFixed(2))) },
+                { name: 'Data', data: vals }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls.slice(0, vals.length) },
+            colors: ['#dc3545', '#4CAF50', '#dc3545', colors[0]],
+            stroke: { width: [1.5, 1.5, 1.5, 2], curve: 'smooth', dashArray: [5, 4, 5, 0] },
+            markers: { size: [0, 0, 0, 4] }
         };
     }
 
-    buildErrorBarConfig(chartDef, labels, values, style, colors) {
+    buildApexErrorBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['A','B','C','D','E'];
         const vals = values.length ? values : [45, 62, 38, 75, 55];
-        const errors = vals.map(v => v * 0.1);
-        const floatData = vals.map((v,i) => [v - errors[i], v + errors[i]]);
-        const opts = this._baseOptions(chartDef);
+        const errors = vals.map(v => parseFloat((v * 0.1).toFixed(2)));
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: chartDef.title || 'Values', data: vals, backgroundColor: colors[0]+'CC', borderRadius: 4 },
-                    { label: 'Error Range', data: floatData, backgroundColor: colors[1]+'88', borderColor: colors[1], borderWidth: 1, borderSkipped: false }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: chartDef.title || 'Values', data: vals }],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0]],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '50%' } },
+            annotations: {
+                points: vals.map((v, i) => ({
+                    x: lbls[i], y: v,
+                    marker: { size: 0 },
+                    label: { text: `±${errors[i]}`, style: { fontSize: '10px', color: '#8492a6', background: 'transparent', border: 'none' } }
+                }))
+            }
         };
     }
 
-    buildStepLineConfig(chartDef, labels, values, style, colors) {
+    buildApexStepLineConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
         const vals = values.length ? values : [100, 120, 120, 150, 130, 130, 180];
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: [{ label: chartDef.title || 'Step Line', data: vals, borderColor: colors[0], backgroundColor: this.hexToRgba(colors[0], 0.15), fill: true, stepped: true, pointRadius: 5, borderWidth: 2 }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'line' },
+            series: [{ name: chartDef.title || 'Step Line', data: vals }],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0]],
+            stroke: { curve: 'stepline', width: 2 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0.02, stops: [0, 100] } },
+            markers: { size: 5 }
         };
     }
 
-    buildRangeAreaConfig(chartDef, labels, values, style, colors) {
+    buildApexRangeAreaConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul'];
         const vals = values.length ? values : [30,35,33,40,38,45,42];
-        const upper = vals.map(v => v + v*0.2);
-        const lower = vals.map(v => v - v*0.2);
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: 'Max', data: upper, borderColor: this.hexToRgba(colors[0], 0.5), backgroundColor: this.hexToRgba(colors[0], 0.15), fill: '+1', pointRadius: 0, tension: 0.4 },
-                    { label: 'Value', data: vals, borderColor: colors[0], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 4, tension: 0.4 },
-                    { label: 'Min', data: lower, borderColor: this.hexToRgba(colors[0], 0.5), backgroundColor: this.hexToRgba(colors[0], 0.15), fill: '-1', pointRadius: 0, tension: 0.4 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'rangeArea' },
+            series: [{
+                name: chartDef.title || 'Range',
+                data: lbls.map((l, i) => ({
+                    x: l,
+                    y: [parseFloat((vals[i] - vals[i]*0.2).toFixed(2)), parseFloat((vals[i] + vals[i]*0.2).toFixed(2))]
+                }))
+            }],
+            colors: [colors[0]],
+            fill: { opacity: 0.3 },
+            stroke: { curve: 'smooth', width: 2 }
         };
     }
 
-    buildBurnDownConfig(chartDef, labels, values, style, colors) {
+    buildApexBurnDownConfig(chartDef, labels, values, style, colors) {
         const n = 10;
         const total = (values[0] || 100);
         const lbls = Array.from({length: n+1}, (_,i) => `Day ${i}`);
         const ideal = Array.from({length: n+1}, (_,i) => Math.round(total - total*i/n));
         const actual = [total];
-        for (let i = 1; i <= n; i++) actual.push(Math.round(ideal[i] + (Math.random()-0.3)*total*0.08));
-        const opts = this._baseOptions(chartDef);
+        for (let i = 1; i <= n; i++) actual.push(Math.max(0, Math.round(ideal[i] + (Math.random()-0.3)*total*0.08)));
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: 'Ideal', data: ideal, borderColor: '#adb5bd', borderDash: [6,4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0 },
-                    { label: 'Actual', data: actual, borderColor: colors[0], backgroundColor: this.hexToRgba(colors[0], 0.1), fill: true, borderWidth: 2, pointRadius: 4, tension: 0.2 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'line' },
+            series: [
+                { name: 'Ideal', data: ideal },
+                { name: 'Actual', data: actual }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: ['#adb5bd', colors[0]],
+            stroke: { width: [1.5, 2], curve: 'smooth', dashArray: [6, 0] },
+            fill: { type: ['solid', 'gradient'], opacity: [1, 0.15] },
+            markers: { size: [0, 4] }
         };
     }
 
-    buildGanttConfig(chartDef, labels, values, style, colors) {
+    buildApexGanttConfig(chartDef, labels, values, style, colors) {
         const tasks = labels.length ? labels.slice(0,6) : ['Planning','Design','Development','Testing','Deployment','Review'];
-        const data = tasks.map((t, i) => {
-            const start = i * 3 + (i > 2 ? 2 : 0);
-            const dur = 3 + (i % 3);
-            return [start, start + dur];
-        });
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
-        opts.scales = {
-            x: { min: 0, max: 20, title: { display: true, text: 'Days' }, grid: { color: 'rgba(0,0,0,0.05)' } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' } }
-        };
+        const now = new Date();
+        const data = tasks.map((t, i) => ({
+            x: t,
+            y: [
+                new Date(now.getFullYear(), now.getMonth(), 1 + i*3 + (i>2?2:0)).getTime(),
+                new Date(now.getFullYear(), now.getMonth(), 1 + i*3 + (i>2?2:0) + 3 + (i%3)).getTime()
+            ]
+        }));
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: tasks,
-                datasets: [{ label: 'Task Duration', data: data, backgroundColor: colors.map(c=>c+'CC'), borderRadius: 4, borderSkipped: false }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'rangeBar' },
+            series: [{ name: 'Task Duration', data }],
+            colors: colors.slice(0, tasks.length),
+            plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+            xaxis: { type: 'datetime', labels: { style: { colors: '#7A90A8' } } },
+            yaxis: { labels: { style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildBulletChartConfig(chartDef, labels, values, style, colors) {
+    buildApexBulletChartConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels.slice(0,4) : ['Revenue','Cost','Growth','NPS'];
         const vals = values.length ? values.slice(0,lbls.length) : [78, 55, 62, 85];
         const targets = vals.map(v => Math.min(100, v + 15));
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
-        opts.plugins.annotation = {};
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: 'Target', data: targets, backgroundColor: '#e9ecef', borderRadius: 4, barPercentage: 0.6, borderSkipped: false },
-                    { label: 'Actual', data: vals, backgroundColor: colors[0]+'CC', borderRadius: 4, barPercentage: 0.35, borderSkipped: false }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: 'Target', data: targets },
+                { name: 'Actual', data: vals }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: ['#e9ecef', colors[0]],
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%', isFunnel: false } },
+            dataLabels: { enabled: false }
         };
     }
 
-    buildLollipopConfig(chartDef, labels, values, style, colors) {
+    buildApexLollipopConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['A','B','C','D','E','F'];
         const vals = values.length ? values : [42, 67, 35, 78, 55, 63];
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: chartDef.title || 'Value', data: vals, backgroundColor: 'transparent', borderColor: colors[0]+'88', borderWidth: 2, borderRadius: 0, barPercentage: 0.05 },
-                    { type: 'scatter', label: 'Point', data: vals.map((v,i) => ({x: lbls[i], y: v})), backgroundColor: colors[0], pointRadius: 8, pointHoverRadius: 10 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: chartDef.title || 'Value', data: vals }],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0]],
+            plotOptions: { bar: { columnWidth: '4%', borderRadius: 0 } },
+            markers: { size: 8, colors: [colors[0]], strokeColors: '#fff', strokeWidth: 2, hover: { size: 10 } }
         };
     }
 
-    buildSlopeConfig(chartDef, labels, values, style, colors) {
+    buildApexSlopeConfig(chartDef, labels, values, style, colors) {
         const items = labels.length >= 3 ? labels.slice(0,5) : ['Product A','Product B','Product C','Product D'];
         const before = values.length >= items.length ? values.slice(0,items.length) : items.map(()=>Math.round(30+Math.random()*50));
         const after = before.map(v => Math.round(v + (Math.random()-0.4)*20));
-        const opts = this._baseOptions(chartDef);
-        opts.scales = {
-            x: { ticks: { font: { size: 12, weight: '600' } } },
-            y: { beginAtZero: false, grid: { color: 'rgba(0,0,0,0.05)' } }
-        };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: ['Before', 'After'],
-                datasets: items.map((item, i) => ({
-                    label: item,
-                    data: [before[i], after[i]],
-                    borderColor: colors[i % colors.length],
-                    backgroundColor: colors[i % colors.length]+'33',
-                    borderWidth: 2, pointRadius: 6, tension: 0
-                }))
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'line' },
+            series: items.map((name, i) => ({ name, data: [before[i], after[i]] })),
+            xaxis: { ...opts.xaxis, categories: ['Before', 'After'] },
+            colors: colors.slice(0, items.length),
+            stroke: { width: 2, curve: 'straight' },
+            markers: { size: 6 }
         };
     }
 
-    buildDivergingBarConfig(chartDef, labels, values, style, colors) {
+    buildApexDivergingBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Very Satisfied','Satisfied','Neutral','Dissatisfied','Very Dissatisfied'];
-        const vals = values.length ? values.slice(0, lbls.length).map((v,i) => i < Math.ceil(lbls.length/2) ? Math.abs(v) : -Math.abs(v)) :
-            [45, 30, 10, -20, -35];
-        const bgColors = vals.map(v => (v >= 0 ? '#4CAF50CC' : '#E87C3ECC'));
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
-        opts.scales = {
-            x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => Math.abs(v) } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' } }
-        };
+        const vals = values.length ? values.slice(0, lbls.length).map((v,i) => i < Math.ceil(lbls.length/2) ? Math.abs(v) : -Math.abs(v)) : [45, 30, 10, -20, -35];
+        const barColors = vals.map(v => v >= 0 ? '#4CAF50' : '#E87C3E');
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: { labels: lbls, datasets: [{ label: chartDef.title || 'Diverging', data: vals, backgroundColor: bgColors, borderRadius: 4 }] },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: chartDef.title || 'Diverging', data: vals.map((v,i) => ({ x: lbls[i], y: v, fillColor: barColors[i] })) }],
+            colors: barColors,
+            plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+            xaxis: { labels: { formatter: v => Math.abs(v) } }
         };
     }
 
-    buildPopulationPyramidConfig(chartDef, labels, values, style, colors) {
+    buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors) {
         const ageGroups = ['0-9','10-19','20-29','30-39','40-49','50-59','60-69','70+'];
         const males   = [80,95,110,120,105,90,70,45];
         const females = [78,92,108,118,108,92,74,52];
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
-        opts.scales = {
-            x: { stacked: false, ticks: { callback: v => Math.abs(v) }, grid: { color: 'rgba(0,0,0,0.05)' } },
-            y: { stacked: false }
-        };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: ageGroups,
-                datasets: [
-                    { label: 'Male', data: males.map(v => -v), backgroundColor: colors[0]+'CC', borderRadius: 2, barPercentage: 0.8 },
-                    { label: 'Female', data: females, backgroundColor: colors[1]+'CC', borderRadius: 2, barPercentage: 0.8 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: 'Male', data: males.map(v => -v) },
+                { name: 'Female', data: females }
+            ],
+            xaxis: { ...opts.xaxis, categories: ageGroups },
+            colors: [colors[0], colors[1]],
+            plotOptions: { bar: { horizontal: true, borderRadius: 2, barHeight: '80%' } },
+            yaxis: { labels: { style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildSpanChartConfig(chartDef, labels, values, style, colors) {
+    buildApexSpanChartConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels.slice(0,5) : ['Item A','Item B','Item C','Item D','Item E'];
         const mins = values.length ? values.slice(0,lbls.length) : [10,20,15,30,25];
         const maxs = mins.map(v => v + Math.round(v * 0.5 + 10));
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [{ label: 'Range', data: mins.map((m,i)=>[m,maxs[i]]), backgroundColor: colors.map(c=>c+'BB'), borderRadius: 4, borderSkipped: false }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'rangeBar' },
+            series: [{ name: 'Range', data: lbls.map((l,i) => ({ x: l, y: [mins[i], maxs[i]] })) }],
+            colors: [colors[0]],
+            plotOptions: { bar: { horizontal: true, borderRadius: 4 } }
         };
     }
 
-    buildPairedBarConfig(chartDef, labels, values, style, colors) {
+    buildApexPairedBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels.slice(0,5) : ['North','South','East','West','Central'];
         const g1 = values.length ? values.slice(0,lbls.length) : [65,72,58,80,70];
         const g2 = g1.map(v => Math.round(v * (0.7 + Math.random() * 0.6)));
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: '2023', data: g1, backgroundColor: colors[0]+'CC', borderRadius: 3, barPercentage: 0.4 },
-                    { label: '2024', data: g2, backgroundColor: colors[1]+'CC', borderRadius: 3, barPercentage: 0.4 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: '2023', data: g1 },
+                { name: '2024', data: g2 }
+            ],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0], colors[1]],
+            plotOptions: { bar: { horizontal: true, borderRadius: 3, barHeight: '40%' } }
         };
     }
 
-    buildStackedBar100Config(chartDef, labels, values, style, colors) {
+    buildApexStackedBar100Config(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May'];
-        const series = ['A','B','C'];
-        const rawData = series.map((_, si) => lbls.map(() => Math.round(20 + Math.random() * 40)));
+        const seriesNames = ['A','B','C'];
+        const rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
         const normalized = lbls.map((_, li) => {
-            const total = series.reduce((s, _, si) => s + rawData[si][li], 0);
-            return series.map((_, si) => Math.round(rawData[si][li] / total * 100));
+            const total = seriesNames.reduce((s, _, si) => s + rawData[si][li], 0);
+            return seriesNames.map((_, si) => Math.round(rawData[si][li] / total * 100));
         });
-        const opts = this._baseOptions(chartDef);
-        opts.scales = {
-            x: { stacked: true, max: 100 },
-            y: { stacked: true, max: 100, ticks: { callback: v => v + '%' } }
-        };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: series.map((s, si) => ({
-                    label: `Group ${s}`, data: lbls.map((_,li) => normalized[li][si]), backgroundColor: colors[si]+'CC', borderRadius: 0
-                }))
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar', stacked: true, stackType: '100%' },
+            series: seriesNames.map((name, si) => ({ name: `Group ${name}`, data: lbls.map((_,li) => normalized[li][si]) })),
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: colors.slice(0, 3),
+            plotOptions: { bar: { borderRadius: 0, columnWidth: '60%' } },
+            yaxis: { max: 100, labels: { formatter: v => v + '%', style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildStackedArea100Config(chartDef, labels, values, style, colors) {
+    buildApexStackedArea100Config(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun'];
-        const series = ['A','B','C'];
-        const rawData = series.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
-        const normalized = lbls.map((_,li) => {
-            const total = series.reduce((s,_,si) => s + rawData[si][li], 0);
-            return series.map((_,si) => Math.round(rawData[si][li]/total*100));
+        const seriesNames = ['A','B','C'];
+        const rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
+        const normalized = lbls.map((_, li) => {
+            const total = seriesNames.reduce((s,_,si) => s + rawData[si][li], 0);
+            return seriesNames.map((_, si) => Math.round(rawData[si][li]/total*100));
         });
-        const opts = this._baseOptions(chartDef);
-        opts.scales = { x: { stacked: true }, y: { stacked: true, max: 100, ticks: { callback: v => v+'%' } } };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: series.map((s,si) => ({
-                    label: `Series ${s}`, data: lbls.map((_,li) => normalized[li][si]),
-                    backgroundColor: colors[si]+'CC', borderColor: colors[si], fill: true, tension: 0.4, pointRadius: 2
-                }))
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'area', stacked: true, stackType: '100%' },
+            series: seriesNames.map((name, si) => ({ name: `Series ${name}`, data: lbls.map((_,li) => normalized[li][si]) })),
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: colors.slice(0, 3),
+            stroke: { curve: 'smooth', width: 2 },
+            fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.3 } },
+            yaxis: { max: 100, labels: { formatter: v => v + '%', style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildStreamGraphConfig(chartDef, labels, values, style, colors) {
+    buildApexStreamGraphConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
-        const series = ['Series A','Series B','Series C','Series D'];
-        const opts = this._baseOptions(chartDef);
-        opts.scales = { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.05)' } } };
+        const seriesNames = ['Series A','Series B','Series C','Series D'];
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: series.map((s,i) => ({
-                    label: s,
-                    data: lbls.map(() => Math.round(15 + Math.random()*30)),
-                    backgroundColor: colors[i]+'AA', borderColor: colors[i]+'66', fill: true, tension: 0.5, pointRadius: 0
-                }))
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'area', stacked: true },
+            series: seriesNames.map(name => ({
+                name,
+                data: lbls.map(() => Math.round(15 + Math.random()*30))
+            })),
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: colors.slice(0, 4),
+            stroke: { curve: 'smooth', width: 1 },
+            fill: { type: 'gradient', gradient: { opacityFrom: 0.7, opacityTo: 0.4 } },
+            dataLabels: { enabled: false }
         };
     }
 
-    buildVelocityChartConfig(chartDef, labels, values, style, colors) {
-        const sprints = labels.length ? labels.slice(0,8) : Array.from({length:8}, (_,i)=>`Sprint ${i+1}`);
+    buildApexVelocityChartConfig(chartDef, labels, values, style, colors) {
+        const sprints = labels.length ? labels.slice(0,8) : Array.from({length:8},(_,i)=>`Sprint ${i+1}`);
         const committed = values.length ? values.slice(0,sprints.length) : [40,42,38,45,43,50,48,52];
         const completed = committed.map(v => Math.round(v * (0.7 + Math.random()*0.35)));
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: sprints,
-                datasets: [
-                    { label: 'Committed', data: committed, backgroundColor: colors[0]+'44', borderColor: colors[0], borderWidth: 1.5, borderRadius: 4 },
-                    { label: 'Completed', data: completed, backgroundColor: colors[0]+'CC', borderRadius: 4 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [
+                { name: 'Committed', data: committed },
+                { name: 'Completed', data: completed }
+            ],
+            xaxis: { ...opts.xaxis, categories: sprints },
+            colors: [this.hexToRgba(colors[0], 0.4), colors[0]],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } }
         };
     }
 
-    buildSparklineConfig(chartDef, labels, values, style, colors) {
+    buildApexSparklineConfig(chartDef, labels, values, style, colors) {
         const vals = values.length ? values : [12,18,15,22,20,25,23,30,28,35];
-        const opts = {
-            responsive: true, maintainAspectRatio: false,
-            animation: { duration: 300 },
-            plugins: { legend: { display: false }, tooltip: { enabled: false }, title: { display: false } },
-            scales: { x: { display: false }, y: { display: false } },
-            elements: { point: { radius: 0 } }
-        };
         return {
-            type: 'line',
-            data: {
-                labels: vals.map((_,i)=>i),
-                datasets: [{ data: vals, borderColor: colors[0], backgroundColor: this.hexToRgba(colors[0], 0.15), fill: true, borderWidth: 2, tension: 0.4 }]
-            },
-            options: opts
+            chart: { type: 'line', height: '100%', sparkline: { enabled: true }, animations: { speed: 300 } },
+            series: [{ data: vals }],
+            colors: [colors[0]],
+            stroke: { curve: 'smooth', width: 2 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } },
+            tooltip: { theme: 'dark', fixed: { enabled: false }, x: { show: false } }
         };
     }
 
-    buildProgressBarConfig(chartDef, labels, values, style, colors) {
+    buildApexProgressBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels.slice(0,4) : ['Goal A','Goal B','Goal C','Goal D'];
         const vals = values.length ? values.slice(0,lbls.length).map(v => Math.min(100,Math.abs(v))) : [78,55,91,63];
-        const opts = this._baseOptions(chartDef);
-        opts.indexAxis = 'y';
-        opts.scales = {
-            x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,0.05)' } },
-            y: {}
-        };
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'bar',
-            data: {
-                labels: lbls,
-                datasets: [
-                    { label: 'Track', data: Array(lbls.length).fill(100), backgroundColor: '#e9ecef', borderRadius: 20, barPercentage: 0.4 },
-                    { label: 'Progress', data: vals, backgroundColor: colors.map(c=>c+'CC'), borderRadius: 20, barPercentage: 0.4 }
-                ]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'bar' },
+            series: [{ name: 'Progress', data: vals }],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: colors.slice(0, lbls.length),
+            plotOptions: { bar: { horizontal: true, borderRadius: 20, barHeight: '40%', distributed: true } },
+            yaxis: { max: 100, labels: { formatter: v => v + '%', style: { colors: '#7A90A8' } } },
+            legend: { show: false }
         };
     }
 
-    buildRadialProgressConfig(chartDef, values, style) {
+    buildApexRadialProgressConfig(chartDef, values, style, colors) {
         const val = Math.min(100, Math.abs(values[0] || 72));
         return {
-            type: 'doughnut',
-            data: {
-                labels: ['Progress', 'Remaining'],
-                datasets: [{ data: [val, 100-val], backgroundColor: ['#4A90D9','#E9ECEF'], borderWidth: 0 }]
+            chart: { type: 'radialBar', height: '100%', fontFamily: "'Inter', sans-serif", toolbar: { show: false }, animations: { speed: 700 } },
+            series: [val],
+            plotOptions: {
+                radialBar: {
+                    hollow: { size: '75%' },
+                    dataLabels: {
+                        name: { show: true, fontSize: '13px', fontWeight: '600', color: '#1E2D3D', offsetY: 5 },
+                        value: { show: true, fontSize: '24px', fontWeight: '700', color: colors[0], offsetY: -15, formatter: v => v + '%' }
+                    }
+                }
             },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                rotation: -90, circumference: 360,
-                plugins: {
-                    legend: { display: false },
-                    title: { display: true, text: `${chartDef.title || 'Progress'}: ${val}%`, font: { size: 14, weight: '600' } }
-                },
-                cutout: '75%'
-            }
+            labels: [chartDef.title || 'Progress'],
+            colors: [colors[0]],
+            legend: { show: false }
         };
     }
 
-    buildNightingaleRoseConfig(chartDef, labels, values, style, colors) {
+    buildApexNightingaleRoseConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const vals = values.length ? values : lbls.map(()=>Math.round(20+Math.random()*60));
-        const opts = this._baseOptions(chartDef);
-        opts.scales = {};
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'polarArea',
-            data: { labels: lbls, datasets: [{ label: chartDef.title||'Value', data: vals, backgroundColor: colors.map(c=>c+'CC') }] },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'polarArea' },
+            series: vals,
+            labels: lbls,
+            colors: colors.slice(0, lbls.length),
+            fill: { opacity: 0.85 },
+            stroke: { colors: ['#fff'], width: 1 }
         };
     }
 
-    buildDotPlotConfig(chartDef, labels, values, style, colors) {
-        const pts = values.length ? values.map((v,i) => ({x: labels[i]||i, y: v})) :
+    buildApexDotPlotConfig(chartDef, labels, values, style, colors) {
+        const pts = values.length ? values.map((v,i) => ({ x: labels[i] || String(i), y: v })) :
             [{x:'A',y:45},{x:'A',y:52},{x:'B',y:30},{x:'B',y:38},{x:'C',y:60},{x:'C',y:65},{x:'D',y:25},{x:'D',y:35}];
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'scatter',
-            data: { datasets: [{ label: chartDef.title||'Data', data: pts, backgroundColor: colors[0]+'BB', pointRadius: 7, pointHoverRadius: 9 }] },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'scatter' },
+            series: [{ name: chartDef.title || 'Data', data: pts.map(p => ({ x: p.x, y: p.y })) }],
+            colors: [colors[0]],
+            markers: { size: 7, hover: { size: 9 } }
         };
     }
 
-    buildTimeLineConfig(chartDef, labels, values, style, colors) {
+    buildApexTimeLineConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const vals = values.length ? values : [65,72,68,80,75,82,88,91,85,90,95,102];
-        const opts = this._baseOptions(chartDef);
+        const opts = this._baseApexOptions(chartDef);
         return {
-            type: 'line',
-            data: {
-                labels: lbls,
-                datasets: [{ label: chartDef.title||'Timeline', data: vals, borderColor: colors[0], backgroundColor: this.hexToRgba(colors[0], 0.12), fill: true, borderWidth: 2, pointRadius: 4, tension: 0.4 }]
-            },
-            options: opts
+            ...opts,
+            chart: { ...opts.chart, type: 'area' },
+            series: [{ name: chartDef.title || 'Timeline', data: vals }],
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: [colors[0]],
+            stroke: { curve: 'smooth', width: 2 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } },
+            markers: { size: 4 }
         };
     }
 
@@ -2070,26 +2065,23 @@ class ChartRenderer {
         </div>`;
     }
 
-    mapType(chartType) {
+    mapApexType(chartType) {
         const map = {
             bar: 'bar', horizontalBar: 'bar', stackedBar: 'bar', groupedBar: 'bar',
-            waterfall: 'bar', funnel: 'bar', treemap: 'bar', heatmap: 'bar',
-            sankey: 'bar', histogram: 'bar', boxPlot: 'bar', pareto: 'bar',
-            bulletChart: 'bar', marimekko: 'bar', lollipop: 'bar', divergingBar: 'bar',
+            waterfall: 'bar', funnel: 'bar', histogram: 'bar', pareto: 'bar',
+            bulletChart: 'bar', lollipop: 'bar', divergingBar: 'bar',
             spanChart: 'bar', pairedBar: 'bar', populationPyramid: 'bar',
-            stackedBar100: 'bar', waffleChart: 'bar', pictograph: 'bar',
-            progressBar: 'bar', kpiCard: 'bar', metricTile: 'bar', velocityChart: 'bar',
+            stackedBar100: 'bar', progressBar: 'bar', velocityChart: 'bar',
             gantt: 'bar', errorBar: 'bar',
-            line: 'line', area: 'line', stepLine: 'line', streamGraph: 'line',
-            burnDown: 'line', bellCurve: 'line', controlChart: 'line',
-            confidenceBand: 'line', timeLine: 'line', rangeArea: 'line',
-            slope: 'line', sparkline: 'line', stackedArea100: 'line',
-            pie: 'pie', sunburst: 'pie', chordDiagram: 'pie',
-            donut: 'doughnut', doughnut: 'doughnut', gauge: 'doughnut', radialProgress: 'doughnut',
+            line: 'line', stepLine: 'line', burnDown: 'line', controlChart: 'line',
+            confidenceBand: 'line', timeLine: 'line', slope: 'line', sparkline: 'line',
+            area: 'area', streamGraph: 'area', stackedArea100: 'area', rangeArea: 'area',
+            bellCurve: 'area', mixedBarLine: 'bar',
+            pie: 'pie',
+            donut: 'donut', doughnut: 'donut', gauge: 'radialBar', radialProgress: 'radialBar',
             nightingaleRose: 'polarArea', polarArea: 'polarArea',
-            scatter: 'scatter', dotPlot: 'scatter', networkGraph: 'scatter',
-            arcDiagram: 'scatter', forceDirected: 'scatter', regressionLine: 'scatter',
-            bubble: 'bubble', bubbleMap: 'bubble',
+            scatter: 'scatter', dotPlot: 'scatter', regressionLine: 'scatter',
+            bubble: 'bubble',
             radar: 'radar',
         };
         return map[chartType] || 'bar';

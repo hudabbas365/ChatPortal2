@@ -12,7 +12,7 @@ AI-Powered Data Conversations Portal
 
 ## Tech Stack
 - ASP.NET Core 8 MVC + Web API
-- Bootstrap 5.3, jQuery 3.7, Chart.js 4.4
+- Bootstrap 5.3, jQuery 3.7, ApexCharts 3.54
 - Entity Framework Core with SQL Server
 - JWT Bearer Authentication
 
