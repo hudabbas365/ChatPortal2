@@ -666,7 +666,7 @@
                     </button>
                 </div>
                 <div class="dr-chart-canvas-wrap" style="max-height:320px">
-                    <canvas class="dr-chart-canvas"></canvas>
+                    <div class="dr-chart-canvas-div" style="width:100%;height:280px;"></div>
                 </div>
                 <div class="dr-analyze-bar mt-2">
                     <button class="btn btn-sm btn-outline-secondary dr-analyze-open-btn">
@@ -719,22 +719,30 @@
         });
 
         function renderChart() {
-            const canvas = resultArea.querySelector('.dr-chart-canvas');
+            const chartDiv = resultArea.querySelector('.dr-chart-canvas-div');
             const chartType = resultArea.querySelector('.dr-chart-type-sel')?.value || 'bar';
             const labelField = resultArea.querySelector('.dr-label-sel')?.value || Object.keys(data[0])[0];
             const valueField = resultArea.querySelector('.dr-value-sel')?.value || Object.keys(data[0])[1];
             const labels = data.map(r => String(r[labelField] ?? ''));
             const values = data.map(r => parseFloat(r[valueField]) || 0);
             if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-            if (typeof Chart !== 'undefined') {
-                chartInstance = new Chart(canvas, {
-                    type: chartType === 'donut' ? 'doughnut' : chartType,
-                    data: {
-                        labels,
-                        datasets: [{ label: valueField, data: values, backgroundColor: ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548'] }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: chartType === 'pie' || chartType === 'doughnut' || chartType === 'donut' } } }
+            if (typeof ApexCharts !== 'undefined' && chartDiv) {
+                const apexType = (chartType === 'donut' || chartType === 'doughnut') ? 'donut' : chartType;
+                const isPieLike = ['pie', 'donut'].includes(apexType);
+                const colors = ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548'];
+                chartInstance = new ApexCharts(chartDiv, {
+                    chart: { type: apexType, height: 280, toolbar: { show: false }, fontFamily: "'Inter', sans-serif", animations: { speed: 500 } },
+                    series: isPieLike ? values : [{ name: valueField, data: values }],
+                    ...(isPieLike ? { labels } : { xaxis: { categories: labels } }),
+                    colors,
+                    legend: { show: isPieLike, position: 'top' },
+                    tooltip: { theme: 'dark' },
+                    dataLabels: { enabled: false },
+                    grid: { borderColor: 'rgba(0,0,0,0.04)' },
+                    plotOptions: isPieLike ? {} : { bar: { borderRadius: 4 } },
+                    stroke: (apexType === 'line' || apexType === 'area') ? { curve: 'smooth', width: 2 } : undefined
                 });
+                chartInstance.render();
             }
         }
 
@@ -797,20 +805,23 @@
         });
 
         analyzeSendBtn?.addEventListener('click', async function() {
-            const canvas = resultArea.querySelector('.dr-chart-canvas');
-            if (!canvas || !chartInstance) {
-                // Chart not rendered yet — render first
+            if (!chartInstance) {
+                // Chart not rendered yet — render first and wait briefly
                 renderChart();
+                await new Promise(resolve => setTimeout(resolve, 350));
                 if (!chartInstance) return;
             }
 
             const prompt = resultArea.querySelector('.dr-analyze-prompt')?.value.trim()
                 || 'Analyze this chart. Describe key trends, outliers, and actionable insights.';
 
-            // Capture chart as PNG data URL
+            // Capture chart as PNG data URL via ApexCharts dataURI
             let imageDataUrl;
-            try { imageDataUrl = canvas.toDataURL('image/png'); }
-            catch { return; }
+            try {
+                const uriResult = await chartInstance.dataURI({ scale: 1 });
+                imageDataUrl = uriResult.imgURI;
+                if (!imageDataUrl) return;
+            } catch { return; }
 
             // Show user message in chat
             addMessage('user', `📊 ${prompt}`);
