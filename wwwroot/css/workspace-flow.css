@@ -573,6 +573,7 @@
 }
 .wf-flow-col-report {
     flex-shrink: 0;
+    align-items: stretch;
 }
 
 /* ── Nodes — themed cards with left accent stripe ──────────── */
@@ -718,6 +719,19 @@
     display: none;
 }
 
+/* ── Report branch: multiple reports share the same agent ──────── */
+/* Short horizontal connector from the spine to each report node */
+.wf-flow-h-line-report {
+    width: 28px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, var(--cp-border) 0%, var(--cp-orange) 100%);
+}
+
+/* Orange-themed vertical spine for the report branch column */
+.wf-flow-v-spine-report {
+    background: linear-gradient(180deg, var(--cp-orange) 0%, var(--cp-border) 50%, var(--cp-orange) 100%);
+}
+
 /* ── Unbound agents row (below main diagram) ───────────────── */
 .wf-flow-unbound-row {
     display: flex;
@@ -768,6 +782,7 @@
     .wf-flow-diagram { padding: 22px 24px; }
     .wf-flow-h-line-out,
     .wf-flow-h-line-in { width: 32px; }
+    .wf-flow-h-line-report { width: 20px; }
 }
 
 /* ≤ 768px — tablet / split view */
@@ -831,6 +846,7 @@
     .wf-flow-sublabel { font-size: 0.66rem; }
     .wf-flow-h-line-out,
     .wf-flow-h-line-in { width: 24px; }
+    .wf-flow-h-line-report { width: 16px; }
 
     /* DS type grid: two columns minimum */
     .wf-ds-type-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
