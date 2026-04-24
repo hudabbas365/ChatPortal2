@@ -14,11 +14,13 @@ public class SuperAdminController : Controller
 {
     private readonly AppDbContext _db;
     private readonly CohereService _cohere;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SuperAdminController(AppDbContext db, CohereService cohere)
+    public SuperAdminController(AppDbContext db, CohereService cohere, IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _cohere = cohere;
+        _scopeFactory = scopeFactory;
     }
 
     private string? GetCurrentUserId() =>
@@ -779,7 +781,6 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             .ResolveRecipientsAsync(_db, notification, CancellationToken.None);
 
         var distinctIds = recipients.Select(r => r.Id).Distinct().ToHashSet();
-        var now = DateTime.UtcNow;
         var isUrgent = string.Equals(notification.Severity, "urgent", StringComparison.OrdinalIgnoreCase);
         var baseUrl = config["AppBaseUrl"] ?? "";
 
@@ -801,25 +802,46 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             if (isUrgent && emailer != null)
             {
                 var recipientMap = recipients.ToDictionary(r => r.Id);
-                foreach (var row in newRows)
-                {
-                    var clickUrl = $"{baseUrl}/n/{row.Id}/click";
-                    var user = recipientMap.TryGetValue(row.UserId, out var u) ? u : null;
-                    var email = user?.Email ?? "";
-                    var name = user?.FullName ?? "";
-                    if (string.IsNullOrWhiteSpace(email)) continue;
+                var rowData = newRows.Select(r => new { r.Id, r.UserId }).ToList();
+                var notificationId = notification.Id;
+                var notificationTitle = notification.Title;
+                var notificationBody = notification.Body;
+                var scopeFactory = _scopeFactory;
 
-                    _ = Task.Run(async () =>
+                _ = Task.Run(async () =>
+                {
+                    foreach (var rd in rowData)
                     {
-                        var sent = await emailer.SendAsync(email, name, notification.Title,
-                            notification.Body, clickUrl, CancellationToken.None);
-                        if (sent)
+                        var user = recipientMap.TryGetValue(rd.UserId, out var u) ? u : null;
+                        var email = user?.Email ?? "";
+                        var name = user?.FullName ?? "";
+                        if (string.IsNullOrWhiteSpace(email)) continue;
+
+                        var clickUrl = $"{baseUrl}/n/{rd.Id}/click";
+                        try
                         {
-                            row.EmailSent = true;
-                            await _db.SaveChangesAsync(CancellationToken.None);
+                            var sent = await emailer.SendAsync(email, name,
+                                notificationTitle, notificationBody, clickUrl, CancellationToken.None);
+                            if (sent)
+                            {
+                                using var scope = scopeFactory.CreateScope();
+                                var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                                var un = await scopedDb.UserNotifications.FindAsync(rd.Id);
+                                if (un != null)
+                                {
+                                    un.EmailSent = true;
+                                    await scopedDb.SaveChangesAsync(CancellationToken.None);
+                                }
+                            }
                         }
-                    }, CancellationToken.None);
-                }
+                        catch (Exception ex)
+                        {
+                            var logger = scopeFactory.CreateScope().ServiceProvider
+                                .GetRequiredService<ILogger<SuperAdminController>>();
+                            logger.LogError(ex, "Failed to send urgent email for UserNotification {Id}.", rd.Id);
+                        }
+                    }
+                }, CancellationToken.None);
             }
         }
     }

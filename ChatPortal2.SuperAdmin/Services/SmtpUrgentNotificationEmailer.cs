@@ -25,7 +25,7 @@ public class SmtpUrgentNotificationEmailer : IUrgentNotificationEmailer
         var host = _config["Smtp:Host"];
         if (string.IsNullOrWhiteSpace(host))
         {
-            _logger.LogWarning("SMTP host not configured. Skipping urgent email to {Email}.", toEmail);
+            _logger.LogWarning("SMTP host not configured. Skipping urgent email.");
             return false;
         }
 
@@ -46,20 +46,23 @@ public class SmtpUrgentNotificationEmailer : IUrgentNotificationEmailer
                 EnableSsl = useSsl
             };
 
-            var msg = new MailMessage(from, toEmail, subject, html)
+            var msg = new MailMessage
             {
+                From = new MailAddress(from),
+                Subject = subject,
+                Body = html,
                 IsBodyHtml = true
             };
-            if (!string.IsNullOrWhiteSpace(toName))
-                msg.To.Clear();
-            msg.To.Add(new MailAddress(toEmail, toName));
+            msg.To.Add(string.IsNullOrWhiteSpace(toName)
+                ? new MailAddress(toEmail)
+                : new MailAddress(toEmail, toName));
 
             await client.SendMailAsync(msg, cancellationToken);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send urgent email to {Email}.", toEmail);
+            _logger.LogError(ex, "Failed to send urgent email (recipient omitted for privacy).");
             return false;
         }
     }

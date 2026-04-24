@@ -59,7 +59,7 @@ public class NotificationDispatcher : BackgroundService
         {
             try
             {
-                await DispatchOneAsync(db, notification, emailer, config, _logger, ct);
+                await DispatchOneAsync(db, notification, emailer, config, _logger, ct, _scopeFactory);
             }
             catch (Exception ex)
             {
@@ -77,7 +77,8 @@ public class NotificationDispatcher : BackgroundService
         IUrgentNotificationEmailer? emailer,
         IConfiguration? config,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        IServiceScopeFactory? scopeFactory = null)
     {
         try
         {
@@ -115,40 +116,50 @@ public class NotificationDispatcher : BackgroundService
 
             await db.SaveChangesAsync(ct);
 
-            // Send urgent emails asynchronously — fire-and-forget per recipient
-            if (isUrgent && emailer != null)
+            // Capture the IDs of new rows for email fan-out
+            var newRowData = newRows.Select(r => new { r.Id, r.UserId }).ToList();
+
+            // Send urgent emails asynchronously — each fires in its own scope to avoid DbContext sharing
+            if (isUrgent && emailer != null && newRowData.Count > 0)
             {
                 var baseUrl = config?["AppBaseUrl"] ?? "";
                 var recipientMap = recipients.ToDictionary(r => r.Id);
+                var notificationId = notification.Id;
+                var notificationTitle = notification.Title;
+                var notificationBody = notification.Body;
 
-                foreach (var row in newRows)
+                _ = Task.Run(async () =>
                 {
-                    var capturedRow = row;
-                    var clickUrl = $"{baseUrl}/n/{capturedRow.Id}/click";
-                    var user = recipientMap.TryGetValue(capturedRow.UserId, out var u) ? u : null;
-                    var email = user?.Email ?? "";
-                    var name = user?.FullName ?? "";
-
-                    if (string.IsNullOrWhiteSpace(email)) continue;
-
-                    _ = Task.Run(async () =>
+                    foreach (var rowData in newRowData)
                     {
+                        var user = recipientMap.TryGetValue(rowData.UserId, out var u) ? u : null;
+                        var email = user?.Email ?? "";
+                        var name = user?.FullName ?? "";
+                        if (string.IsNullOrWhiteSpace(email)) continue;
+
+                        var clickUrl = $"{baseUrl}/n/{rowData.Id}/click";
                         try
                         {
                             var sent = await emailer.SendAsync(email, name,
-                                notification.Title, notification.Body, clickUrl, CancellationToken.None);
-                            if (sent)
+                                notificationTitle, notificationBody, clickUrl, CancellationToken.None);
+                            if (sent && scopeFactory != null)
                             {
-                                capturedRow.EmailSent = true;
-                                await db.SaveChangesAsync(CancellationToken.None);
+                                using var scope = scopeFactory.CreateScope();
+                                var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                                var un = await scopedDb.UserNotifications.FindAsync(rowData.Id);
+                                if (un != null)
+                                {
+                                    un.EmailSent = true;
+                                    await scopedDb.SaveChangesAsync(CancellationToken.None);
+                                }
                             }
                         }
                         catch (Exception ex)
                         {
-                            logger?.LogError(ex, "Failed to send urgent email for UserNotification {Id}.", capturedRow.Id);
+                            logger?.LogError(ex, "Failed to send urgent email for UserNotification {Id}.", rowData.Id);
                         }
-                    }, CancellationToken.None);
-                }
+                    }
+                }, CancellationToken.None);
             }
         }
         catch (Exception ex)
