@@ -82,6 +82,9 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
+builder.Services.AddScoped<AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer,
+    AIInsights.SuperAdmin.Services.SmtpUrgentNotificationEmailer>();
+builder.Services.AddHostedService<AIInsights.SuperAdmin.Services.NotificationDispatcher>();
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>

@@ -596,14 +596,13 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         }
     }
 
-    // ── Notifications: broadcast to all orgs OR specific orgs ────────────────
+    // ── Notifications ─────────────────────────────────────────────────────────
     [HttpGet("/superadmin/notifications")]
     public async Task<IActionResult> Notifications()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         var items = await _db.Notifications
-            .Where(n => n.Scope == "All" || n.Scope == "Org")
             .OrderByDescending(n => n.CreatedAt)
             .Take(200)
             .ToListAsync();
@@ -611,7 +610,11 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             .OrderBy(o => o.Name)
             .Select(o => new { o.Id, o.Name })
             .ToListAsync();
+        var templates = await _db.NotificationTemplates
+            .OrderBy(t => t.Name)
+            .ToListAsync();
         ViewBag.Orgs = orgs;
+        ViewBag.Templates = templates;
         return View("~/Views/Admin/Notifications.cshtml", items);
     }
 
@@ -624,44 +627,314 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
 
         var callerId = GetCurrentUserId();
         var scope = string.IsNullOrWhiteSpace(dto.Scope) ? "All" : dto.Scope!.Trim();
-        var created = new List<int>();
         var now = DateTime.UtcNow;
+        var severity = string.IsNullOrWhiteSpace(dto.Severity) ? "normal" : dto.Severity!.Trim();
+        var isScheduled = dto.ScheduleAt.HasValue && dto.ScheduleAt.Value > now;
 
-        Notification Build(int? orgId) => new()
-        {
-            Scope = orgId.HasValue ? "Org" : "All",
-            OrganizationId = orgId,
-            Title = dto.Title!.Trim(),
-            Body = dto.Body!.Trim(),
-            Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
-            Severity = string.IsNullOrWhiteSpace(dto.Severity) ? "normal" : dto.Severity!.Trim(),
-            Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
-            ExpiresAt = dto.ExpiresAt,
-            CreatedByUserId = callerId,
-            CreatedByRole = "SuperAdmin",
-            CreatedAt = now
-        };
-
-        if (scope.Equals("All", StringComparison.OrdinalIgnoreCase))
-        {
-            var n = Build(null);
-            _db.Notifications.Add(n);
-            await _db.SaveChangesAsync();
-            created.Add(n.Id);
-        }
-        else
+        // Validate scope-specific parameters
+        if (scope.Equals("SpecificOrgs", StringComparison.OrdinalIgnoreCase) || scope.Equals("Org", StringComparison.OrdinalIgnoreCase))
         {
             if (dto.OrganizationIds == null || dto.OrganizationIds.Count == 0)
                 return BadRequest(new { error = "At least one organization must be selected." });
-            foreach (var orgId in dto.OrganizationIds.Distinct())
-            {
-                var n = Build(orgId);
-                _db.Notifications.Add(n);
-            }
-            await _db.SaveChangesAsync();
+        }
+        else if (scope.Equals("User", StringComparison.OrdinalIgnoreCase))
+        {
+            if (dto.UserIds == null || dto.UserIds.Count == 0)
+                return BadRequest(new { error = "At least one user ID must be provided." });
+        }
+        else if (scope.Equals("Role", StringComparison.OrdinalIgnoreCase))
+        {
+            if (dto.Roles == null || dto.Roles.Count == 0)
+                return BadRequest(new { error = "At least one role must be provided." });
         }
 
-        return Ok(new { success = true, count = scope == "All" ? 1 : dto.OrganizationIds!.Count });
+        var notifications = new List<Notification>();
+
+        if (scope.Equals("All", StringComparison.OrdinalIgnoreCase))
+        {
+            notifications.Add(new Notification
+            {
+                Scope = "All",
+                Title = dto.Title!.Trim(),
+                Body = dto.Body!.Trim(),
+                Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+                Severity = severity,
+                Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+                ExpiresAt = dto.ExpiresAt,
+                CreatedByUserId = callerId,
+                CreatedByRole = "SuperAdmin",
+                CreatedAt = now,
+                ScheduleAt = dto.ScheduleAt,
+                DeliveryStatus = isScheduled ? "Scheduled" : "Delivered",
+                DeliveredAt = isScheduled ? null : now
+            });
+        }
+        else if (scope.Equals("SpecificOrgs", StringComparison.OrdinalIgnoreCase) || scope.Equals("Org", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var orgId in dto.OrganizationIds!.Distinct())
+            {
+                notifications.Add(new Notification
+                {
+                    Scope = "Org",
+                    OrganizationId = orgId,
+                    Title = dto.Title!.Trim(),
+                    Body = dto.Body!.Trim(),
+                    Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+                    Severity = severity,
+                    Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+                    ExpiresAt = dto.ExpiresAt,
+                    CreatedByUserId = callerId,
+                    CreatedByRole = "SuperAdmin",
+                    CreatedAt = now,
+                    ScheduleAt = dto.ScheduleAt,
+                    DeliveryStatus = isScheduled ? "Scheduled" : "Delivered",
+                    DeliveredAt = isScheduled ? null : now
+                });
+            }
+        }
+        else if (scope.Equals("User", StringComparison.OrdinalIgnoreCase))
+        {
+            notifications.Add(new Notification
+            {
+                Scope = "User",
+                TargetUserIdsCsv = string.Join(",", dto.UserIds!.Select(id => id.Trim()).Distinct()),
+                Title = dto.Title!.Trim(),
+                Body = dto.Body!.Trim(),
+                Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+                Severity = severity,
+                Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+                ExpiresAt = dto.ExpiresAt,
+                CreatedByUserId = callerId,
+                CreatedByRole = "SuperAdmin",
+                CreatedAt = now,
+                ScheduleAt = dto.ScheduleAt,
+                DeliveryStatus = isScheduled ? "Scheduled" : "Delivered",
+                DeliveredAt = isScheduled ? null : now
+            });
+        }
+        else if (scope.Equals("Role", StringComparison.OrdinalIgnoreCase))
+        {
+            notifications.Add(new Notification
+            {
+                Scope = "Role",
+                TargetRolesCsv = string.Join(",", dto.Roles!.Select(r => r.Trim()).Distinct()),
+                Title = dto.Title!.Trim(),
+                Body = dto.Body!.Trim(),
+                Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+                Severity = severity,
+                Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+                ExpiresAt = dto.ExpiresAt,
+                CreatedByUserId = callerId,
+                CreatedByRole = "SuperAdmin",
+                CreatedAt = now,
+                ScheduleAt = dto.ScheduleAt,
+                DeliveryStatus = isScheduled ? "Scheduled" : "Delivered",
+                DeliveredAt = isScheduled ? null : now
+            });
+        }
+        else
+        {
+            return BadRequest(new { error = $"Unknown scope '{scope}'." });
+        }
+
+        _db.Notifications.AddRange(notifications);
+        await _db.SaveChangesAsync();
+
+        // Log activity
+        foreach (var n in notifications)
+        {
+            _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+            {
+                Action = "Notification.Broadcast",
+                Description = $"Broadcast '{n.Title}' scope={n.Scope} status={n.DeliveryStatus}",
+                UserId = callerId ?? "",
+                CreatedAt = now
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        // Fan out UserNotification rows immediately if not scheduled
+        if (!isScheduled)
+        {
+            var emailer = HttpContext.RequestServices.GetService<AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer>();
+            var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+            foreach (var n in notifications)
+            {
+                await FanOutAsync(n, emailer, config);
+            }
+        }
+
+        return Ok(new { success = true, count = notifications.Count, scheduled = isScheduled });
+    }
+
+    /// <summary>Resolve recipients and create UserNotification rows (for User/Role scoped notifications).</summary>
+    private async Task FanOutAsync(Notification notification,
+        AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer? emailer,
+        IConfiguration config)
+    {
+        if (notification.Scope != "User" && notification.Scope != "Role")
+            return; // All and Org use implicit fan-out via BaseQueryFor in NotificationsController
+
+        var recipients = await AIInsights.SuperAdmin.Services.NotificationDispatcher
+            .ResolveRecipientsAsync(_db, notification, CancellationToken.None);
+
+        var distinctIds = recipients.Select(r => r.Id).Distinct().ToHashSet();
+        var now = DateTime.UtcNow;
+        var isUrgent = string.Equals(notification.Severity, "urgent", StringComparison.OrdinalIgnoreCase);
+        var baseUrl = config["AppBaseUrl"] ?? "";
+
+        var newRows = new List<AIInsights.Models.UserNotification>();
+        foreach (var uid in distinctIds)
+        {
+            newRows.Add(new AIInsights.Models.UserNotification
+            {
+                UserId = uid,
+                NotificationId = notification.Id
+            });
+        }
+
+        if (newRows.Count > 0)
+        {
+            _db.UserNotifications.AddRange(newRows);
+            await _db.SaveChangesAsync();
+
+            if (isUrgent && emailer != null)
+            {
+                var recipientMap = recipients.ToDictionary(r => r.Id);
+                foreach (var row in newRows)
+                {
+                    var clickUrl = $"{baseUrl}/n/{row.Id}/click";
+                    var user = recipientMap.TryGetValue(row.UserId, out var u) ? u : null;
+                    var email = user?.Email ?? "";
+                    var name = user?.FullName ?? "";
+                    if (string.IsNullOrWhiteSpace(email)) continue;
+
+                    _ = Task.Run(async () =>
+                    {
+                        var sent = await emailer.SendAsync(email, name, notification.Title,
+                            notification.Body, clickUrl, CancellationToken.None);
+                        if (sent)
+                        {
+                            row.EmailSent = true;
+                            await _db.SaveChangesAsync(CancellationToken.None);
+                        }
+                    }, CancellationToken.None);
+                }
+            }
+        }
+    }
+
+    [HttpPost("/api/superadmin/notifications/{id:int}/cancel")]
+    public async Task<IActionResult> CancelNotification(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+        if (n.DeliveryStatus != "Scheduled")
+            return BadRequest(new { error = "Only scheduled notifications can be cancelled." });
+
+        n.DeliveryStatus = "Cancelled";
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Cancel",
+            Description = $"Cancelled scheduled notification '{n.Title}' (id={n.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    [HttpPut("/api/superadmin/notifications/{id:int}")]
+    public async Task<IActionResult> EditNotification(int id, [FromBody] EditNotificationDto dto)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null) return BadRequest(new { error = "Body required." });
+
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+        if (n.DeliveryStatus != "Scheduled")
+            return BadRequest(new { error = "Only scheduled notifications can be edited." });
+
+        if (!string.IsNullOrWhiteSpace(dto.Title)) n.Title = dto.Title.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Body)) n.Body = dto.Body.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Type)) n.Type = dto.Type.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Severity)) n.Severity = dto.Severity.Trim();
+        if (dto.Link != null) n.Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim();
+        if (dto.ExpiresAt.HasValue) n.ExpiresAt = dto.ExpiresAt;
+        if (dto.ScheduleAt.HasValue) n.ScheduleAt = dto.ScheduleAt;
+        if (!string.IsNullOrWhiteSpace(dto.Scope)) n.Scope = dto.Scope.Trim();
+        if (dto.TargetUserIds != null) n.TargetUserIdsCsv = string.Join(",", dto.TargetUserIds);
+        if (dto.TargetRoles != null) n.TargetRolesCsv = string.Join(",", dto.TargetRoles);
+
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Edit",
+            Description = $"Edited scheduled notification '{n.Title}' (id={n.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    [HttpPost("/api/superadmin/notifications/{id:int}/recall")]
+    public async Task<IActionResult> RecallNotification(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+        if (n.IsRecalled)
+            return BadRequest(new { error = "Notification is already recalled." });
+
+        var now = DateTime.UtcNow;
+        n.IsRecalled = true;
+        n.RecalledAt = now;
+        n.RecalledByUserId = GetCurrentUserId();
+
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Recall",
+            Description = $"Recalled notification '{n.Title}' (id={n.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = now
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    [HttpGet("/api/superadmin/notifications/{id:int}/metrics")]
+    public async Task<IActionResult> NotificationMetrics(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+
+        var rows = await _db.UserNotifications
+            .Where(un => un.NotificationId == id)
+            .Select(un => new { un.ReadAt, un.IsClicked, un.EmailSent })
+            .ToListAsync();
+
+        var total = rows.Count;
+        var read = rows.Count(r => r.ReadAt != null);
+        var clicked = rows.Count(r => r.IsClicked);
+        var emailed = rows.Count(r => r.EmailSent);
+
+        return Ok(new
+        {
+            id = n.Id,
+            title = n.Title,
+            deliveryStatus = n.DeliveryStatus,
+            scheduledAt = n.ScheduleAt,
+            deliveredAt = n.DeliveredAt,
+            totalRecipients = total,
+            read,
+            unread = total - read,
+            clicked,
+            emailed,
+            readRate = total > 0 ? Math.Round((double)read / total, 4) : 0.0,
+            clickRate = total > 0 ? Math.Round((double)clicked / total, 4) : 0.0
+        });
     }
 
     [HttpDelete("/api/superadmin/notifications/{id:int}")]
@@ -670,21 +943,145 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var n = await _db.Notifications.FindAsync(id);
         if (n == null) return NotFound();
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Delete",
+            Description = $"Deleted notification '{n.Title}' (id={n.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
         _db.Notifications.Remove(n);
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
 
+    // ── Notification Templates ────────────────────────────────────────────────
+
+    [HttpGet("/api/superadmin/notification-templates")]
+    public async Task<IActionResult> GetTemplates()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var list = await _db.NotificationTemplates.OrderBy(t => t.Name).ToListAsync();
+        return Ok(list);
+    }
+
+    [HttpPost("/api/superadmin/notification-templates")]
+    public async Task<IActionResult> CreateTemplate([FromBody] NotificationTemplateDto dto)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Name))
+            return BadRequest(new { error = "Name is required." });
+
+        var now = DateTime.UtcNow;
+        var tmpl = new AIInsights.Models.NotificationTemplate
+        {
+            Name = dto.Name.Trim(),
+            Title = dto.Title?.Trim() ?? "",
+            Body = dto.Body?.Trim() ?? "",
+            Type = dto.Type?.Trim() ?? "Announcement",
+            Severity = dto.Severity?.Trim() ?? "normal",
+            Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim(),
+            CreatedByUserId = GetCurrentUserId(),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.NotificationTemplates.Add(tmpl);
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Template.Create",
+            Description = $"Created notification template '{tmpl.Name}'",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = now
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, id = tmpl.Id });
+    }
+
+    [HttpPut("/api/superadmin/notification-templates/{id:int}")]
+    public async Task<IActionResult> UpdateTemplate(int id, [FromBody] NotificationTemplateDto dto)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null) return BadRequest(new { error = "Body required." });
+
+        var tmpl = await _db.NotificationTemplates.FindAsync(id);
+        if (tmpl == null) return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(dto.Name)) tmpl.Name = dto.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Title)) tmpl.Title = dto.Title.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Body)) tmpl.Body = dto.Body.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Type)) tmpl.Type = dto.Type.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Severity)) tmpl.Severity = dto.Severity.Trim();
+        if (dto.Link != null) tmpl.Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim();
+        tmpl.UpdatedAt = DateTime.UtcNow;
+
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Template.Update",
+            Description = $"Updated notification template '{tmpl.Name}' (id={tmpl.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    [HttpDelete("/api/superadmin/notification-templates/{id:int}")]
+    public async Task<IActionResult> DeleteTemplate(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var tmpl = await _db.NotificationTemplates.FindAsync(id);
+        if (tmpl == null) return NotFound();
+
+        _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
+        {
+            Action = "Notification.Template.Delete",
+            Description = $"Deleted notification template '{tmpl.Name}' (id={tmpl.Id})",
+            UserId = GetCurrentUserId() ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+        _db.NotificationTemplates.Remove(tmpl);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    // DTOs
     public class BroadcastNotificationDto
     {
-        public string? Scope { get; set; } // "All" | "SpecificOrgs"
+        public string? Scope { get; set; } // "All" | "Org" | "SpecificOrgs" | "User" | "Role"
         public List<int>? OrganizationIds { get; set; }
+        public List<string>? UserIds { get; set; }
+        public List<string>? Roles { get; set; }
         public string? Title { get; set; }
         public string? Body { get; set; }
         public string? Type { get; set; }
         public string? Severity { get; set; }
         public string? Link { get; set; }
         public DateTime? ExpiresAt { get; set; }
+        public DateTime? ScheduleAt { get; set; }
+    }
+
+    public class EditNotificationDto
+    {
+        public string? Title { get; set; }
+        public string? Body { get; set; }
+        public string? Type { get; set; }
+        public string? Severity { get; set; }
+        public string? Link { get; set; }
+        public DateTime? ExpiresAt { get; set; }
+        public DateTime? ScheduleAt { get; set; }
+        public string? Scope { get; set; }
+        public List<string>? TargetUserIds { get; set; }
+        public List<string>? TargetRoles { get; set; }
+    }
+
+    public class NotificationTemplateDto
+    {
+        public string? Name { get; set; }
+        public string? Title { get; set; }
+        public string? Body { get; set; }
+        public string? Type { get; set; }
+        public string? Severity { get; set; }
+        public string? Link { get; set; }
     }
 
     // ──── Payments Tracking ────

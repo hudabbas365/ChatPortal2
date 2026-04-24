@@ -456,14 +456,35 @@ namespace AIInsights.Migrations
                     b.Property<string>("CreatedByUserId")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Delivered");
+
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsRecalled")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Link")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("OrganizationId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("RecalledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RecalledByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ScheduleAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Scope")
                         .IsRequired()
@@ -476,7 +497,13 @@ namespace AIInsights.Migrations
                     b.Property<string>("SystemKey")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("TargetRolesCsv")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("TargetUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TargetUserIdsCsv")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Title")
@@ -1080,6 +1107,55 @@ namespace AIInsights.Migrations
                     b.ToTable("TokenUsages");
                 });
 
+            modelBuilder.Entity("AIInsights.Models.NotificationTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Link")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("NotificationTemplates");
+                });
+
             modelBuilder.Entity("AIInsights.Models.UserNotification", b =>
                 {
                     b.Property<int>("Id")
@@ -1088,8 +1164,17 @@ namespace AIInsights.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("ClickedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("DismissedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("EmailSent")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsClicked")
+                        .HasColumnType("bit");
 
                     b.Property<int>("NotificationId")
                         .HasColumnType("int");
