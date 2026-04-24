@@ -1,0 +1,94 @@
+@model AIInsights.SuperAdmin.Controllers.SecurityController.IntegrationHealthVm
+@{
+    ViewData["Title"] = "Integration Health";
+    ViewData["ActivePage"] = "integrations";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+@if (Model.AnyDown)
+{
+    <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:.75rem 1.25rem;margin-bottom:1.25rem;color:#991b1b;font-size:.85rem;font-weight:500">
+        ⚠️ One or more integrations are currently <strong>DOWN</strong>. Please investigate.
+    </div>
+}
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Integration Health</h1>
+        <p class="page-desc">Live status of external integrations (polled every 5 minutes)</p>
+    </div>
+</div>
+
+<!-- Status pills strip -->
+<div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1.5rem">
+    @foreach (var p in Model.Providers)
+    {
+        var bg = p.Status == "Up" ? "#dcfce7" : p.Status == "Down" ? "#fee2e2" : "#fef9c3";
+        var fg = p.Status == "Up" ? "#166534" : p.Status == "Down" ? "#991b1b" : "#713f12";
+        var icon = p.Status == "Up" ? "✅" : p.Status == "Down" ? "❌" : "⚠️";
+        <div style="background:@bg;color:@fg;border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-weight:600">
+            @icon @p.Provider — @p.Status
+        </div>
+    }
+</div>
+
+@foreach (var prov in Model.Providers)
+{
+    var statusBg = prov.Status == "Up" ? "#dcfce7" : prov.Status == "Down" ? "#fee2e2" : "#fef9c3";
+    var statusFg = prov.Status == "Up" ? "#166534" : prov.Status == "Down" ? "#991b1b" : "#713f12";
+
+    <div class="card-panel mb-3">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+            <h3 style="margin:0;font-size:1rem;color:#1e3a5f;font-weight:700">@prov.Provider</h3>
+            <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+                <span style="background:@statusBg;color:@statusFg;padding:.25rem .75rem;border-radius:20px;font-size:.82rem;font-weight:600">@prov.Status</span>
+                <span style="font-size:.8rem;color:var(--text-muted)">Latency: @prov.LatencyMs ms</span>
+                <span style="font-size:.8rem;color:var(--text-muted)">24h uptime: @prov.UptimePercent24h%</span>
+                @if (prov.LastChecked.HasValue)
+                {
+                    <span style="font-size:.8rem;color:var(--text-muted)">Last checked: @prov.LastChecked.Value.ToString("HH:mm:ss") UTC</span>
+                }
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(prov.LastError))
+        {
+            <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:.5rem .75rem;font-size:.8rem;color:#991b1b;margin-bottom:.75rem">
+                Last error: @prov.LastError
+            </div>
+        }
+
+        @if (prov.Last20Events.Count > 0)
+        {
+            <table class="tbl" style="font-size:.8rem">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Latency (ms)</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ev in prov.Last20Events)
+                    {
+                        var evBg = ev.Status == "Up" ? "#f0fdf4" : ev.Status == "Down" ? "#fef2f2" : "#fefce8";
+                        <tr style="background:@evBg">
+                            <td style="white-space:nowrap;color:var(--text-muted)">@ev.CreatedAt.ToString("MM/dd HH:mm:ss")</td>
+                            <td>
+                                <span style="font-weight:600;color:@(ev.Status=="Up"?"#166534":ev.Status=="Down"?"#991b1b":"#713f12")">
+                                    @ev.Status
+                                </span>
+                            </td>
+                            <td>@ev.LatencyMs</td>
+                            <td style="color:#666">@(ev.Error ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="font-size:.82rem;color:var(--text-muted);margin:0">No events in the last 24h.</p>
+        }
+    </div>
+}

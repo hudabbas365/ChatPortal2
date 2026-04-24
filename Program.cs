@@ -127,6 +127,10 @@ builder.Services.AddHttpClient("PayPal");
 builder.Services.AddScoped<IPayPalService, PayPalService>();
 builder.Services.AddHostedService<SubscriptionExpiryJob>();
 
+// GeoIP service (D25)
+builder.Services.AddHttpClient("geoip");
+builder.Services.AddScoped<GeoIpService>();
+
 // Session support
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
