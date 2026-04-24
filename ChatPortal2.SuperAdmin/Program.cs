@@ -82,6 +82,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
+builder.Services.AddMemoryCache();
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>

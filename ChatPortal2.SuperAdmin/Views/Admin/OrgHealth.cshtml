@@ -1,0 +1,157 @@
+@{
+    ViewData["Title"] = "Org Health Score";
+    ViewData["ActivePage"] = "health";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<style>
+    .filter-row { display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end; }
+    .score-bar-wrap { display:flex;align-items:center;gap:.5rem;min-width:140px; }
+    .score-bar { flex:1;background:rgba(0,0,0,.08);border-radius:4px;height:6px }
+    .score-fill { height:6px;border-radius:4px;transition:width .4s }
+    .detail-panel { background:rgba(74,142,201,.04);border:1px solid var(--border);border-radius:10px;padding:1rem;
+                    margin-top:.5rem;display:none }
+    .sub-row { display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--border-light);font-size:.82rem }
+    .sub-row:last-child { border-bottom:none }
+    .tip { color:var(--text-muted);font-size:.78rem;padding:.25rem 0; display:flex;gap:.4rem;align-items:baseline }
+    .tip i { color:#f59e0b;flex-shrink:0 }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Org Health Score</h1>
+        <p class="page-desc">Composite score (0–100) per organisation — cached for 10 min. Click any row for details.</p>
+    </div>
+    <button class="btn-ghost-sm" onclick="loadHealth()"><i class="bi bi-arrow-clockwise"></i>Refresh</button>
+</div>
+
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl" id="healthTable">
+        <thead>
+            <tr>
+                <th id="th-org" style="cursor:pointer">Organization ↕</th>
+                <th id="th-plan" style="cursor:pointer">Plan ↕</th>
+                <th id="th-score" style="cursor:pointer">Score ↕</th>
+                <th>Activity</th>
+                <th>Engagement</th>
+                <th>Support</th>
+                <th>Payments</th>
+                <th>Adoption</th>
+                <th>Active Users</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem">Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+<script>
+(function() {
+    let rows = [];
+    let sortCol = 'score', sortAsc = false;
+
+    function scoreColor(s) {
+        if (s >= 70) return '#34d399';
+        if (s >= 40) return '#f59e0b';
+        return '#fb7185';
+    }
+    function scoreBadge(s) {
+        const cls = s >= 70 ? 'badge-emerald' : s >= 40 ? 'badge-amber' : 'badge-rose';
+        return `<span class="badge-sm ${cls}" style="font-size:.78rem;min-width:36px;justify-content:center;display:inline-flex">${s}</span>`;
+    }
+    function subBar(val, max) {
+        const pct = Math.round(val / max * 100);
+        return `<div class="score-bar" style="width:60px;display:inline-block;vertical-align:middle;margin-left:.3rem">
+                    <div class="score-fill" style="width:${pct}%;background:${scoreColor(pct)}"></div>
+                </div>`;
+    }
+    function planBadge(p) { return `<span class="badge-sm badge-indigo">${p}</span>`; }
+
+    function renderTable() {
+        const sorted = [...rows].sort((a,b) => {
+            const av = a[sortCol], bv = b[sortCol];
+            return typeof av === 'string'
+                ? (sortAsc ? av.localeCompare(bv) : bv.localeCompare(av))
+                : (sortAsc ? av - bv : bv - av);
+        });
+        const tbody = document.querySelector('#healthTable tbody');
+        if (!sorted.length) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">No data.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = sorted.map((r, i) => `
+            <tr style="cursor:pointer" onclick="toggleDetail(${i})" data-idx="${i}">
+                <td style="font-weight:600;color:#1e3a5f">${r.orgName}</td>
+                <td>${planBadge(r.plan)}</td>
+                <td>
+                    <div class="score-bar-wrap">
+                        ${scoreBadge(r.healthScore)}
+                        <div class="score-bar"><div class="score-fill" style="width:${r.healthScore}%;background:${scoreColor(r.healthScore)}"></div></div>
+                    </div>
+                </td>
+                <td>${r.activityScore}/30 ${subBar(r.activityScore, 30)}</td>
+                <td>${r.engagementScore}/20 ${subBar(r.engagementScore, 20)}</td>
+                <td>${r.supportScore}/15 ${subBar(r.supportScore, 15)}</td>
+                <td>${r.paymentScore}/20 ${subBar(r.paymentScore, 20)}</td>
+                <td>${r.adoptionScore}/15 ${subBar(r.adoptionScore, 15)}</td>
+                <td>${r.activeUsers}/${r.totalUsers}</td>
+            </tr>
+            <tr id="detail-${i}" style="display:none">
+                <td colspan="9" style="padding:.25rem 1rem 1rem">
+                    <div class="detail-panel" id="panel-${i}">
+                        <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Sub-scores</div>
+                        ${[
+                            ['Activity (30 pts)', r.activityScore, 30, 'msgs/active-user/day in last 7 days'],
+                            ['Engagement (20 pts)', r.engagementScore, 20, `${r.activeUsers} of ${r.totalUsers} users active this week`],
+                            ['Support (15 pts)', r.supportScore, 15, `${r.openTickets} open support ticket(s)`],
+                            ['Payments (20 pts)', r.paymentScore, 20, r.lastPaymentAt ? 'Last payment: ' + new Date(r.lastPaymentAt).toLocaleDateString() : 'No payments'],
+                            ['Adoption (15 pts)', r.adoptionScore, 15, 'Dashboard + datasource creation']
+                        ].map(([label, val, max, hint]) => `
+                            <div class="sub-row">
+                                <span>${label}</span>
+                                <span style="display:flex;align-items:center;gap:.4rem">
+                                    <span style="font-weight:600;color:${scoreColor(Math.round(val/max*100))}">${val}/${max}</span>
+                                    <span style="color:var(--text-muted);font-size:.78rem">${hint}</span>
+                                </span>
+                            </div>`).join('')}
+                        ${r.tips.length ? `
+                        <div style="margin-top:.75rem">
+                            ${r.tips.map(t => `<div class="tip"><i class="bi bi-lightbulb"></i>${t}</div>`).join('')}
+                        </div>` : ''}
+                    </div>
+                </td>
+            </tr>`).join('');
+    }
+
+    window.toggleDetail = function(idx) {
+        const row   = document.getElementById('detail-' + idx);
+        const panel = document.getElementById('panel-' + idx);
+        const show  = row.style.display === 'none';
+        row.style.display   = show ? 'table-row' : 'none';
+        panel.style.display = show ? 'block' : 'none';
+    };
+
+    ['org','plan','score'].forEach(col => {
+        document.getElementById('th-' + col).addEventListener('click', () => {
+            const key = { org:'orgName', plan:'plan', score:'healthScore' }[col];
+            if (sortCol === key) sortAsc = !sortAsc; else { sortCol = key; sortAsc = col !== 'score'; }
+            renderTable();
+        });
+    });
+
+    window.loadHealth = function() {
+        fetch('/api/superadmin/insights/health')
+            .then(r => r.json())
+            .then(data => { rows = data; renderTable(); })
+            .catch(() => {
+                document.querySelector('#healthTable tbody').innerHTML =
+                    '<tr><td colspan="9" style="text-align:center;color:#fb7185">Failed to load data.</td></tr>';
+            });
+    };
+
+    loadHealth();
+})();
+</script>
+}

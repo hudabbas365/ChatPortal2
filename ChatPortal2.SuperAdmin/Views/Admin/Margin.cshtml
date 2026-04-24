@@ -1,0 +1,149 @@
+@{
+    ViewData["Title"] = "AI Spend vs Revenue";
+    ViewData["ActivePage"] = "margin";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var range = ViewBag.Range as string ?? "30d";
+}
+
+<style>
+    .filter-row { display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end; }
+    .filter-label { font-size:.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem }
+    .cp-select { border:1px solid var(--border);border-radius:8px;padding:.4rem .7rem;font-size:.84rem;
+                 font-family:inherit;outline:none;background:var(--surface);color:var(--text) }
+    .chart-wrap { position:relative; height:320px; }
+    .loss { background:rgba(244,63,94,.06) !important; }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">AI Spend vs Revenue</h1>
+        <p class="page-desc">Gross margin per organisation — revenue minus estimated AI cost.</p>
+    </div>
+    <a href="/superadmin/insights/margin/export.csv?range=@range" class="btn-ghost-sm"><i class="bi bi-download"></i>Export CSV</a>
+</div>
+
+<!-- Range filter -->
+<div class="card-panel" style="margin-bottom:1rem">
+    <form method="get" action="/superadmin/insights/margin" class="filter-row">
+        <div>
+            <div class="filter-label">Range</div>
+            <select name="range" class="cp-select" onchange="this.form.submit()">
+                @{ var ranges7d = range == "7d"; var ranges30d = range == "30d"; var ranges90d = range == "90d"; var rangesYtd = range == "ytd"; }
+                @if (ranges7d) { <option value="7d" selected>Last 7 Days</option> } else { <option value="7d">Last 7 Days</option> }
+                @if (ranges30d) { <option value="30d" selected>Last 30 Days</option> } else { <option value="30d">Last 30 Days</option> }
+                @if (ranges90d) { <option value="90d" selected>Last 90 Days</option> } else { <option value="90d">Last 90 Days</option> }
+                @if (rangesYtd) { <option value="ytd" selected>Year to Date</option> } else { <option value="ytd">Year to Date</option> }
+            </select>
+        </div>
+        <button type="submit" class="btn-primary-sm" style="margin-top:auto"><i class="bi bi-filter"></i>Apply</button>
+    </form>
+</div>
+
+<!-- Bar chart -->
+<div class="card-panel" style="margin-bottom:1rem">
+    <div class="card-panel-title">Revenue vs AI Spend (sorted by margin)</div>
+    <div class="chart-wrap"><canvas id="marginChart"></canvas></div>
+</div>
+
+<!-- Table -->
+<div class="card-panel" style="overflow-x:auto">
+    <div class="card-panel-title">Margin Details</div>
+    <table class="tbl" id="marginTable">
+        <thead>
+            <tr>
+                <th id="th-org" style="cursor:pointer">Organization ↕</th>
+                <th id="th-plan" style="cursor:pointer">Plan ↕</th>
+                <th id="th-revenue" style="cursor:pointer">Revenue ↕</th>
+                <th id="th-spend" style="cursor:pointer">AI Spend ↕</th>
+                <th id="th-margin" style="cursor:pointer">Margin ↕</th>
+                <th id="th-pct" style="cursor:pointer">Margin % ↕</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+    const range = '@range';
+    let rows = [];
+    let sortCol = 'margin', sortAsc = true;
+
+    function fmtUsd(n) { return '$' + Math.abs(n).toFixed(2); }
+    function pctBadge(pct) {
+        const cls = pct < 0 ? 'badge-rose' : pct < 20 ? 'badge-amber' : 'badge-emerald';
+        return `<span class="badge-sm ${cls}">${pct.toFixed(1)}%</span>`;
+    }
+
+    function renderTable() {
+        const sorted = [...rows].sort((a,b) => {
+            const av = a[sortCol], bv = b[sortCol];
+            return typeof av === 'string'
+                ? (sortAsc ? av.localeCompare(bv) : bv.localeCompare(av))
+                : (sortAsc ? av - bv : bv - av);
+        });
+        const tbody = document.querySelector('#marginTable tbody');
+        if (!sorted.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No data for this period.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = sorted.map(r => `
+            <tr class="${r.margin < 0 ? 'loss' : ''}">
+                <td style="font-weight:600;color:#1e3a5f">${r.orgName}</td>
+                <td><span class="badge-sm badge-indigo">${r.plan}</span></td>
+                <td>${fmtUsd(r.revenue)}</td>
+                <td style="color:#fb7185">${fmtUsd(r.spend)}</td>
+                <td style="${r.margin < 0 ? 'color:#fb7185;font-weight:600' : 'color:#34d399;font-weight:600'}">${r.margin < 0 ? '-' : ''}${fmtUsd(r.margin)}</td>
+                <td>${pctBadge(r.marginPct)}</td>
+            </tr>`).join('');
+    }
+
+    ['org','plan','revenue','spend','margin','pct'].forEach(col => {
+        document.getElementById('th-' + col).addEventListener('click', () => {
+            const key = { org:'orgName', plan:'plan', revenue:'revenue', spend:'spend', margin:'margin', pct:'marginPct' }[col];
+            if (sortCol === key) sortAsc = !sortAsc; else { sortCol = key; sortAsc = true; }
+            renderTable();
+        });
+    });
+
+    fetch('/api/superadmin/insights/margin?range=' + range)
+        .then(r => r.json())
+        .then(data => {
+            rows = data;
+
+            // Build chart (only show orgs with any data)
+            const chartRows = data.filter(r => r.revenue > 0 || r.spend > 0)
+                                  .sort((a,b) => a.margin - b.margin)
+                                  .slice(0, 20);
+            const ctx = document.getElementById('marginChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartRows.map(r => r.orgName),
+                    datasets: [
+                        { label:'Revenue', data: chartRows.map(r => r.revenue), backgroundColor:'rgba(52,211,153,.7)' },
+                        { label:'AI Spend', data: chartRows.map(r => -r.spend), backgroundColor:'rgba(244,63,94,.7)' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+                    scales: {
+                        x: { stacked: true, title:{ display:true, text:'USD' } },
+                        y: { stacked: true }
+                    },
+                    plugins: { legend:{ position:'bottom' }, tooltip:{ callbacks:{
+                        label: ctx => `${ctx.dataset.label}: $${Math.abs(ctx.parsed.x).toFixed(2)}`
+                    }}}
+                }
+            });
+
+            renderTable();
+        })
+        .catch(() => console.warn('Failed to load margin data'));
+})();
+</script>
+}
