@@ -26,6 +26,7 @@
                 <th>Plan Tier</th>
                 <th>Licenses</th>
                 <th>Created</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -93,6 +94,11 @@
                         </div>
                     </td>
                     <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
+                    <td>
+                        <a href="/superadmin/organizations/@org.Id/invoices" class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem">
+                            <i class="bi bi-receipt"></i> Invoices
+                        </a>
+                    </td>
                 </tr>
             }
         </tbody>

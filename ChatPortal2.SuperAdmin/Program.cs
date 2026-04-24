@@ -7,7 +7,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
 using System.Security.Claims;
+
+// Set QuestPDF community license
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -84,6 +88,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
+builder.Services.AddScoped<InvoicePdfService>();
+builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddMemoryCache();
 builder.Services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN");
 builder.Services.AddControllersWithViews()
