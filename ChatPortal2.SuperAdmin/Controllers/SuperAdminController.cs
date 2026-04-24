@@ -81,9 +81,25 @@ public class SuperAdminController : Controller
         var now = DateTime.UtcNow;
         var activeNow = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.AddMinutes(-5));
         var activeToday = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.Date);
-        var dau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-1)).Select(l => l.UserId).Distinct().CountAsync();
-        var wau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-7)).Select(l => l.UserId).Distinct().CountAsync();
-        var mau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-30)).Select(l => l.UserId).Distinct().CountAsync();
+
+        // Single pass over ActivityLogs: compute DAU/WAU/MAU thresholds and count distinct users per band
+        var mauCutoff = now.AddDays(-30);
+        var wauCutoff = now.AddDays(-7);
+        var dauCutoff = now.AddDays(-1);
+
+        var activityCounts = await _db.ActivityLogs
+            .Where(l => l.CreatedAt >= mauCutoff)
+            .GroupBy(l => l.UserId)
+            .Select(g => new
+            {
+                UserId = g.Key,
+                MaxDate = g.Max(l => l.CreatedAt)
+            })
+            .ToListAsync();
+
+        var mau = activityCounts.Count;
+        var wau = activityCounts.Count(g => g.MaxDate >= wauCutoff);
+        var dau = activityCounts.Count(g => g.MaxDate >= dauCutoff);
 
         return new DashboardStatsDto
         {

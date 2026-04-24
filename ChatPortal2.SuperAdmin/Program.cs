@@ -128,7 +128,7 @@ app.Use(async (context, next) =>
             if (!cache.TryGetValue(cacheKey, out _))
             {
                 var db = context.RequestServices.GetRequiredService<AppDbContext>();
-                var user = await db.Users.FindAsync(userId) as ApplicationUser;
+                var user = await db.Users.OfType<ApplicationUser>().FirstOrDefaultAsync(u => u.Id == userId);
                 if (user != null)
                 {
                     user.LastSeenAt = DateTime.UtcNow;
