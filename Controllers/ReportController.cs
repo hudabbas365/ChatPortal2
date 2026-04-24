@@ -300,14 +300,75 @@ public class ReportController : Controller
         if (!await _permissions.CanEditAsync(ws.Id, userId))
             return StatusCode(403, new { error = "You need Editor or Admin role to create reports." });
 
+        var name = (req.Name ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(name)) name = "Untitled Report";
+        var chartIdsJson = req.ChartIds != null ? JsonConvert.SerializeObject(req.ChartIds) : null;
+
+        // Upsert-by-name: if a report with the same name already exists in this workspace
+        // for the same data source (and agent scope, when provided), overwrite it instead of
+        // creating a duplicate. This preserves the 1-datasource → many-reports relationship:
+        // distinct names bound to the same datasource produce new reports, while saving with
+        // an existing name updates the matching report in place.
+        var nameLower = name.ToLower();
+        var existingQuery = _db.Reports.Where(r =>
+            r.WorkspaceId == ws.Id &&
+            r.DatasourceId == req.DatasourceId &&
+            r.Name.ToLower() == nameLower);
+        if (req.AgentId.HasValue)
+            existingQuery = existingQuery.Where(r => r.AgentId == req.AgentId);
+        var existing = await existingQuery.FirstOrDefaultAsync();
+
+        if (existing != null)
+        {
+            // Overwrite existing report. Capture prior canvas as an auto-revision for history
+            // parity with PUT /api/reports/{guid}.
+            if (!string.IsNullOrEmpty(existing.CanvasJson) && existing.CanvasJson != req.CanvasJson)
+            {
+                _db.ReportRevisions.Add(new ReportRevision
+                {
+                    ReportId = existing.Id,
+                    Kind = "Auto",
+                    Name = null,
+                    CanvasJson = existing.CanvasJson,
+                    ReportName = existing.Name,
+                    CreatedBy = userId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // Trim auto-revisions to the most recent 20 per report.
+                const int MaxAutoRevisions = 20;
+                var autoCount = await _db.ReportRevisions
+                    .CountAsync(r => r.ReportId == existing.Id && r.Kind == "Auto");
+                if (autoCount >= MaxAutoRevisions)
+                {
+                    var stale = await _db.ReportRevisions
+                        .Where(r => r.ReportId == existing.Id && r.Kind == "Auto")
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Skip(MaxAutoRevisions - 1)
+                        .ToListAsync();
+                    _db.ReportRevisions.RemoveRange(stale);
+                }
+            }
+
+            existing.DashboardId = req.DashboardId ?? existing.DashboardId;
+            if (req.AgentId.HasValue) existing.AgentId = req.AgentId;
+            existing.ChartIds = chartIdsJson ?? existing.ChartIds;
+            existing.CanvasJson = req.CanvasJson ?? existing.CanvasJson;
+            // DatasourceId is intentionally left as-is to preserve the binding the match was based on.
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            return Ok(new { existing.Id, existing.Guid, existing.Name, existing.Status, overwritten = true });
+        }
+
         var report = new Report
         {
-            Name = req.Name ?? "Untitled Report",
+            Name = name,
             WorkspaceId = ws.Id,
             DashboardId = req.DashboardId,
             DatasourceId = req.DatasourceId,
             AgentId = req.AgentId,
-            ChartIds = req.ChartIds != null ? JsonConvert.SerializeObject(req.ChartIds) : null,
+            ChartIds = chartIdsJson,
             CanvasJson = req.CanvasJson,
             Status = "Draft",
             CreatedBy = req.CreatedBy
@@ -316,7 +377,7 @@ public class ReportController : Controller
         _db.Reports.Add(report);
         await _db.SaveChangesAsync();
 
-        return Ok(new { report.Id, report.Guid, report.Name, report.Status });
+        return Ok(new { report.Id, report.Guid, report.Name, report.Status, overwritten = false });
     }
 
     [HttpPut("/api/reports/{guid}")]
