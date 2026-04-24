@@ -136,6 +136,13 @@ public class SuperAdminController : Controller
         if (!Enum.TryParse<PlanType>(req.Plan, true, out var plan))
             return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
 
+        var callerId = GetCurrentUserId();
+        var callerEmail = User.FindFirstValue(System.Security.Claims.ClaimTypes.Email)
+                          ?? User.FindFirstValue("email");
+
+        var fromPlan = org.Plan;
+        var fromLicenses = org.PurchasedLicenses;
+
         org.Plan = plan;
 
         // SuperAdmin grants a number of paid licenses to the organization.
@@ -163,6 +170,31 @@ public class SuperAdminController : Controller
             // Downgrading to a non-paid plan clears the license pool.
             org.PurchasedLicenses = 0;
         }
+
+        var now = DateTime.UtcNow;
+        _db.PlanChangeLogs.Add(new PlanChangeLog
+        {
+            OrganizationId = id,
+            FromPlan = fromPlan.ToString(),
+            ToPlan = org.Plan.ToString(),
+            FromPurchasedLicenses = fromLicenses,
+            ToPurchasedLicenses = org.PurchasedLicenses,
+            FromLicenseEndsAt = org.LicenseEndsAt,
+            ToLicenseEndsAt = org.LicenseEndsAt,
+            ChangeType = "PlanChange",
+            ChangedByUserId = callerId,
+            ChangedByEmail = callerEmail,
+            CreatedAt = now
+        });
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.PlanChange",
+            Description = $"Plan changed for {org.Name}: {fromPlan} → {org.Plan}, licenses {fromLicenses} → {org.PurchasedLicenses}",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
 
         await _db.SaveChangesAsync();
         return Ok(new
@@ -642,12 +674,14 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             CreatedAt = now
         };
 
+        int sentCount;
         if (scope.Equals("All", StringComparison.OrdinalIgnoreCase))
         {
             var n = Build(null);
             _db.Notifications.Add(n);
             await _db.SaveChangesAsync();
             created.Add(n.Id);
+            sentCount = 1;
         }
         else
         {
@@ -659,9 +693,19 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 _db.Notifications.Add(n);
             }
             await _db.SaveChangesAsync();
+            sentCount = dto.OrganizationIds.Count;
         }
 
-        return Ok(new { success = true, count = scope == "All" ? 1 : dto.OrganizationIds!.Count });
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Notification.Broadcast",
+            Description = $"Broadcast notification \"{dto.Title!.Trim()}\" (scope: {scope}, count: {sentCount})",
+            UserId = callerId ?? "",
+            CreatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, count = sentCount });
     }
 
     [HttpDelete("/api/superadmin/notifications/{id:int}")]
@@ -670,7 +714,20 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var n = await _db.Notifications.FindAsync(id);
         if (n == null) return NotFound();
+
+        var callerId = GetCurrentUserId();
+        var title = n.Title;
+
         _db.Notifications.Remove(n);
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Notification.Delete",
+            Description = $"Deleted notification \"{title}\" (id: {id})",
+            UserId = callerId ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
@@ -747,9 +804,22 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
+        var callerId = GetCurrentUserId();
+        var now = DateTime.UtcNow;
+
         org.IsBlocked = true;
         org.BlockedReason = req.Reason;
-        org.BlockedAt = DateTime.UtcNow;
+        org.BlockedAt = now;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.Block",
+            Description = $"Blocked organization {org.Name}. Reason: {req.Reason ?? "—"}",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
@@ -761,9 +831,22 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
+        var callerId = GetCurrentUserId();
+        var now = DateTime.UtcNow;
+
         org.IsBlocked = false;
         org.BlockedReason = null;
         org.BlockedAt = null;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.Unblock",
+            Description = $"Unblocked organization {org.Name}.",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
