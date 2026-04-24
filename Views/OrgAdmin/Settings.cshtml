@@ -15,13 +15,10 @@
                 <i class="bi bi-building"></i><span>Organization</span>
             </button>
             <button class="org-settings-nav-item" data-tab="users">
-                <i class="bi bi-people"></i><span>Users</span>
+                <i class="bi bi-people"></i><span>Users &amp; Licensing</span>
             </button>
             <button class="org-settings-nav-item" data-tab="ws-members">
                 <i class="bi bi-person-badge"></i><span>Workspace Members</span>
-            </button>
-            <button class="org-settings-nav-item" data-tab="billing">
-                <i class="bi bi-credit-card-2-front"></i><span>Billing</span>
             </button>
             <button class="org-settings-nav-item" data-tab="compliance">
                 <i class="bi bi-shield-check"></i><span>Compliance</span>
@@ -29,6 +26,9 @@
             <button class="org-settings-nav-item" data-tab="activity">
                 <i class="bi bi-activity"></i><span>Activity</span>
             </button>
+            <a class="org-settings-nav-item" href="/org/notifications">
+                <i class="bi bi-bell"></i><span>Manage Notifications</span>
+            </a>
         </aside>
 
         <!-- Right content area -->
@@ -53,12 +53,10 @@
                     <div class="org-form-divider"></div>
                     <div class="org-form-section">
                         <div class="org-form-section-label">
-                            <i class="bi bi-image"></i>Branding
+                            <i class="bi bi-envelope-check"></i>Email Verification
                         </div>
-                        <div class="org-form-group">
-                            <label class="org-form-label">Logo URL</label>
-                            <input type="url" class="org-form-input" placeholder="https://your-logo-url.com/logo.png" autocomplete="off" />
-                            <span class="org-form-hint">Recommended: 256×256px, PNG or SVG</span>
+                        <div id="orgEmailVerifyStatus" class="org-form-group">
+                            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Checking verification status&hellip;</div>
                         </div>
                     </div>
                 </div>
@@ -67,8 +65,8 @@
             <!-- Users Tab -->
             <div class="org-settings-panel" data-panel="users">
                 <div class="org-panel-header">
-                    <h2>User Management</h2>
-                    <p>Manage your organization's users, roles, and permissions</p>
+                    <h2>Users &amp; Licensing</h2>
+                    <p>Manage users, licenses, token usage, and your subscription</p>
                 </div>
                 <div class="org-form-card">
                     <!-- Token Usage Widget -->
@@ -127,6 +125,14 @@
                         </table>
                     </div>
                 </div>
+                <div class="org-form-card" style="margin-top:16px">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 style="margin:0;font-size:1rem;font-weight:600"><i class="bi bi-credit-card-2-front me-2"></i>Subscription &amp; Billing</h4>
+                    </div>
+                    <div id="billingInfo">
+                        <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading subscription info...</div>
+                    </div>
+                </div>
             </div>
 
             <!-- Workspace Members Tab -->
@@ -137,19 +143,6 @@
                 </div>
                 <div class="org-form-card">
                     <div id="wsMemberWorkspaceList"><div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div></div>
-                </div>
-            </div>
-
-            <!-- Billing Tab -->
-            <div class="org-settings-panel" data-panel="billing">
-                <div class="org-panel-header">
-                    <h2>Billing &amp; Subscription</h2>
-                    <p>Manage your plan and view invoices</p>
-                </div>
-                <div class="org-form-card">
-                    <div id="billingInfo">
-                        <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading subscription info...</div>
-                    </div>
                 </div>
             </div>
 
@@ -274,6 +267,62 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn cp-btn-gradient" id="submitResetPasswordBtn">
                     <i class="bi bi-arrow-clockwise me-1"></i>Reset Password
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generic Confirm Action Modal (Suspend / Remove / etc.) -->
+<div class="modal fade" id="confirmActionModal" tabindex="-1" aria-labelledby="confirmActionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmActionModalLabel">
+                    <i class="bi bi-question-circle me-2" id="confirmActionIcon"></i>
+                    <span id="confirmActionTitle">Confirm Action</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2" id="confirmActionMessage">Are you sure?</p>
+                <p class="text-muted small mb-0" id="confirmActionSubtext"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmActionBtn">
+                    <i class="bi bi-check2 me-1"></i><span id="confirmActionBtnLabel">Confirm</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Change Role Modal -->
+<div class="modal fade" id="changeRoleModal" tabindex="-1" aria-labelledby="changeRoleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="changeRoleModalLabel"><i class="bi bi-person-gear me-2"></i>Change User Role</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="changeRoleAlert" class="alert d-none"></div>
+                <input type="hidden" id="changeRoleUserId" />
+                <p class="text-muted small">Select a new role for this user.</p>
+                <div class="mb-3">
+                    <label class="form-label-cp">Role</label>
+                    <select class="form-select cp-input" id="changeRoleSelect">
+                        <option value="User">User</option>
+                        <option value="Contributor">Contributor</option>
+                        <option value="OrgAdmin">Organization Admin</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn cp-btn-gradient" id="submitChangeRoleBtn">
+                    <i class="bi bi-check2 me-1"></i>Save Role
                 </button>
             </div>
         </div>
@@ -513,9 +562,9 @@
             ${trialBadge}
             <div id="subscriptionStatusCard" class="glass-card p-3 mb-3"></div>
             <div class="row g-3 mb-4">
-                ${planCard('Free Trial', '30 days', ['Up to 3 Workspaces', '1 AI Agent', '100 queries/mo', 'Basic charts'], isFreeTrial, 'FreeTrial', 'bg-info')}
-                ${planCard('Professional', '$25<span class="fs-6 fw-normal">/mo</span>', ['Unlimited Workspaces', '10 AI Agents', '10,000 queries/mo', 'All chart types', 'Priority support'], isPro, 'Professional', 'bg-primary')}
-                ${planCard('Enterprise', '$45<span class="fs-6 fw-normal">/mo</span>', ['Unlimited everything', 'Custom AI Agents', 'Unlimited queries', 'Custom branding', 'Dedicated support', 'SLA guarantee'], isEnterprise, 'Enterprise', 'bg-dark')}
+                ${planCard('Free Trial', '30 days', ['1 Workspace', '2M AI tokens / month', 'Basic charts', 'Community support'], isFreeTrial, 'FreeTrial', 'bg-info')}
+                ${planCard('Professional', '$25<span class="fs-6 fw-normal">/user/mo</span>', ['Up to 10 Workspaces', '5M AI tokens / org / month', 'Top-up token packs', 'All chart types', 'Priority support'], isPro, 'Professional', 'bg-primary')}
+                ${planCard('Enterprise', '$45<span class="fs-6 fw-normal">/user/mo</span>', ['Unlimited Workspaces', '10M AI tokens / org / month', 'Top-up token packs', 'Custom branding', 'SSO / SAML', 'Dedicated support'], isEnterprise, 'Enterprise', 'bg-dark')}
             </div>
             <div class="glass-card p-4 mb-3">
                 <h5>Token Add-ons</h5>
@@ -602,6 +651,7 @@
                     loadBilling();
                     loadLicenseInfo();
                     loadTokenUsage();
+                    if (typeof window.refreshTrialBanner === 'function') window.refreshTrialBanner();
                 } else {
                     throw new Error(activateData.error || 'Subscription activation pending. Please check back shortly.');
                 }
@@ -647,6 +697,7 @@
                     loadBilling();
                     loadLicenseInfo();
                     loadTokenUsage();
+                    if (typeof window.refreshTrialBanner === 'function') window.refreshTrialBanner();
                 } else {
                     throw new Error(captureData.error || 'Payment capture failed.');
                 }
@@ -823,18 +874,67 @@
             }).catch(() => {});
     }
 
-    window.changeRole = function(uid, current) {
-        const role = prompt('Enter new role (User, Contributor, OrgAdmin):', current);
-        if (!role) return;
-        fetch(`/api/org/users/${uid}/role`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ role }) })
-            .then(() => loadUsers());
+    // Nice Bootstrap-based confirm (replaces native confirm()).
+    // Returns a Promise<boolean>.
+    window.cpConfirm = function(opts) {
+        return new Promise(resolve => {
+            const modalEl = document.getElementById('confirmActionModal');
+            const iconEl  = document.getElementById('confirmActionIcon');
+            const titleEl = document.getElementById('confirmActionTitle');
+            const msgEl   = document.getElementById('confirmActionMessage');
+            const subEl   = document.getElementById('confirmActionSubtext');
+            const btn     = document.getElementById('confirmActionBtn');
+            const btnLbl  = document.getElementById('confirmActionBtnLabel');
+
+            titleEl.textContent = opts.title || 'Confirm Action';
+            msgEl.textContent   = opts.message || 'Are you sure?';
+            subEl.textContent   = opts.subtext || '';
+            btnLbl.textContent  = opts.confirmText || 'Confirm';
+            iconEl.className    = 'bi me-2 ' + (opts.icon || 'bi-question-circle');
+            btn.className       = 'btn btn-' + (opts.variant || 'danger');
+
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            const onConfirm = () => { cleanup(); modal.hide(); resolve(true); };
+            const onHide    = () => { cleanup(); resolve(false); };
+            function cleanup() {
+                btn.removeEventListener('click', onConfirm);
+                modalEl.removeEventListener('hidden.bs.modal', onHide);
+            }
+            btn.addEventListener('click', onConfirm, { once: true });
+            modalEl.addEventListener('hidden.bs.modal', onHide, { once: true });
+            modal.show();
+        });
     };
-    window.suspendUser = function(uid) {
-        if (!confirm('Suspend this user?')) return;
+
+    window.changeRole = function(uid, current) {
+        document.getElementById('changeRoleUserId').value = uid;
+        const sel = document.getElementById('changeRoleSelect');
+        sel.value = ['User','Contributor','OrgAdmin'].includes(current) ? current : 'User';
+        document.getElementById('changeRoleAlert').classList.add('d-none');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('changeRoleModal')).show();
+    };
+    window.suspendUser = async function(uid) {
+        const ok = await cpConfirm({
+            title: 'Suspend User',
+            message: 'Suspend this user?',
+            subtext: 'They will lose access immediately but their data will be preserved. You can unsuspend at any time.',
+            icon: 'bi-pause-circle',
+            variant: 'warning',
+            confirmText: 'Suspend User'
+        });
+        if (!ok) return;
         fetch(`/api/org/users/${uid}/suspend`, { method: 'PUT' }).then(() => loadUsers());
     };
-    window.removeUser = function(uid) {
-        if (!confirm('Remove this user from the organization?')) return;
+    window.removeUser = async function(uid) {
+        const ok = await cpConfirm({
+            title: 'Remove User',
+            message: 'Remove this user from the organization?',
+            subtext: 'This action cannot be undone. The user will lose all access to organization resources.',
+            icon: 'bi-trash',
+            variant: 'danger',
+            confirmText: 'Remove User'
+        });
+        if (!ok) return;
         fetch(`/api/org/users/${uid}`, { method: 'DELETE' }).then(() => loadUsers());
     };
     window.assignLicense = function(uid) {
@@ -849,6 +949,15 @@
             alert('License assigned successfully.');
             loadUsers();
             loadLicenseInfo();
+
+            // If the admin just upgraded themselves, refresh the cached plan and
+            // redraw the trial banner so the "X days remaining" message clears.
+            try {
+                const me = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                if (me && me.id === uid && typeof window.refreshTrialBanner === 'function') {
+                    window.refreshTrialBanner();
+                }
+            } catch {}
         });
     };
     window.openResetPassword = function(uid) {
@@ -857,6 +966,27 @@
         document.getElementById('resetPasswordAlert').classList.add('d-none');
         new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
     };
+
+    // Change Role modal submit
+    document.getElementById('submitChangeRoleBtn')?.addEventListener('click', function() {
+        const uid     = document.getElementById('changeRoleUserId').value;
+        const role    = document.getElementById('changeRoleSelect').value;
+        const alertEl = document.getElementById('changeRoleAlert');
+        if (!uid || !role) return;
+        fetch(`/api/org/users/${uid}/role`, {
+            method: 'PUT', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ role })
+        }).then(r => r.json().catch(() => ({}))).then(d => {
+            if (d && d.error) {
+                alertEl.className = 'alert alert-danger'; alertEl.textContent = d.error; alertEl.classList.remove('d-none');
+            } else {
+                bootstrap.Modal.getInstance(document.getElementById('changeRoleModal'))?.hide();
+                loadUsers();
+            }
+        }).catch(() => {
+            alertEl.className = 'alert alert-danger'; alertEl.textContent = 'Request failed.'; alertEl.classList.remove('d-none');
+        });
+    });
 
     // Create User
     document.getElementById('createUserBtn')?.addEventListener('click', function() {
@@ -1004,11 +1134,12 @@
 
     // ---- Left sidebar tab switching ----
     function switchSettingsTab(tab) {
+        // Billing tab was merged into the Users & Licensing tab.
+        if (tab === 'billing') tab = 'users';
         document.querySelectorAll('.org-settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         document.querySelectorAll('.org-settings-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
-        if (tab === 'billing') loadBilling();
-        else if (tab === 'activity') loadActivity();
-        else if (tab === 'users') { loadUsers(); loadTokenUsage(); loadLicenseInfo(); }
+        if (tab === 'activity') loadActivity();
+        else if (tab === 'users') { loadUsers(); loadTokenUsage(); loadLicenseInfo(); loadBilling(); }
         else if (tab === 'ws-members' && window.orgAdminWM) orgAdminWM.init(orgId);
     }
     document.querySelectorAll('.org-settings-nav-item').forEach(btn => {
@@ -1020,10 +1151,78 @@
     const tabParam = params.get('tab');
     if (tabParam) switchSettingsTab(tabParam);
 
-    // Populate org name from stored user data
+    // Populate org name + email from stored user data, then refresh from /api/auth/me
     const orgNameInput = document.getElementById('orgNameInput');
-    if (orgNameInput && user) {
-        orgNameInput.value = user.orgName || '';
+    const orgEmailInput = document.getElementById('orgEmailInput');
+    if (orgNameInput && user) orgNameInput.value = user.orgName || '';
+    if (orgEmailInput && user) orgEmailInput.value = user.orgEmail || user.email || '';
+
+    (async function refreshOrgIdentity() {
+        try {
+            const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+            if (!r.ok) return;
+            const me = await r.json();
+            if (orgNameInput) orgNameInput.value = me.orgName || orgNameInput.value || '';
+            if (orgEmailInput) orgEmailInput.value = me.orgEmail || me.email || orgEmailInput.value || '';
+            // Keep cp_user in sync so other pages benefit
+            try {
+                const cached = JSON.parse(localStorage.getItem('cp_user') || 'null') || {};
+                cached.orgName = me.orgName ?? cached.orgName;
+                cached.orgEmail = me.orgEmail ?? me.email ?? cached.orgEmail;
+                cached.email = me.email ?? cached.email;
+                localStorage.setItem('cp_user', JSON.stringify(cached));
+            } catch { }
+        } catch { }
+    })();
+
+    // ---- Email verification status (Organization tab) ----
+    function renderVerifyStatus(isVerified) {
+        const el = document.getElementById('orgEmailVerifyStatus');
+        if (!el) return;
+        if (isVerified) {
+            el.innerHTML = '<div class="alert alert-success mb-0 py-2"><i class="bi bi-check-circle-fill me-2"></i>Your organization email is verified.</div>';
+        } else {
+            el.innerHTML = `
+                <div class="alert alert-warning mb-2 py-2">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Your organization email has not been verified yet.
+                </div>
+                <button type="button" class="btn btn-sm cp-btn-gradient" id="resendConfirmEmailBtn">
+                    <i class="bi bi-envelope-arrow-up me-1"></i>Resend Confirmation Email
+                </button>
+                <span id="resendConfirmEmailMsg" class="ms-2 small"></span>`;
+            document.getElementById('resendConfirmEmailBtn').addEventListener('click', async function () {
+                const btn = this;
+                const msg = document.getElementById('resendConfirmEmailMsg');
+                btn.disabled = true;
+                msg.textContent = '';
+                msg.className = 'ms-2 small text-muted';
+                try {
+                    const r = await fetch('/api/auth/resend-confirmation', { method: 'POST', credentials: 'same-origin' });
+                    const d = await r.json().catch(() => ({}));
+                    if (r.ok && d.success) {
+                        msg.className = 'ms-2 small text-success';
+                        msg.innerHTML = '<i class="bi bi-check-circle me-1"></i>' + (d.message || 'Confirmation email sent.');
+                    } else {
+                        msg.className = 'ms-2 small text-danger';
+                        msg.textContent = d.error || d.message || 'Failed to send confirmation email.';
+                    }
+                } catch {
+                    msg.className = 'ms-2 small text-danger';
+                    msg.textContent = 'Network error. Please try again.';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+    }
+
+    function loadVerifyStatus() {
+        if (!orgId) return;
+        fetch(`/api/auth/org-verified?orgId=${orgId}`, { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : { isVerified: false })
+            .then(d => renderVerifyStatus(!!d.isVerified))
+            .catch(() => renderVerifyStatus(false));
     }
 
     // Initial loads
@@ -1031,6 +1230,7 @@
     loadTokenUsage();
     loadLicenseInfo();
     loadBilling();
+    loadVerifyStatus();
 })();
 </script>
 <script src="~/js/orgAdminWorkspaceMembers.js"></script>

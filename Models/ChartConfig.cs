@@ -15,6 +15,12 @@ public class ChartStyleConfig
     public bool Animated { get; set; } = true;
     public bool Responsive { get; set; } = true;
     public string BorderRadius { get; set; } = "4";
+
+    // Card-level visual customization
+    public string BoxShadow { get; set; } = "none"; // none | soft | medium | strong
+    public string CardBackgroundColor { get; set; } = "";
+    public string BackgroundImage { get; set; } = ""; // data URL (base64)
+    public string IconImage { get; set; } = "";       // data URL (base64)
 }
 
 public class ChartConfig

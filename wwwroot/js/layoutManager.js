@@ -43,6 +43,10 @@ class LayoutManager {
                 body: JSON.stringify(chart)
             }).catch(err => console.warn('Could not persist snap:', err));
         });
+        // After snapping, two cards can land on the same grid line — resolve any
+        // residual overlaps by pushing the lower-priority card down just enough
+        // to clear the collision, so "Snap to Grid" never leaves charts stacked.
+        this._resolveOverlaps();
         if (window.groupManager) window.groupManager._renderGroupOutlines();
     }
 
@@ -167,6 +171,37 @@ class LayoutManager {
         });
     }
 
+    // Phase 33-B10 — Tidy pack: lay selected charts out in a single row/column
+    // with a uniform gap, starting at the topmost/leftmost selected position.
+    // Works with 2+ selected items (unlike distribute which requires 3+).
+    tidyRow(gap) {
+        const items = this._getSelectedCards();
+        if (items.length < 2) return;
+        const g = (gap === undefined) ? 16 : gap;
+        items.sort((a, b) => a.chart.posX - b.chart.posX);
+        const startX = items[0].chart.posX;
+        const y = items[0].chart.posY;
+        let cx = startX;
+        items.forEach(i => {
+            this._setPos(i, Math.round(cx), y);
+            cx += i.card.offsetWidth + g;
+        });
+    }
+
+    tidyColumn(gap) {
+        const items = this._getSelectedCards();
+        if (items.length < 2) return;
+        const g = (gap === undefined) ? 16 : gap;
+        items.sort((a, b) => a.chart.posY - b.chart.posY);
+        const startY = items[0].chart.posY;
+        const x = items[0].chart.posX;
+        let cy = startY;
+        items.forEach(i => {
+            this._setPos(i, x, Math.round(cy));
+            cy += i.card.offsetHeight + g;
+        });
+    }
+
     // ── Z-Order ─────────────────────────────────────────────────
 
     bringForward() {
@@ -189,34 +224,141 @@ class LayoutManager {
 
     // ── Auto-arrange (grid layout) ──────────────────────────────
 
+    // Pack charts left-to-right into rows using EACH card's real rendered
+    // width/height so cards with different widths (KPIs, charts, full-width
+    // tables) tile without overlap and without leaving huge gaps. Wrap to
+    // the next row when the current card won't fit. Full-width cards (≥ 10
+    // cols or > 75% of the canvas) always start — and close — their own row.
     autoArrange() {
-        const charts = window.canvasManager?.charts || [];
+        const cm = window.canvasManager;
+        const charts = cm?.charts || [];
         if (charts.length === 0) return;
 
-        const cols = Math.max(1, Math.ceil(Math.sqrt(charts.length)));
-        const padding = 24;
-        const cardWidth = 380;
-        const cardHeight = 340;
+        const dropZone = document.getElementById('chart-canvas-drop');
+        if (!dropZone) return;
 
-        charts.forEach((chart, i) => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            chart.posX = padding + col * (cardWidth + padding);
-            chart.posY = padding + row * (cardHeight + padding);
+        const margin = 20;
+        const rowGap = 16;
+        const colGap = 16;
 
-            if (this._snapToGrid) {
-                chart.posX = this.snapValue(chart.posX);
-                chart.posY = this.snapValue(chart.posY);
+        const scrollEl = dropZone.parentElement;
+        const viewportW = scrollEl ? scrollEl.clientWidth : dropZone.clientWidth;
+        const zoneW = dropZone.clientWidth;
+        const canvasBase = Math.max(
+            cm.colsToPixels ? cm.colsToPixels(12) : 900,
+            Math.min(viewportW, zoneW) - margin * 2
+        );
+
+        // Preserve existing reading order (top-to-bottom, left-to-right)
+        // so auto-arrange feels like "tidy up" rather than "shuffle".
+        const ordered = charts.slice().sort((a, b) => {
+            const ay = a.posY || 0, by = b.posY || 0;
+            if (ay !== by) return ay - by;
+            return (a.posX || 0) - (b.posX || 0);
+        });
+
+        let cursorX = margin;
+        let rowY = margin;
+        let rowMaxH = 0;
+
+        ordered.forEach(chart => {
+            const card = document.querySelector(`.chart-card[data-chart-id="${chart.id}"]`);
+            let w = card ? card.offsetWidth
+                : (cm.colsToPixels ? cm.colsToPixels(chart.width || 6) : 380);
+            let h = card ? card.offsetHeight : ((chart.height || 300) + 44);
+            if (w > canvasBase) w = canvasBase;
+
+            const isFullWidth = (chart.width || 6) >= 10 || w > canvasBase * 0.75;
+            if (isFullWidth && cursorX > margin) {
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
             }
 
-            const card = document.querySelector(`.chart-card[data-chart-id="${chart.id}"]`);
+            if (cursorX > margin && cursorX + w > margin + canvasBase) {
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
+            }
+
+            let newX = cursorX;
+            let newY = rowY;
+            if (this._snapToGrid) {
+                newX = this.snapValue(newX);
+                newY = this.snapValue(newY);
+            }
+
+            chart.posX = newX;
+            chart.posY = newY;
             if (card) {
-                card.style.left = chart.posX + 'px';
-                card.style.top = chart.posY + 'px';
+                card.style.left = newX + 'px';
+                card.style.top = newY + 'px';
             }
             this._persist(chart);
+
+            cursorX += w + colGap;
+            if (h > rowMaxH) rowMaxH = h;
+
+            if (isFullWidth) {
+                rowY += rowMaxH + rowGap;
+                cursorX = margin;
+                rowMaxH = 0;
+            }
         });
+
+        // Grow the drop zone so the last row is scroll-reachable.
+        const lastBottom = rowY + rowMaxH + margin;
+        if (lastBottom > (dropZone.clientHeight || 0)) {
+            dropZone.style.minHeight = lastBottom + 'px';
+        }
+
         if (window.groupManager) window.groupManager._renderGroupOutlines();
+    }
+
+    // Scan all charts for axis-aligned bounding-box overlaps and push the
+    // later-ordered chart downward until it no longer intersects. Used after
+    // Snap-to-Grid so quantising positions never leaves two cards stacked.
+    _resolveOverlaps() {
+        const cm = window.canvasManager;
+        const charts = cm?.charts || [];
+        if (charts.length < 2) return;
+
+        // Build measured rects from the DOM.
+        const rects = charts.map(chart => {
+            const card = document.querySelector(`.chart-card[data-chart-id="${chart.id}"]`);
+            const w = card ? card.offsetWidth
+                : (cm.colsToPixels ? cm.colsToPixels(chart.width || 6) : 380);
+            const h = card ? card.offsetHeight : ((chart.height || 300) + 44);
+            return { chart, card, w, h };
+        });
+
+        // Sort by posY then posX so we always push the LATER card down.
+        rects.sort((a, b) => {
+            const ay = a.chart.posY || 0, by = b.chart.posY || 0;
+            if (ay !== by) return ay - by;
+            return (a.chart.posX || 0) - (b.chart.posX || 0);
+        });
+
+        const pad = 8;
+        let changed = false;
+        for (let i = 0; i < rects.length; i++) {
+            for (let j = 0; j < i; j++) {
+                const A = rects[j], B = rects[i];
+                const ax = A.chart.posX || 0, ay = A.chart.posY || 0;
+                const bx = B.chart.posX || 0, by = B.chart.posY || 0;
+                const overlapX = bx < ax + A.w && bx + B.w > ax;
+                const overlapY = by < ay + A.h && by + B.h > ay;
+                if (overlapX && overlapY) {
+                    let newY = ay + A.h + pad;
+                    if (this._snapToGrid) newY = this.snapValue(newY);
+                    B.chart.posY = newY;
+                    if (B.card) B.card.style.top = newY + 'px';
+                    this._persist(B.chart);
+                    changed = true;
+                }
+            }
+        }
+        if (changed && window.groupManager) window.groupManager._renderGroupOutlines();
     }
 
     // ── Helpers ──────────────────────────────────────────────────
@@ -260,6 +402,10 @@ class LayoutManager {
         // Distribute
         bind('btn-dist-h', this.distributeHorizontal);
         bind('btn-dist-v', this.distributeVertical);
+
+        // Phase 33-B10: Tidy pack (works with 2+ charts)
+        bind('btn-tidy-row', this.tidyRow);
+        bind('btn-tidy-col', this.tidyColumn);
 
         // Same size
         bind('btn-same-width', this.sameWidth);

@@ -102,11 +102,16 @@ public class SuperAdminController : Controller
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
 
+        // Use split query to avoid cartesian explosion from multiple collection includes,
+        // which in EF Core 8 can cause some parent rows to be dropped when duplicate
+        // ordering-key values combine with the large cross-product.
         var orgs = await _db.Organizations
             .Include(o => o.Users)
                 .ThenInclude(u => u.Subscription)
             .Include(o => o.Workspaces)
+            .AsSplitQuery()
             .OrderByDescending(o => o.CreatedAt)
+            .ThenBy(o => o.Id)
             .ToListAsync();
         return View("~/Views/Admin/Organizations.cshtml", orgs);
     }
@@ -130,9 +135,43 @@ public class SuperAdminController : Controller
         if (org == null) return NotFound();
         if (!Enum.TryParse<PlanType>(req.Plan, true, out var plan))
             return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
+
         org.Plan = plan;
+
+        // SuperAdmin grants a number of paid licenses to the organization.
+        // OrgAdmin will assign these licenses to individual users.
+        if (req.PurchasedLicenses.HasValue)
+        {
+            if (req.PurchasedLicenses.Value < 0)
+                return BadRequest(new { error = "PurchasedLicenses must be zero or greater." });
+
+            // Never let PurchasedLicenses drop below the number already assigned to users.
+            var assignedCount = await _db.SubscriptionPlans
+                .CountAsync(s => s.User!.OrganizationId == id
+                                 && (s.Plan == PlanType.Professional || s.Plan == PlanType.Enterprise));
+
+            if (req.PurchasedLicenses.Value < assignedCount)
+                return BadRequest(new { error = $"Cannot reduce licenses below the {assignedCount} already assigned. Revoke user licenses first." });
+
+            // Free / FreeTrial plans don't carry paid licenses.
+            org.PurchasedLicenses = (plan == PlanType.Professional || plan == PlanType.Enterprise)
+                ? req.PurchasedLicenses.Value
+                : 0;
+        }
+        else if (plan != PlanType.Professional && plan != PlanType.Enterprise)
+        {
+            // Downgrading to a non-paid plan clears the license pool.
+            org.PurchasedLicenses = 0;
+        }
+
         await _db.SaveChangesAsync();
-        return Ok(new { success = true, orgId = id, plan = org.Plan.ToString() });
+        return Ok(new
+        {
+            success = true,
+            orgId = id,
+            plan = org.Plan.ToString(),
+            purchasedLicenses = org.PurchasedLicenses
+        });
     }
 
     [HttpGet("/superadmin/activity")]
@@ -198,6 +237,7 @@ public class SuperAdminController : Controller
     public class UpdateOrgPlanRequest
     {
         public string Plan { get; set; } = "";
+        public int? PurchasedLicenses { get; set; }
     }
 
     [HttpGet("/superadmin/aiconfig")]
@@ -388,10 +428,12 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (string.IsNullOrWhiteSpace(doc.Slug))
             doc.Slug = doc.Title.ToLower().Replace(" ", "-").Replace("--", "-");
 
+        string? oldUrl = null;
         if (doc.Id > 0)
         {
             var existing = await _db.DocArticles.FindAsync(doc.Id);
             if (existing == null) return NotFound();
+            oldUrl = $"/docs/{existing.Slug}";
             existing.Title = doc.Title;
             existing.Slug = doc.Slug;
             existing.Summary = doc.Summary;
@@ -409,6 +451,15 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         }
 
         await _db.SaveChangesAsync();
+        await UpsertSeoForContentAsync(
+            newUrl: $"/docs/{doc.Slug}",
+            oldUrl: oldUrl,
+            title: $"{doc.Title} — AIInsights365.net",
+            description: doc.Summary ?? doc.Title,
+            keywords: "AIInsights365, AI analytics, documentation, " + doc.Slug.Replace('-', ' '),
+            priority: 0.7m,
+            changeFreq: "monthly",
+            includeInSitemap: doc.IsPublished);
         return Ok(new { success = true });
     }
 
@@ -418,8 +469,10 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var doc = await _db.DocArticles.FindAsync(id);
         if (doc == null) return NotFound();
+        var url = $"/docs/{doc.Slug}";
         _db.DocArticles.Remove(doc);
         await _db.SaveChangesAsync();
+        await RemoveSeoByUrlAsync(url);
         return Ok(new { success = true });
     }
 
@@ -443,10 +496,12 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (string.IsNullOrWhiteSpace(post.Slug))
             post.Slug = post.Title.ToLower().Replace(" ", "-").Replace("--", "-");
 
+        string? oldUrl = null;
         if (post.Id > 0)
         {
             var existing = await _db.BlogPosts.FindAsync(post.Id);
             if (existing == null) return NotFound();
+            oldUrl = $"/blog/{existing.Slug}";
             existing.Title = post.Title;
             existing.Slug = post.Slug;
             existing.Summary = post.Summary;
@@ -464,6 +519,15 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         }
 
         await _db.SaveChangesAsync();
+        await UpsertSeoForContentAsync(
+            newUrl: $"/blog/{post.Slug}",
+            oldUrl: oldUrl,
+            title: $"{post.Title} — AIInsights365.net",
+            description: post.Summary ?? post.Title,
+            keywords: "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' '),
+            priority: 0.8m,
+            changeFreq: "weekly",
+            includeInSitemap: post.IsPublished);
         return Ok(new { success = true });
     }
 
@@ -473,9 +537,154 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var post = await _db.BlogPosts.FindAsync(id);
         if (post == null) return NotFound();
+        var url = $"/blog/{post.Slug}";
         _db.BlogPosts.Remove(post);
         await _db.SaveChangesAsync();
+        await RemoveSeoByUrlAsync(url);
         return Ok(new { success = true });
+    }
+
+    // ── SEO helpers for content CRUD ──────────────────────────
+    private async Task UpsertSeoForContentAsync(string newUrl, string? oldUrl, string title,
+        string description, string keywords, decimal priority, string changeFreq, bool includeInSitemap)
+    {
+        // If the slug changed, drop the SEO row for the old URL so sitemap stays clean.
+        if (!string.IsNullOrEmpty(oldUrl) && !string.Equals(oldUrl, newUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            await RemoveSeoByUrlAsync(oldUrl);
+        }
+
+        var entry = await _db.SeoEntries.FirstOrDefaultAsync(s => s.PageUrl == newUrl);
+        if (entry == null)
+        {
+            _db.SeoEntries.Add(new SeoEntry
+            {
+                PageUrl = newUrl,
+                Title = title,
+                MetaDescription = description,
+                MetaKeywords = keywords,
+                OgTitle = title,
+                OgDescription = description,
+                SitemapPriority = priority,
+                SitemapChangeFreq = changeFreq,
+                IncludeInSitemap = includeInSitemap,
+                CreatedBy = "system",
+                CreatedAt = DateTime.UtcNow,
+                LastModified = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            entry.Title = title;
+            entry.MetaDescription = description;
+            entry.MetaKeywords = keywords;
+            entry.OgTitle = title;
+            entry.OgDescription = description;
+            entry.IncludeInSitemap = includeInSitemap;
+            entry.LastModified = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task RemoveSeoByUrlAsync(string url)
+    {
+        var entry = await _db.SeoEntries.FirstOrDefaultAsync(s => s.PageUrl == url);
+        if (entry != null)
+        {
+            _db.SeoEntries.Remove(entry);
+            await _db.SaveChangesAsync();
+        }
+    }
+
+    // ── Notifications: broadcast to all orgs OR specific orgs ────────────────
+    [HttpGet("/superadmin/notifications")]
+    public async Task<IActionResult> Notifications()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var items = await _db.Notifications
+            .Where(n => n.Scope == "All" || n.Scope == "Org")
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(200)
+            .ToListAsync();
+        var orgs = await _db.Organizations
+            .OrderBy(o => o.Name)
+            .Select(o => new { o.Id, o.Name })
+            .ToListAsync();
+        ViewBag.Orgs = orgs;
+        return View("~/Views/Admin/Notifications.cshtml", items);
+    }
+
+    [HttpPost("/api/superadmin/notifications/broadcast")]
+    public async Task<IActionResult> Broadcast([FromBody] BroadcastNotificationDto dto)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Body))
+            return BadRequest(new { error = "Title and body are required." });
+
+        var callerId = GetCurrentUserId();
+        var scope = string.IsNullOrWhiteSpace(dto.Scope) ? "All" : dto.Scope!.Trim();
+        var created = new List<int>();
+        var now = DateTime.UtcNow;
+
+        Notification Build(int? orgId) => new()
+        {
+            Scope = orgId.HasValue ? "Org" : "All",
+            OrganizationId = orgId,
+            Title = dto.Title!.Trim(),
+            Body = dto.Body!.Trim(),
+            Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+            Severity = string.IsNullOrWhiteSpace(dto.Severity) ? "normal" : dto.Severity!.Trim(),
+            Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+            ExpiresAt = dto.ExpiresAt,
+            CreatedByUserId = callerId,
+            CreatedByRole = "SuperAdmin",
+            CreatedAt = now
+        };
+
+        if (scope.Equals("All", StringComparison.OrdinalIgnoreCase))
+        {
+            var n = Build(null);
+            _db.Notifications.Add(n);
+            await _db.SaveChangesAsync();
+            created.Add(n.Id);
+        }
+        else
+        {
+            if (dto.OrganizationIds == null || dto.OrganizationIds.Count == 0)
+                return BadRequest(new { error = "At least one organization must be selected." });
+            foreach (var orgId in dto.OrganizationIds.Distinct())
+            {
+                var n = Build(orgId);
+                _db.Notifications.Add(n);
+            }
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, count = scope == "All" ? 1 : dto.OrganizationIds!.Count });
+    }
+
+    [HttpDelete("/api/superadmin/notifications/{id:int}")]
+    public async Task<IActionResult> DeleteNotification(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+        _db.Notifications.Remove(n);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    public class BroadcastNotificationDto
+    {
+        public string? Scope { get; set; } // "All" | "SpecificOrgs"
+        public List<int>? OrganizationIds { get; set; }
+        public string? Title { get; set; }
+        public string? Body { get; set; }
+        public string? Type { get; set; }
+        public string? Severity { get; set; }
+        public string? Link { get; set; }
+        public DateTime? ExpiresAt { get; set; }
     }
 
     // ──── Payments Tracking ────

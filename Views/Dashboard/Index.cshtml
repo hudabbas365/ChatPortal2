@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="~/css/workspace-roles.css" />
     <link rel="stylesheet" href="~/css/auto-report.css" />
     <link rel="stylesheet" href="~/css/chart-library-enhanced.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/explain-chart.css" asp-append-version="true" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
 </head>
 <body class="dashboard-body">
@@ -97,6 +98,9 @@
             <button class="btn btn-sm btn-danger" onclick="canvasManager.resetCanvas()" title="Reset">
                 <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
             </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="keyboard-shortcuts-btn" title="Keyboard shortcuts & help" data-bs-toggle="modal" data-bs-target="#keyboardShortcutsModal">
+                <i class="bi bi-question-circle"></i>
+            </button>
         </div>
     </nav>
 
@@ -167,16 +171,23 @@
                     <button class="layout-btn" id="btn-dist-h" title="Distribute Horizontal"><i class="bi bi-distribute-horizontal"></i></button>
                     <button class="layout-btn" id="btn-dist-v" title="Distribute Vertical"><i class="bi bi-distribute-vertical"></i></button>
                     <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-tidy-row" title="Tidy into a row (uniform gap)"><i class="bi bi-layout-three-columns"></i></button>
+                    <button class="layout-btn" id="btn-tidy-col" title="Tidy into a column (uniform gap)"><i class="bi bi-layout-split"></i></button>
+                    <span class="layout-sep"></span>
                     <button class="layout-btn" id="btn-same-width" title="Same Width"><i class="bi bi-arrows"></i></button>
                     <button class="layout-btn" id="btn-same-height" title="Same Height"><i class="bi bi-arrows-vertical"></i></button>
                 </div>
                 <div class="ms-auto d-flex gap-2 align-items-center">
                     <button class="layout-btn" id="btn-snap-grid" title="Snap to Grid"><i class="bi bi-grid-3x3"></i></button>
+                    <button class="layout-btn" id="btn-rulers" title="Toggle rulers"><i class="bi bi-rulers"></i></button>
                     <button class="layout-btn" id="btn-auto-arrange" title="Auto Arrange"><i class="bi bi-grid"></i></button>
                     <span class="layout-sep"></span>
                     <button class="layout-btn" id="btn-bring-forward" title="Bring Forward"><i class="bi bi-front"></i></button>
                     <button class="layout-btn" id="btn-send-backward" title="Send Backward"><i class="bi bi-back"></i></button>
                     <span class="layout-sep"></span>
+                    <button class="layout-btn" id="btn-undo-history" title="Undo history"><i class="bi bi-clock-history"></i></button>
+                    <button class="layout-btn" id="btn-revisions" title="Revision history (server-saved)"><i class="bi bi-clock-history" style="color:var(--cp-primary)"></i></button>
+                    <button class="layout-btn" id="btn-snapshots" title="Named snapshots"><i class="bi bi-bookmark-star"></i></button>
                     <span class="small text-muted" id="chart-count-label"></span>
                 </div>
             </div>
@@ -201,6 +212,7 @@
                     <div class="panel-header">
                         <i class="bi bi-gear me-1" style="color:var(--cp-primary)"></i>
                         <h6 class="mb-0">Properties</h6>
+                        <button id="pp-expand-all-btn" class="panel-toggle-btn ms-auto" title="Expand / collapse all sections" style="display:none"><i class="bi bi-arrows-expand"></i></button>
                         <button id="toggle-properties-panel" class="panel-toggle-btn ms-1" title="Collapse panel"><i class="bi bi-chevron-left"></i></button>
                     </div>
                     <div class="right-panel-section-body" id="properties-section-body">
@@ -249,6 +261,12 @@
                             <small style="font-size:0.8rem;line-height:1.5">Select a chart to<br>edit its properties</small>
                         </div>
                         <div id="properties-form" style="display:none">
+                            <!-- Phase 29-B3: Filter properties by label -->
+                            <div class="pp-search-wrap" id="pp-search-wrap">
+                                <i class="bi bi-search pp-search-icon"></i>
+                                <input type="text" id="pp-search-input" class="form-control form-control-sm" placeholder="Search properties…" autocomplete="off">
+                                <button type="button" id="pp-search-clear" class="pp-search-clear" title="Clear" style="display:none"><i class="bi bi-x"></i></button>
+                            </div>
                             <div id="properties-tab-content" class="properties-scroll">
                                 <div class="p-3">
                                     <!-- Basic -->
@@ -463,8 +481,8 @@
                                             <div id="table-fields-container"></div>
                                         </div>
                                         <div class="mb-2">
-                                            <label class="form-label">Row Limit</label>
-                                            <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="100" placeholder="100">
+                                            <label class="form-label">Row Limit<i class="bi bi-info-circle prop-help-icon" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Caps how many rows the chart pulls. Keep it low (15-100) for clean charts; increase only for tables or long time series." tabindex="0"></i></label>
+                                            <input type="number" id="prop-row-limit" class="form-control form-control-sm" min="1" max="10000" value="15" placeholder="15">
                                         </div>
                                         <div class="mb-2" style="display:none">
                                             <input type="hidden" id="prop-filter-where" />
@@ -480,10 +498,13 @@
                                         </div>
                                         <div class="prop-subgroup bg-alt">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
-                                                <label class="form-label mb-0">SQL Query</label>
+                                                <label class="form-label mb-0">SQL Query<i class="bi bi-info-circle prop-help-icon" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Optional custom SELECT that overrides the field pickers. Use AI Generate to draft it, then Use this SQL to apply. Avoid ORDER BY on columns you haven't selected." tabindex="0"></i></label>
                                                 <div class="d-flex gap-1">
                                                     <button type="button" id="pp-ai-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-purple,#9B59B6)" title="Generate SQL using AI">
                                                         <i class="bi bi-stars me-1"></i>AI Generate
+                                                    </button>
+                                                    <button type="button" id="pp-fix-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-warn,#E67E22);display:none" title="Ask AI to fix this SQL based on the error">
+                                                        <i class="bi bi-wrench-adjustable me-1"></i>Fix with AI
                                                     </button>
                                                     <button type="button" id="pp-use-sql-btn" class="btn btn-xs" style="font-size:0.68rem;padding:1px 6px;border:1px solid var(--cp-border);border-radius:4px;background:var(--cp-surface);color:var(--cp-success,#27AE60)" title="Apply this SQL to the chart">
                                                         <i class="bi bi-check2-circle me-1"></i>Use this SQL
@@ -494,7 +515,7 @@
                                             <div id="pp-sql-err-note" class="text-danger mt-1" style="font-size:0.72rem;display:none"></div>
                                         </div>
                                         <div class="mb-2">
-                                            <label class="form-label">Custom JSON Data</label>
+                                            <label class="form-label">Custom JSON Data<i class="bi bi-info-circle prop-help-icon" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Paste an inline array like [{&quot;label&quot;:&quot;A&quot;,&quot;value&quot;:10}] to render a chart without a datasource. Ignored once a SQL query or dataset is selected." tabindex="0"></i></label>
                                             <textarea id="prop-custom-json" class="form-control form-control-sm font-monospace" rows="3" placeholder='[{"label":"A","value":10}]'></textarea>
                                         </div>
                                     </div>
@@ -502,10 +523,6 @@
                                     <!-- Style (chart-only) -->
                                     <div class="prop-section chart-only-section">
                                         <div class="prop-section-title" data-section="style">Style</div>
-                                        <div class="mb-2">
-                                            <label class="form-label">Primary Color</label>
-                                            <input type="color" id="prop-color-palette" class="form-control form-control-sm">
-                                        </div>
                                         <div class="mb-2 form-check">
                                             <input type="checkbox" id="prop-show-legend" class="form-check-input">
                                             <label class="form-check-label" for="prop-show-legend">Show Legend</label>
@@ -540,6 +557,71 @@
                                                 <label class="form-label">Border Radius</label>
                                                 <input type="number" id="prop-border-radius" class="form-control form-control-sm" min="0" max="20">
                                             </div>
+                                        </div>
+                                        <hr class="my-2" />
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="form-label">Shadow</label>
+                                                <select id="prop-box-shadow" class="form-select form-select-sm">
+                                                    <option value="none">None</option>
+                                                    <option value="soft">Soft</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="strong">Strong</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Card Background</label>
+                                                <div class="d-flex gap-1">
+                                                                 <input type="color" id="prop-card-bg-color" class="form-control form-control-sm form-control-color" value="#ffffff">
+                                                                <button type="button" id="prop-card-bg-color-clear" class="btn btn-xs btn-outline-secondary" title="Clear background color" style="font-size:0.7rem;padding:0 6px"><i class="bi bi-x"></i></button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row g-2 mb-2">
+                                                        <div class="col-6">
+                                                            <label class="form-label">Font Color</label>
+                                                            <div class="d-flex gap-1">
+                                                                <input type="color" id="prop-font-color" class="form-control form-control-sm form-control-color" value="#1E2D3D">
+                                                                <button type="button" id="prop-font-color-clear" class="btn btn-xs btn-outline-secondary" title="Clear font color" style="font-size:0.7rem;padding:0 6px"><i class="bi bi-x"></i></button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row g-2 mb-2" id="prop-kpi-align-row">
+                                                        <div class="col-12"><label class="form-label mb-1" style="font-weight:600">KPI Value Alignment<i class="bi bi-info-circle prop-help-icon" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Controls where the big number sits inside the KPI tile. Center/Middle looks best for single-value cards; Left/Top works for tiles that include a label or sparkline." tabindex="0"></i></label></div>
+                                                        <div class="col-6">
+                                                            <label class="form-label">Horizontal</label>
+                                                            <select id="prop-kpi-halign" class="form-select form-select-sm">
+                                                                <option value="left">Left</option>
+                                                                <option value="center" selected>Center</option>
+                                                                <option value="right">Right</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <label class="form-label">Vertical</label>
+                                                            <select id="prop-kpi-valign" class="form-select form-select-sm">
+                                                                <option value="top">Top</option>
+                                                                <option value="middle" selected>Middle</option>
+                                                                <option value="bottom">Bottom</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-2">
+                                                        <label class="form-label d-flex align-items-center justify-content-between">
+                                                            <span>Background Image</span>
+                                                <button type="button" id="prop-bg-image-clear" class="btn btn-xs btn-outline-secondary" style="font-size:0.65rem;padding:0 6px" title="Remove"><i class="bi bi-x"></i> Clear</button>
+                                            </label>
+                                            <input type="file" id="prop-bg-image-file" class="form-control form-control-sm" accept="image/*">
+                                            <input type="hidden" id="prop-bg-image" />
+                                            <div id="prop-bg-image-preview" class="mt-1" style="display:none;max-width:100%;height:60px;background-size:cover;background-position:center;border:1px solid var(--cp-border);border-radius:4px"></div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label d-flex align-items-center justify-content-between">
+                                                <span>Icon (upload image)</span>
+                                                <button type="button" id="prop-icon-image-clear" class="btn btn-xs btn-outline-secondary" style="font-size:0.65rem;padding:0 6px" title="Remove"><i class="bi bi-x"></i> Clear</button>
+                                            </label>
+                                            <input type="file" id="prop-icon-image-file" class="form-control form-control-sm" accept="image/*">
+                                            <input type="hidden" id="prop-icon-image" />
+                                            <img id="prop-icon-image-preview" class="mt-1" style="display:none;width:40px;height:40px;object-fit:contain;border:1px solid var(--cp-border);border-radius:4px;padding:2px;background:#fff" />
                                         </div>
                                     </div>
 
@@ -725,6 +807,15 @@
 <script src="~/js/canvasManager.js" asp-append-version="true"></script>
 <script src="~/js/filterPanel.js" asp-append-version="true"></script>
 <script src="~/js/exportManager.js" asp-append-version="true"></script>
+<script src="~/js/bulkEditPanel.js" asp-append-version="true"></script>
+<script src="~/js/smartGuides.js" asp-append-version="true"></script>
+<script src="~/js/canvasRulers.js" asp-append-version="true"></script>
+<script src="~/js/undoHistoryPanel.js" asp-append-version="true"></script>
+<script src="~/js/autosaveIndicator.js" asp-append-version="true"></script>
+<script src="~/js/revisionHistoryPanel.js" asp-append-version="true"></script>
+<script src="~/js/snapshotManager.js" asp-append-version="true"></script>
+<script src="~/js/fieldDropHandler.js" asp-append-version="true"></script>
+<script src="~/js/columnProfilePanel.js" asp-append-version="true"></script>
 <script src="~/js/dashboard-chart-transfer.js" asp-append-version="true"></script>
 <script src="~/js/dashboard-chat-panel.js" asp-append-version="true"></script>
 <script src="~/js/auto-report-generator.js" asp-append-version="true"></script>
@@ -755,6 +846,10 @@
     @if (ViewBag.DatasourceType != null)
     {
         <text>window.currentDatasourceType = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.DatasourceType));</text>
+    }
+    @if (ViewBag.AgentGuid != null)
+    {
+        <text>window.currentAgentGuid = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.AgentGuid));</text>
     }
 
     document.addEventListener('DOMContentLoaded', async function() {
@@ -938,7 +1033,15 @@
                 if (mode === 'gradient' || mode === 'pattern') {
                     backgroundValue = bgPreset?.value || backgroundValue;
                 }
-                canvas.style.background = backgroundValue;
+                // Solid mode: only override backgroundColor so the CSS-defined
+                // design grid (radial-gradient dots on .chart-grid) stays visible.
+                // Gradient/pattern mode: replace the whole background intentionally.
+                if (mode === 'solid') {
+                    canvas.style.background = '';
+                    canvas.style.backgroundColor = backgroundValue;
+                } else {
+                    canvas.style.background = backgroundValue;
+                }
                 if (mode === 'solid' && bgText) bgText.value = backgroundValue;
                 if (bgPresetWrap) bgPresetWrap.classList.toggle('d-none', mode === 'solid');
                 const page = canvasManager.pages[canvasManager.activePageIndex];
@@ -1018,7 +1121,9 @@
                 return presets[t] || 'default';
             }
 
-            async function applyThemeToCharts() {
+            let _themeApplyInFlight = null;
+            let _themeApplyPending = false;
+            async function _doApplyTheme() {
                 const palette = selectedPalette();
                 localStorage.setItem('cp_dashboard_chart_theme', JSON.stringify({
                     theme: themeSelect?.value || 'ocean',
@@ -1026,11 +1131,30 @@
                     customColors: customColorInputs()
                 }));
                 const charts = (canvasManager?.charts || []).filter(c => !(window.ShapeManager && ShapeManager.isShape(c.chartType)) && c.chartType !== 'navigation');
+                // Serialize chart updates so each completes before next render starts.
+                // Prevents ApexCharts race where a destroyed instance's pending
+                // microtasks throw "undefined.colors" against its freed state.
                 for (const c of charts) {
                     c.style = c.style || {};
                     c.style.colorPalette = palette;
-                    await canvasManager.updateChart(c);
+                    try { await canvasManager.updateChart(c); } catch (_) {}
                 }
+            }
+            async function applyThemeToCharts() {
+                // Coalesce rapid calls: if one pass is running, queue exactly one
+                // follow-up pass using the latest palette selection.
+                if (_themeApplyInFlight) { _themeApplyPending = true; return _themeApplyInFlight; }
+                _themeApplyInFlight = (async () => {
+                    try {
+                        do {
+                            _themeApplyPending = false;
+                            await _doApplyTheme();
+                        } while (_themeApplyPending);
+                    } finally {
+                        _themeApplyInFlight = null;
+                    }
+                })();
+                return _themeApplyInFlight;
             }
 
             function syncCustomVisibility() {
@@ -1248,14 +1372,28 @@
                 const defaultName = document.getElementById('canvas-name-display')?.textContent || ('Draft — ' + new Date().toLocaleDateString());
                 let resolvedGuid = window._currentReportGuid || null;
 
-                // Try to find existing report for this workspace
+                // Try to find existing report for this (workspace, agent) pair. Scoping by
+                // agent is critical — without it, saving a new report for Agent B would
+                // upsert onto Agent A's existing report in the same workspace.
+                const currentAgentId = window.currentAgentGuid
+                    ? (((wsData.agents || []).find(a => a.guid === window.currentAgentGuid) || {}).id || null)
+                    : null;
                 if (!resolvedGuid && wsGuid) {
                     try {
-                        const existing = await fetch('/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid));
+                        let lookupUrl = '/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid);
+                        if (currentAgentId) lookupUrl += '&agentId=' + encodeURIComponent(currentAgentId);
+                        else if (window.currentAgentGuid) lookupUrl += '&agentGuid=' + encodeURIComponent(window.currentAgentGuid);
+                        const existing = await fetch(lookupUrl);
                         if (existing.ok) {
                             const reports = await existing.json();
-                            if (reports.length > 0) {
-                                resolvedGuid = reports[0].guid;
+                            // Defensive client-side filter: only adopt a report that matches
+                            // the current agent. Fall back to reports[0] only when no agent
+                            // context is set (legacy workspace-only reports).
+                            const match = currentAgentId
+                                ? reports.find(r => r.agentId === currentAgentId)
+                                : (reports[0] || null);
+                            if (match) {
+                                resolvedGuid = match.guid;
                                 window._currentReportGuid = resolvedGuid;
                             }
                         }
@@ -1369,15 +1507,25 @@
                 const existingGuid = window._currentReportGuid || null;
 
                 let resp;
-                // If no existing guid, check if workspace already has a report
+                // If no existing guid, check if workspace already has a report for THIS agent.
+                // Scoping by agent prevents overwriting another agent's report in the same workspace.
                 let resolvedGuid = existingGuid;
+                const currentAgentId = window.currentAgentGuid
+                    ? (((wsData.agents || []).find(a => a.guid === window.currentAgentGuid) || {}).id || null)
+                    : null;
                 if (!resolvedGuid && wsGuid) {
                     try {
-                        const existing = await fetch('/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid));
+                        let lookupUrl = '/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid);
+                        if (currentAgentId) lookupUrl += '&agentId=' + encodeURIComponent(currentAgentId);
+                        else if (window.currentAgentGuid) lookupUrl += '&agentGuid=' + encodeURIComponent(window.currentAgentGuid);
+                        const existing = await fetch(lookupUrl);
                         if (existing.ok) {
                             const reports = await existing.json();
-                            if (reports.length > 0) {
-                                resolvedGuid = reports[0].guid;
+                            const match = currentAgentId
+                                ? reports.find(r => r.agentId === currentAgentId)
+                                : (reports[0] || null);
+                            if (match) {
+                                resolvedGuid = match.guid;
                                 window._currentReportGuid = resolvedGuid;
                             }
                         }
@@ -1507,6 +1655,134 @@ function promptRename() {
     modal.addEventListener('hidden.bs.modal', () => {
         if (_saveResolve) { _saveResolve(null); _saveResolve = null; }
     });
+})();
+</script>
+
+<!-- Phase 30-B17: Explain Chart Modal -->
+<div class="modal fade" id="explainChartModal" tabindex="-1" aria-labelledby="explainChartModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#9B59B6 0%,#6C3483 100%);color:#fff">
+                <h6 class="modal-title mb-0" id="explainChartModalLabel" style="font-weight:600;"><i class="bi bi-lightbulb me-2"></i>Chart Insights</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body explain-modal-body" id="explainChartBody" style="font-size:0.88rem;line-height:1.55;max-height:60vh;overflow-y:auto">
+                <div class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Analyzing chart&hellip;</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase 28-B9: Keyboard Shortcuts Modal -->
+<div class="modal fade" id="keyboardShortcutsModal" tabindex="-1" aria-labelledby="keyboardShortcutsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:12px;border:1px solid var(--cp-border);background:var(--cp-surface);">
+            <div class="modal-header" style="border-bottom:1px solid var(--cp-border);padding:16px 20px;">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-keyboard" style="font-size:1.2rem;color:var(--cp-primary);"></i>
+                    <h6 class="modal-title mb-0" id="keyboardShortcutsModalLabel" style="font-weight:600;">Keyboard Shortcuts</h6>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="padding:16px 20px;">
+                <table class="table table-sm mb-0" style="font-size:0.85rem;">
+                    <tbody>
+                        <tr><td style="width:45%"><kbd>Del</kbd> / <kbd>Backspace</kbd></td><td class="text-muted">Delete selected chart</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td class="text-muted">Duplicate selected chart</td></tr>
+                        <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td class="text-muted">Nudge selected chart 1&nbsp;px</td></tr>
+                        <tr><td><kbd>Shift</kbd>+arrows</td><td class="text-muted">Nudge 10&nbsp;px</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td class="text-muted">Save draft</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td><td class="text-muted">Group selection</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td><td class="text-muted">Ungroup</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td class="text-muted">Clear selection</td></tr>
+                        <tr><td><kbd>?</kbd></td><td class="text-muted">Open this help</td></tr>
+                    </tbody>
+                </table>
+                <div class="text-muted mt-3" style="font-size:0.75rem;">
+                    <i class="bi bi-info-circle me-1"></i>Shortcuts are ignored while typing in an input, textarea, or editable text box.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Phase 28-B9 + B12: Bootstrap tooltips init + global keyboard shortcuts.
+(function () {
+    function initTooltips() {
+        if (!window.bootstrap || !bootstrap.Tooltip) return;
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+            if (!bootstrap.Tooltip.getInstance(el)) new bootstrap.Tooltip(el);
+        });
+    }
+    function isTyping(t) {
+        if (!t) return false;
+        var tag = t.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+    }
+    function persistChartPos(chart) {
+        try {
+            fetch(_chartApiUrl('/api/chart/' + chart.id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(chart)
+            }).catch(function () {});
+        } catch (e) {}
+    }
+    function handleKeydown(e) {
+        // '?' opens the shortcuts modal regardless of selection.
+        if (e.key === '?' && !isTyping(e.target)) {
+            e.preventDefault();
+            var modalEl = document.getElementById('keyboardShortcutsModal');
+            if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            return;
+        }
+        if (isTyping(e.target)) return;
+        var cm = window.canvasManager;
+        if (!cm) return;
+        var id = cm.selectedChartId;
+        if (!id) return;
+        var chart = cm.charts.find(function (c) { return c.id === id; });
+        if (!chart) return;
+        var step = e.shiftKey ? 10 : 1;
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            cm.deleteChart(id);
+        } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+            e.preventDefault();
+            cm.duplicateChart(id);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (e.key === 'ArrowLeft')  chart.posX = Math.max(0, (chart.posX || 0) - step);
+            if (e.key === 'ArrowRight') chart.posX = (chart.posX || 0) + step;
+            if (e.key === 'ArrowUp')    chart.posY = Math.max(0, (chart.posY || 0) - step);
+            if (e.key === 'ArrowDown')  chart.posY = (chart.posY || 0) + step;
+            var card = document.querySelector('.chart-card[data-chart-id="' + id + '"]');
+            if (card) { card.style.left = chart.posX + 'px'; card.style.top = chart.posY + 'px'; }
+            clearTimeout(handleKeydown._t);
+            handleKeydown._t = setTimeout(function () { persistChartPos(chart); }, 250);
+        } else if (e.key === 'Escape') {
+            cm.selectedChartId = null;
+            document.querySelectorAll('.chart-card.selected').forEach(function (el) { el.classList.remove('selected'); });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTooltips);
+    } else {
+        initTooltips();
+    }
+    // Re-init when the properties panel rebuilds its DOM (MutationObserver-lite).
+    var propsHost = document.querySelector('.properties-panel') || document.body;
+    if (window.MutationObserver && propsHost) {
+        new MutationObserver(function () { initTooltips(); })
+            .observe(propsHost, { childList: true, subtree: true });
+    }
+    document.addEventListener('keydown', handleKeydown);
 })();
 </script>
 </body>

@@ -1,0 +1,218 @@
+/* Phase 30-B17: Explain Chart modal body — design matching purple header */
+
+#explainChartModal .modal-content {
+    border: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px -12px rgba(108, 52, 131, 0.35), 0 10px 30px -10px rgba(0, 0, 0, 0.15);
+}
+
+#explainChartModal .modal-header {
+    border-bottom: 0;
+    padding: 16px 22px;
+}
+
+#explainChartModal .modal-header .modal-title {
+    font-size: 1rem;
+    letter-spacing: 0.2px;
+}
+
+.explain-modal-body {
+    padding: 22px 26px !important;
+    background:
+        radial-gradient(1200px 240px at 0% 0%, rgba(155, 89, 182, 0.08), transparent 60%),
+        linear-gradient(180deg, #faf7fc 0%, #ffffff 55%);
+    color: var(--cp-text, #1E2D3D);
+    font-size: 0.9rem !important;
+    line-height: 1.65 !important;
+    max-height: 62vh !important;
+    overflow-y: auto !important;
+    animation: explainFadeIn 0.32s ease;
+}
+
+@keyframes explainFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Typography hierarchy */
+.explain-modal-body h1,
+.explain-modal-body h2,
+.explain-modal-body h3,
+.explain-modal-body h4 {
+    color: #6C3483;
+    font-weight: 600;
+    margin: 18px 0 8px;
+    letter-spacing: 0.1px;
+}
+.explain-modal-body h1 { font-size: 1.1rem; }
+.explain-modal-body h2 { font-size: 1.02rem; }
+.explain-modal-body h3 { font-size: 0.95rem; }
+.explain-modal-body h4 { font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.6px; }
+
+.explain-modal-body h1:first-child,
+.explain-modal-body h2:first-child,
+.explain-modal-body h3:first-child,
+.explain-modal-body p:first-child { margin-top: 0; }
+
+.explain-modal-body p {
+    margin: 0 0 12px;
+    color: var(--cp-text, #1E2D3D);
+}
+
+.explain-modal-body strong, .explain-modal-body b {
+    color: #6C3483;
+    font-weight: 600;
+}
+
+.explain-modal-body em, .explain-modal-body i {
+    color: #8E44AD;
+}
+
+/* Lists with purple accent markers */
+.explain-modal-body ul,
+.explain-modal-body ol {
+    padding-left: 22px;
+    margin: 6px 0 14px;
+}
+.explain-modal-body li {
+    margin-bottom: 6px;
+    padding-left: 4px;
+}
+.explain-modal-body ul li::marker { color: #9B59B6; font-size: 1.1em; }
+.explain-modal-body ol li::marker { color: #6C3483; font-weight: 600; }
+
+/* Blockquote / insight callout */
+.explain-modal-body blockquote,
+.explain-modal-body .insight-callout {
+    border-left: 3px solid #9B59B6;
+    background: rgba(155, 89, 182, 0.08);
+    padding: 10px 14px;
+    border-radius: 0 10px 10px 0;
+    margin: 12px 0;
+    color: #4A235A;
+    font-style: normal;
+}
+
+/* Inline + block code */
+.explain-modal-body code {
+    background: #f4ecf7;
+    color: #6C3483;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.82em;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    border: 1px solid rgba(155, 89, 182, 0.18);
+}
+.explain-modal-body pre {
+    background: #2d1b3d;
+    color: #f4ecf7;
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 12px 0;
+}
+.explain-modal-body pre code {
+    background: transparent;
+    color: inherit;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* Horizontal rule */
+.explain-modal-body hr {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(155, 89, 182, 0.35), transparent);
+    margin: 16px 0;
+}
+
+/* Links */
+.explain-modal-body a {
+    color: #8E44AD;
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(142, 68, 173, 0.5);
+}
+.explain-modal-body a:hover { color: #6C3483; border-bottom-style: solid; }
+
+/* Tables (in case AI returns one) */
+.explain-modal-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px;
+    font-size: 0.82rem;
+    border: 1px solid rgba(155, 89, 182, 0.18);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.explain-modal-body th {
+    background: linear-gradient(135deg, #9B59B6 0%, #6C3483 100%);
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+}
+.explain-modal-body td {
+    padding: 7px 10px;
+    border-top: 1px solid rgba(155, 89, 182, 0.12);
+}
+.explain-modal-body tr:nth-child(even) td { background: rgba(155, 89, 182, 0.04); }
+
+/* Muted helper text (loading state uses .text-muted) */
+.explain-modal-body .text-muted {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0;
+    color: #7D6B8A !important;
+    font-size: 0.9rem;
+}
+.explain-modal-body .text-muted .bi-hourglass-split {
+    font-size: 1.15rem;
+    color: #9B59B6;
+    animation: explainPulse 1.25s ease-in-out infinite;
+}
+@keyframes explainPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.45; transform: scale(0.92); }
+}
+
+/* Error state */
+.explain-modal-body .text-danger {
+    background: #fdecea;
+    border-left: 3px solid #E74C3C;
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    color: #922B21;
+}
+
+/* Custom scrollbar — theme-aligned */
+.explain-modal-body::-webkit-scrollbar { width: 8px; }
+.explain-modal-body::-webkit-scrollbar-track { background: transparent; }
+.explain-modal-body::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #d7bde2, #bb8fce);
+    border-radius: 4px;
+}
+.explain-modal-body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #bb8fce, #9B59B6);
+}
+
+/* Footer alignment when used with this modal */
+#explainChartModal .modal-footer {
+    border-top: 1px solid rgba(155, 89, 182, 0.15);
+    padding: 10px 22px;
+    background: #faf7fc;
+}
+#explainChartModal .modal-footer .btn-secondary {
+    background: #fff;
+    border: 1px solid rgba(155, 89, 182, 0.35);
+    color: #6C3483;
+}
+#explainChartModal .modal-footer .btn-secondary:hover {
+    background: #9B59B6;
+    border-color: #9B59B6;
+    color: #fff;
+}

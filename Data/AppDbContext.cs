@@ -26,6 +26,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
     public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
     public DbSet<SharedReport> SharedReports => Set<SharedReport>();
+    public DbSet<ReportRevision> ReportRevisions => Set<ReportRevision>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -200,5 +203,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<SharedReport>()
             .HasIndex(sr => new { sr.ReportId, sr.UserId })
             .IsUnique();
+
+        builder.Entity<ReportRevision>()
+            .HasOne(rr => rr.Report)
+            .WithMany()
+            .HasForeignKey(rr => rr.ReportId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ReportRevision>()
+            .HasIndex(rr => new { rr.ReportId, rr.Kind, rr.CreatedAt });
     }
 }

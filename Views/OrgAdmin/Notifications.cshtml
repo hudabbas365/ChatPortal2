@@ -1,0 +1,139 @@
+@model List<AIInsights.Models.Notification>
+@{
+    ViewData["Title"] = "Organization Notifications";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var orgId = ViewBag.OrganizationId;
+}
+
+<div class="admin-page container">
+    <div class="admin-header d-flex align-items-center justify-content-between">
+        <div>
+            <h1 class="admin-title">Organization Notifications</h1>
+            <p class="admin-subtitle">Push announcements, warnings, or info messages to everyone in your organization. They appear in the bell icon for each user.</p>
+        </div>
+    </div>
+
+    <div class="content-card mb-4">
+        <h5 class="mb-3"><i class="bi bi-megaphone me-2"></i>Compose Notification</h5>
+        <form id="orgNotifForm" class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label">Title *</label>
+                <input class="form-control" id="notif-title" maxlength="120" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Severity</label>
+                <select class="form-select" id="notif-severity">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Body *</label>
+                <textarea class="form-control" id="notif-body" rows="3" maxlength="800" required></textarea>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Type</label>
+                <select class="form-select" id="notif-type">
+                    <option value="Announcement" selected>Announcement</option>
+                    <option value="Info">Info</option>
+                    <option value="Warning">Warning</option>
+                    <option value="Success">Success</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Link (optional)</label>
+                <input class="form-control" id="notif-link" placeholder="/org/settings" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Expires At (optional)</label>
+                <input type="datetime-local" class="form-control" id="notif-expires" />
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+                <button type="reset" class="btn btn-outline-secondary">Clear</button>
+                <button type="submit" class="cp-btn-gradient"><i class="bi bi-send me-1"></i>Send</button>
+            </div>
+        </form>
+        <div id="notif-result" class="mt-3 small"></div>
+    </div>
+
+    <div class="content-card">
+        <h5 class="mb-3"><i class="bi bi-clock-history me-2"></i>Recent Notifications</h5>
+        <div class="dr-table-scroll">
+            <table class="cp-table">
+                <thead class="cp-table-head">
+                    <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Created</th>
+                        <th>Expires</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="notif-tbody">
+                    @if (Model == null || Model.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">No notifications yet.</td></tr>
+                    }
+                    else
+                    {
+                        foreach (var n in Model)
+                        {
+                            <tr data-id="@n.Id">
+                                <td><strong>@n.Title</strong><div class="text-muted small">@n.Body</div></td>
+                                <td>@n.Type</td>
+                                <td><span class="badge bg-light text-dark">@n.Severity</span></td>
+                                <td>@n.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@(n.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                                <td><button class="btn btn-sm btn-outline-danger notif-del" data-id="@n.Id"><i class="bi bi-trash"></i></button></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const form = document.getElementById('orgNotifForm');
+    const result = document.getElementById('notif-result');
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        result.textContent = 'Sending…';
+        const body = {
+            title: document.getElementById('notif-title').value.trim(),
+            body: document.getElementById('notif-body').value.trim(),
+            type: document.getElementById('notif-type').value,
+            severity: document.getElementById('notif-severity').value,
+            link: document.getElementById('notif-link').value.trim() || null,
+            expiresAt: document.getElementById('notif-expires').value || null
+        };
+        try {
+            const r = await fetch('/api/org/notifications', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || 'Failed'); }
+            result.innerHTML = '<span class="text-success">✓ Notification sent. Reloading…</span>';
+            setTimeout(() => location.reload(), 900);
+        } catch (err) {
+            result.innerHTML = '<span class="text-danger">' + err.message + '</span>';
+        }
+    });
+
+    document.getElementById('notif-tbody').addEventListener('click', async function(e) {
+        const btn = e.target.closest('.notif-del');
+        if (!btn) return;
+        if (!confirm('Delete this notification?')) return;
+        const id = btn.dataset.id;
+        const r = await fetch('/api/org/notifications/' + id, { method: 'DELETE', credentials: 'same-origin' });
+        if (r.ok) btn.closest('tr').remove();
+    });
+})();
+</script>

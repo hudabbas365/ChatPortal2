@@ -32,7 +32,9 @@
     // chart-canvas-drop element horizontally. Vertical bounds are NOT clamped —
     // the drop zone grows/scrolls vertically, so forcing posY to fit the current
     // min-height would pull charts up and cause overlap.
-    function _validateAndFixPagePositions(cm, margin) {
+    // If `onlyIds` is provided (Set of chart ids), only those charts are inspected/clamped;
+    // any other pre-existing user-arranged charts are left untouched.
+    function _validateAndFixPagePositions(cm, margin, onlyIds) {
         if (!cm || !cm.charts) return;
         var dropZone = document.getElementById('chart-canvas-drop');
         if (!dropZone) return;
@@ -40,6 +42,7 @@
         var m = margin || 20;
         var changed = false;
         cm.charts.forEach(function (c) {
+            if (onlyIds && !onlyIds.has(c.id)) return;
             var cardW = cm.colsToPixels(c.width || 6);
             var fixed = false;
 
@@ -80,7 +83,10 @@
     // width from the DOM (which may differ from colsToPixels at plan-time due to
     // window resize, scrollbars, or CSS min/max constraints) and re-pack the
     // page so rows are tight, left-aligned, and nothing drifts off-canvas.
-    function _repackPageFromDom(cm, margin, rowGap, colGap) {
+    // If `onlyIds` is provided, ONLY charts with those ids are re-packed. Pre-existing
+    // user-arranged charts keep their posX/posY so the auto-report flow never
+    // "resets" the canvas layout the user already built.
+    function _repackPageFromDom(cm, margin, rowGap, colGap, onlyIds) {
         if (!cm || !cm.charts || cm.charts.length === 0) return;
         var dropZone = document.getElementById('chart-canvas-drop');
         if (!dropZone) return;
@@ -93,15 +99,34 @@
             Math.min(viewportW, zoneW) - margin * 2
         );
 
+        // Only iterate the newly-inserted charts when a filter set is provided.
+        var source = onlyIds
+            ? cm.charts.filter(function (c) { return onlyIds.has(c.id); })
+            : cm.charts.slice();
+
         // Preserve the original order the charts were added in.
-        var items = cm.charts.slice().sort(function (a, b) {
+        var items = source.sort(function (a, b) {
             var ay = a.posY || 0, by = b.posY || 0;
             if (ay !== by) return ay - by;
             return (a.posX || 0) - (b.posX || 0);
         });
 
+        // When re-packing only newly-added charts, start the cursor BELOW any
+        // pre-existing user charts so we don't stack the AI output on top of them.
+        var startY = margin;
+        if (onlyIds) {
+            var existingBottom = margin;
+            cm.charts.forEach(function (c) {
+                if (onlyIds.has(c.id)) return;
+                var h = (c.height || 300) + 44;
+                var b = (c.posY || 0) + h;
+                if (b > existingBottom) existingBottom = b;
+            });
+            if (existingBottom > margin) startY = existingBottom + rowGap;
+        }
+
         var cursorX = margin;
-        var rowY = margin;
+        var rowY = startY;
         var rowMaxH = 0;
         var touched = false;
 
@@ -423,6 +448,196 @@
         if (el) el.textContent = text;
     }
 
+    // ── Phase 31: Interactive plan preview ───────────────────────────
+    // Swap the progress modal's content with an editable preview of the AI plan.
+    // Resolves with { action: 'build' | 'regenerate' | 'cancel', plan }.
+    function _showPlanPreview(plan) {
+        return new Promise(function (resolve) {
+            if (!_overlay) { resolve({ action: 'cancel' }); return; }
+            var modal = _overlay.querySelector('.ar-modal');
+            if (!modal) { resolve({ action: 'cancel' }); return; }
+
+            // Deep clone so the user's edits don't mutate the original plan
+            // until they explicitly click Build.
+            var editable;
+            try { editable = JSON.parse(JSON.stringify(plan)); }
+            catch (e) { editable = plan; }
+            if (!Array.isArray(editable.pages)) editable.pages = [];
+
+            var totalCharts = 0;
+            editable.pages.forEach(function (p) {
+                if (!Array.isArray(p.charts)) p.charts = [];
+                totalCharts += p.charts.length;
+            });
+
+            function _esc2(s) {
+                return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            function _fieldsSummary(c) {
+                var m = c.mapping || {};
+                var parts = [];
+                if (m.labelField)   parts.push('label: ' + m.labelField);
+                if (m.valueField)   parts.push('value: ' + m.valueField);
+                if (m.xField)       parts.push('x: ' + m.xField);
+                if (m.yField)       parts.push('y: ' + m.yField);
+                if (m.groupByField) parts.push('group: ' + m.groupByField);
+                if (Array.isArray(m.multiValueFields) && m.multiValueFields.length) {
+                    parts.push('values: ' + m.multiValueFields.map(function (f) {
+                        return (typeof f === 'object' ? f.field : f);
+                    }).join(', '));
+                }
+                return parts.join(' · ');
+            }
+
+            function render() {
+                totalCharts = 0;
+                editable.pages.forEach(function (p) { totalCharts += (p.charts || []).length; });
+
+                var pagesHtml = editable.pages.map(function (page, pi) {
+                    var chartsHtml = (page.charts || []).map(function (c, ci) {
+                        var type = _esc2(c.chartType || 'chart');
+                        var ds   = c.datasetName ? ' · ' + _esc2(c.datasetName) : '';
+                        var fields = _fieldsSummary(c);
+                        return '' +
+                            '<div class="ar-pp-chart" data-pi="' + pi + '" data-ci="' + ci + '">' +
+                                '<span class="ar-pp-chart-type" title="' + type + '">' + type + '</span>' +
+                                '<input type="text" class="ar-pp-chart-title" value="' + _esc2(c.title || '') + '" placeholder="Chart title" />' +
+                                '<span class="ar-pp-chart-meta">' + (fields ? _esc2(fields) : '') + ds + '</span>' +
+                                '<button class="ar-pp-x" data-action="del-chart" title="Remove chart"><i class="bi bi-x"></i></button>' +
+                            '</div>';
+                    }).join('');
+
+                    return '' +
+                        '<div class="ar-pp-page" data-pi="' + pi + '">' +
+                            '<div class="ar-pp-page-head">' +
+                                '<i class="bi bi-file-earmark-text"></i>' +
+                                '<input type="text" class="ar-pp-page-name" value="' + _esc2(page.name || ('Page ' + (pi + 1))) + '" placeholder="Page name" />' +
+                                '<span class="ar-pp-count">' + (page.charts || []).length + ' charts</span>' +
+                                '<button class="ar-pp-x" data-action="del-page" title="Remove page"><i class="bi bi-trash3"></i></button>' +
+                            '</div>' +
+                            '<div class="ar-pp-charts">' + (chartsHtml || '<div class="ar-pp-empty">No charts on this page</div>') + '</div>' +
+                        '</div>';
+                }).join('');
+
+                modal.innerHTML =
+                    '<div class="ar-modal-header" style="background:linear-gradient(135deg,#4A90D9 0%,#2C6FAC 100%)"><i class="bi bi-clipboard-check"></i>Review AI Plan</div>' +
+                    '<div class="ar-modal-body" style="padding:16px 20px">' +
+                        '<div style="font-size:0.82rem;color:var(--cp-text-secondary,#6c757d);margin-bottom:12px">' +
+                            'The AI has drafted a report with <strong>' + editable.pages.length + '</strong> page' + (editable.pages.length !== 1 ? 's' : '') +
+                            ' and <strong>' + totalCharts + '</strong> chart' + (totalCharts !== 1 ? 's' : '') + '. Edit titles, remove items, or regenerate before building.' +
+                        '</div>' +
+                        '<div class="ar-pp-list">' + (pagesHtml || '<div class="ar-pp-empty">No pages in plan</div>') + '</div>' +
+                    '</div>' +
+                    '<div class="ar-modal-footer" style="justify-content:space-between">' +
+                        '<button class="ar-cancel-btn" id="arPpCancel">Cancel</button>' +
+                        '<div style="display:flex;gap:8px">' +
+                            '<button class="ar-cancel-btn" id="arPpRegen" title="Ask AI for a different plan"><i class="bi bi-arrow-repeat me-1"></i>Regenerate</button>' +
+                            '<button class="ar-generate-btn" id="arPpBuild"' + (totalCharts === 0 ? ' disabled' : '') + '><i class="bi bi-play-fill me-1"></i>Build Report</button>' +
+                        '</div>' +
+                    '</div>';
+
+                _injectPreviewStyles();
+                _wireEvents();
+            }
+
+            function _wireEvents() {
+                modal.querySelectorAll('.ar-pp-page-name').forEach(function (inp) {
+                    inp.addEventListener('input', function () {
+                        var pi = parseInt(inp.closest('.ar-pp-page').dataset.pi, 10);
+                        if (editable.pages[pi]) editable.pages[pi].name = inp.value;
+                    });
+                });
+                modal.querySelectorAll('.ar-pp-chart-title').forEach(function (inp) {
+                    inp.addEventListener('input', function () {
+                        var card = inp.closest('.ar-pp-chart');
+                        var pi = parseInt(card.dataset.pi, 10);
+                        var ci = parseInt(card.dataset.ci, 10);
+                        if (editable.pages[pi] && editable.pages[pi].charts[ci]) {
+                            editable.pages[pi].charts[ci].title = inp.value;
+                        }
+                    });
+                });
+                modal.querySelectorAll('[data-action="del-chart"]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var card = btn.closest('.ar-pp-chart');
+                        var pi = parseInt(card.dataset.pi, 10);
+                        var ci = parseInt(card.dataset.ci, 10);
+                        if (editable.pages[pi]) editable.pages[pi].charts.splice(ci, 1);
+                        render();
+                    });
+                });
+                modal.querySelectorAll('[data-action="del-page"]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var pg = btn.closest('.ar-pp-page');
+                        var pi = parseInt(pg.dataset.pi, 10);
+                        editable.pages.splice(pi, 1);
+                        render();
+                    });
+                });
+                document.getElementById('arPpCancel').addEventListener('click', function () {
+                    _removeOverlay();
+                    _isRunning = false;
+                    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+                    resolve({ action: 'cancel' });
+                });
+                document.getElementById('arPpRegen').addEventListener('click', function () {
+                    resolve({ action: 'regenerate' });
+                });
+                var buildBtn = document.getElementById('arPpBuild');
+                if (buildBtn) buildBtn.addEventListener('click', function () {
+                    // Strip empty pages
+                    editable.pages = editable.pages.filter(function (p) {
+                        return (p.charts || []).length > 0;
+                    });
+                    resolve({ action: 'build', plan: editable });
+                });
+            }
+
+            render();
+        });
+    }
+
+    // Inject minimal CSS for the plan preview (once).
+    function _injectPreviewStyles() {
+        if (document.getElementById('ar-pp-styles')) return;
+        var s = document.createElement('style');
+        s.id = 'ar-pp-styles';
+        s.textContent = [
+            '.ar-pp-list{max-height:62vh;overflow-y:auto;padding-right:4px;display:flex;flex-direction:column;gap:10px}',
+            '.ar-pp-page{border:1px solid var(--cp-border,#e2e8f0);border-radius:8px;background:var(--cp-surface,#fff);max-height:320px;overflow-y:auto;display:flex;flex-direction:column}',
+            '.ar-pp-page-head{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--cp-bg-alt,#f8fafc);border-bottom:1px solid var(--cp-border,#e2e8f0);position:sticky;top:0;z-index:1}',
+            '.ar-pp-page-head i.bi{color:var(--cp-primary,#4A90D9);font-size:1rem}',
+            '.ar-pp-page-name{flex:1;border:1px solid transparent;background:transparent;font-weight:600;font-size:0.85rem;color:var(--cp-text,#1e2d3d);padding:3px 6px;border-radius:4px}',
+            '.ar-pp-page-name:hover,.ar-pp-page-name:focus{border-color:var(--cp-border,#e2e8f0);background:#fff;outline:none}',
+            '.ar-pp-count{font-size:0.72rem;color:var(--cp-text-secondary,#6c757d);padding:2px 8px;background:var(--cp-surface,#fff);border:1px solid var(--cp-border,#e2e8f0);border-radius:10px;flex-shrink:0}',
+            '.ar-pp-charts{padding:6px 10px 10px;display:flex;flex-direction:column;gap:4px}',
+            '.ar-pp-chart{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px}',
+            '.ar-pp-chart:hover{background:var(--cp-bg-alt,#f8fafc)}',
+            '.ar-pp-chart-type{font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;color:#fff;background:var(--cp-purple,#9B59B6);padding:2px 8px;border-radius:10px;flex-shrink:0;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+            '.ar-pp-chart-title{flex:1;min-width:120px;border:1px solid transparent;background:transparent;font-size:0.82rem;color:var(--cp-text,#1e2d3d);padding:3px 6px;border-radius:4px}',
+            '.ar-pp-chart-title:hover,.ar-pp-chart-title:focus{border-color:var(--cp-border,#e2e8f0);background:#fff;outline:none}',
+            '.ar-pp-chart-meta{font-size:0.7rem;color:var(--cp-text-secondary,#6c757d);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38%}',
+            '.ar-pp-x{flex-shrink:0;border:1px solid var(--cp-border,#e2e8f0);background:var(--cp-surface,#fff);color:#dc3545;border-radius:4px;padding:2px 6px;font-size:0.75rem;cursor:pointer}',
+            '.ar-pp-x:hover{background:#dc3545;color:#fff;border-color:#dc3545}',
+            '.ar-pp-empty{font-size:0.76rem;color:var(--cp-text-secondary,#6c757d);padding:8px;text-align:center;font-style:italic}'
+        ].join('\n');
+        document.head.appendChild(s);
+    }
+
+    // Phase 28-A5: named phases give users a narrative instead of a raw percent.
+    var _PHASES = {
+        schema: { icon: '\uD83D\uDD0D', label: 'Reading your schema\u2026',         pct: 8  },
+        design: { icon: '\uD83E\uDDE0', label: 'Designing pages with AI\u2026',       pct: 30 },
+        place:  { icon: '\uD83D\uDCCA', label: 'Placing visuals on the canvas\u2026', pct: 55 },
+        polish: { icon: '\u2728',       label: 'Applying theme & alignment\u2026',     pct: 95 }
+    };
+    function _setPhase(key) {
+        var p = _PHASES[key]; if (!p) return;
+        _setStatus(p.icon + '  ' + p.label);
+        _setProgress(p.pct);
+    }
+
     function _showDone(pageCount, chartCount) {
         _setStep('done');
         _setProgress(100);
@@ -461,15 +676,15 @@
 
         // Always delete all pages and start fresh
         var isRedesign = !!(existingCharts);
-        _setStatus(isRedesign ? 'Clearing canvas for redesign…' : 'Preparing canvas…');
+        _setPhase('schema');
+        _setStatus(isRedesign ? '\uD83E\uDDF9  Clearing canvas for redesign\u2026' : '\uD83D\uDD0D  Reading your schema\u2026');
         await global.canvasManager.deleteAllPages();
         await new Promise(function (r) { setTimeout(r, 300); });
 
         try {
             // 1. Call AI to get report plan
-            _setStatus('Asking AI to design the report…');
+            _setPhase('design');
             _setStep('plan');
-            _setProgress(10);
 
             var response = await fetch('/api/auto-report/generate', {
                 method: 'POST',
@@ -524,6 +739,37 @@
                 throw new Error('AI did not return a valid report plan. Please try again.');
             }
 
+            // 3.5 Phase 31: Interactive plan preview — let the user review
+            // and edit the plan before we build pages & charts.
+            _setProgress(42);
+            _setStatus('Waiting for your review…');
+            var preview = await _showPlanPreview(plan);
+            if (preview.action === 'cancel') {
+                _isRunning = false;
+                if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+                clearTimeout(_fetchTimeout);
+                return;
+            }
+            if (preview.action === 'regenerate') {
+                _isRunning = false;
+                if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+                clearTimeout(_fetchTimeout);
+                _removeOverlay();
+                // Small delay so the overlay has a chance to unmount before we
+                // rebuild a fresh progress modal.
+                setTimeout(function () { _startGeneration(prompt, tables, existingCharts); }, 120);
+                return;
+            }
+            plan = preview.plan || plan;
+            if (!plan.pages || !plan.pages.length) {
+                throw new Error('No pages left to build. Please regenerate.');
+            }
+            // Rebuild the progress modal so the subsequent steps have their UI.
+            _showProgressModal();
+            _setPhase('design');
+            _setStep('plan');
+            _setProgress(44);
+
             // 4. Build pages and charts
             _setStep('pages');
             _setProgress(45);
@@ -574,6 +820,7 @@
 
                 // Add charts to this page using pixel-packing layout
                 _setStep('charts');
+                _setPhase('place');
                 var charts = pageDef.charts || [];
 
                 // Pixel-packing layout: position cards using their ACTUAL rendered width
@@ -615,6 +862,11 @@
                 var rowWidth = 0;
                 var rowMaxH = 0;
 
+                // Track ids of charts INSERTED BY THIS RUN so the post-layout
+                // helpers only touch newly-added cards. Pre-existing user-arranged
+                // charts keep their posX/posY exactly as the user left them.
+                var newChartIds = new Set();
+
                 // Close the current row and start a new one below.
                 function _commitRow() {
                     if (rowItems.length === 0) return;
@@ -627,8 +879,8 @@
                 for (var ci = 0; ci < charts.length; ci++) {
                     var chartDef = charts[ci];
                     chartsDone++;
-                    _setStatus('Adding: ' + (chartDef.title || 'Chart') + ' (' + chartsDone + '/' + totalCharts + ')');
-                    _setProgress(55 + (chartsDone / totalCharts) * 40);
+                    _setStatus('\uD83D\uDCCA  Placing \u201C' + (chartDef.title || 'Chart') + '\u201D  (' + chartsDone + ' of ' + totalCharts + ')');
+                    _setProgress(55 + (chartsDone / totalCharts) * 38);
 
                     // Clamp AI-provided width into [MIN_COLS..12] so every chart is ≥ 5cm wide
                     var requestedW = parseInt(chartDef.width, 10);
@@ -808,7 +1060,8 @@
                     }
 
                     try {
-                        await cm.addChart(partial);
+                        var added = await cm.addChart(partial);
+                        if (added && added.id) newChartIds.add(added.id);
                     } catch (e) {
                         console.warn('[auto-report] Failed to add chart:', chartDef.title, e);
                     }
@@ -821,19 +1074,18 @@
                 // and verify its rendered DOM element is inside chart-canvas-drop.
                 // If anything ended up out of range (e.g. AI-provided posX/posY
                 // survived somewhere, or colsToPixels grew on resize), snap it back.
-                _validateAndFixPagePositions(cm, margin);
+                _validateAndFixPagePositions(cm, margin, newChartIds);
 
                 // Second verification pass — re-pack using ACTUAL rendered widths
                 // from the DOM so cards tile tightly with uniform gaps regardless
                 // of any drift between plan-time col math and render-time sizing.
                 await new Promise(function (r) { setTimeout(r, 60); });
-                _repackPageFromDom(cm, margin, rowGap, colGap);
+                _repackPageFromDom(cm, margin, rowGap, colGap, newChartIds);
             }
 
             // 5. Switch back to first generated page
             _setStep('done');
-            _setProgress(98);
-            _setStatus('Finalising…');
+            _setPhase('polish');
 
             var firstPage = (startPageIdx === 0 && cm.charts.length > 0) ? 0 : startPageIdx;
             if (firstPage < cm.pages.length) {

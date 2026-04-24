@@ -114,34 +114,59 @@ public class DashboardController : Controller
                 if (wsRole == "Viewer" && appUser2?.Role != "OrgAdmin" && appUser2?.Role != "SuperAdmin")
                     return Redirect("/access-denied?statusCode=403");
 
-                // Find the most recent report in this workspace
-                var latestReport = await _db.Reports
-                    .Where(r => r.WorkspaceId == ws.Id && !string.IsNullOrEmpty(r.CanvasJson))
+                // Resolve the agent (if provided) BEFORE picking a report so we can isolate
+                // each artifact's dashboard — different artifacts in the same workspace must
+                // NOT share canvas state or datasources.
+                Agent? resolvedAgent = null;
+                if (!string.IsNullOrEmpty(agent))
+                {
+                    resolvedAgent = await _db.Agents.Include(a => a.Datasource)
+                        .FirstOrDefaultAsync(a => a.Guid == agent || a.Id.ToString() == agent);
+                }
+
+                // Find the most recent report scoped to THIS artifact (agent). Fall back to
+                // the agent's datasource for legacy reports that predate AgentId. Only if no
+                // agent is provided do we consider any workspace report.
+                IQueryable<Report> reportQuery = _db.Reports
+                    .Where(r => r.WorkspaceId == ws.Id && !string.IsNullOrEmpty(r.CanvasJson));
+                if (resolvedAgent != null)
+                {
+                    var agentId = resolvedAgent.Id;
+                    var agentDsId = resolvedAgent.DatasourceId;
+                    reportQuery = reportQuery.Where(r =>
+                        r.AgentId == agentId
+                        || (r.AgentId == null && agentDsId != null && r.DatasourceId == agentDsId));
+                }
+                var latestReport = await reportQuery
                     .OrderByDescending(r => r.CreatedAt)
                     .FirstOrDefaultAsync();
+
+                // Session key isolates canvas state per (workspace, agent) so switching
+                // between artifacts never leaks charts from one into the other.
+                var scopeKey = string.IsNullOrEmpty(agent) ? workspace : $"{workspace}_{agent}";
+                var sessionKey = SessionKeyPrefix + scopeKey;
 
                 if (latestReport != null)
                 {
                     canvas = JsonConvert.DeserializeObject<CanvasState>(latestReport.CanvasJson!) ?? new CanvasState();
                     canvas.CanvasName = latestReport.Name ?? canvas.CanvasName;
                     ViewBag.ReportGuid = latestReport.Guid;
-                    var sessionKey = SessionKeyPrefix + workspace;
                     HttpContext.Session.SetString(sessionKey, JsonConvert.SerializeObject(canvas));
                 }
                 else
                 {
-                    // Fresh canvas for this workspace — don't reuse another workspace's session state
+                    // Fresh canvas for this artifact — clear any stale session state so the
+                    // previous artifact's charts don't bleed through.
                     canvas = new CanvasState { Charts = _chartService.GetDefaultCharts() };
+                    HttpContext.Session.Remove(sessionKey);
                 }
 
-                // Resolve datasource context — prefer agent's bound datasource if ?agent= is provided
-                Datasource? ds = null;
-                if (!string.IsNullOrEmpty(agent))
+                // Resolve datasource context — prefer the resolved agent's bound datasource,
+                // then the latest report's datasource, then the first datasource in the workspace.
+                Datasource? ds = resolvedAgent?.Datasource;
+                if (ds == null && latestReport?.DatasourceId != null)
                 {
-                    // Try to find agent by guid or id and use its datasource
-                    var resolvedAgent = await _db.Agents.Include(a => a.Datasource)
-                        .FirstOrDefaultAsync(a => a.Guid == agent || a.Id.ToString() == agent);
-                    ds = resolvedAgent?.Datasource;
+                    ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Id == latestReport.DatasourceId.Value);
                 }
                 ds ??= await _db.Datasources
                     .Where(d => d.WorkspaceId == ws.Id)
@@ -151,6 +176,11 @@ public class DashboardController : Controller
                     ViewBag.DatasourceId = ds.Id;
                     ViewBag.DatasourceName = ds.Name;
                     ViewBag.DatasourceType = ds.Type;
+                }
+                if (resolvedAgent != null)
+                {
+                    ViewBag.AgentGuid = resolvedAgent.Guid;
+                    ViewBag.AgentName = resolvedAgent.Name;
                 }
                 ViewBag.WorkspaceGuid = ws.Guid;
                 ViewBag.WorkspaceName = ws.Name;

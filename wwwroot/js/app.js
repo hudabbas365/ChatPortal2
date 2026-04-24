@@ -10,41 +10,46 @@
         });
     }
 
-    // Update nav auth button based on login state
-    async function updateNavAuth() {
+    // Apply nav auth UI state (no network calls). Safe to call multiple times.
+    function applyNavAuthUi(user) {
         const authBtn = document.getElementById('navAuthBtn');
-        const logoutBtn = document.getElementById('navLogoutBtn');
-        const chatLogoutBtn = document.getElementById('chatLayoutLogoutBtn');
         const dashboardBtn = document.getElementById('navDashboardBtn');
-        const chatAuthBtn = document.getElementById('chatAuthBtn');
-
-        let user = JSON.parse(localStorage.getItem('cp_user') || 'null');
-
-        // Verify auth state with server (only if we have a token)
-        if (localStorage.getItem('cp_token')) {
-            try {
-                const r = await fetch('/api/auth/me');
-                if (r.ok) {
-                    const data = await r.json();
-                    user = data;
-                    localStorage.setItem('cp_user', JSON.stringify(user));
-                } else {
-                    // Server says not authenticated — clear stale local data
-                    user = null;
-                    localStorage.removeItem('cp_user');
-                    localStorage.removeItem('cp_token');
-                }
-            } catch (e) {
-                console.error('Auth verification failed:', e);
-            }
-        }
+        const userMenu = document.getElementById('navUserMenu');
+        const userMenuBtn = document.getElementById('navUserMenuBtn');
+        const userMenuDropdown = document.getElementById('navUserMenuDropdown');
+        const userNameEl = document.getElementById('navUserName');
+        const menuSettings = document.getElementById('navUserMenuSettings');
+        const menuActivity = document.getElementById('navUserMenuActivity');
+        const logoutBtn = document.getElementById('navLogoutBtn');
 
         if (user) {
             if (authBtn) authBtn.style.display = 'none';
-            function wireLogout(btn) {
-                if (!btn || btn._logoutWired) return;
-                btn._logoutWired = true;
-                btn.addEventListener('click', function() {
+            if (dashboardBtn) dashboardBtn.style.display = '';
+            if (userMenu) userMenu.style.display = '';
+            if (userNameEl) userNameEl.textContent = user.fullName || user.email || 'User';
+            const isAdminRole = user.role === 'OrgAdmin' || user.role === 'SuperAdmin';
+            if (menuSettings) menuSettings.style.display = isAdminRole ? '' : 'none';
+            if (menuActivity) menuActivity.style.display = isAdminRole ? '' : 'none';
+
+            // Sidebar links — apply synchronously from cached user to avoid blink
+            const sidebarActivity = document.getElementById('activityLink');
+            const sidebarSettings = document.getElementById('orgSettingsLink');
+            const sidebarSuperAdmin = document.getElementById('superAdminLink');
+            if (sidebarActivity) sidebarActivity.style.display = isAdminRole ? '' : 'none';
+            if (sidebarSettings) sidebarSettings.style.display = isAdminRole ? '' : 'none';
+            if (sidebarSuperAdmin) sidebarSuperAdmin.style.display = user.role === 'SuperAdmin' ? '' : 'none';
+
+            // Sidebar org name
+            const orgNameEl = document.getElementById('orgName');
+            if (orgNameEl) {
+                const displayName = user.orgName || user.fullName || 'My Organization';
+                orgNameEl.textContent = displayName;
+                orgNameEl.title = displayName;
+            }
+
+            if (logoutBtn && !logoutBtn._logoutWired) {
+                logoutBtn._logoutWired = true;
+                logoutBtn.addEventListener('click', function() {
                     fetch('/api/auth/logout', { method: 'POST' }).finally(function() {
                         localStorage.removeItem('cp_user');
                         localStorage.removeItem('cp_token');
@@ -53,38 +58,67 @@
                     });
                 });
             }
-            wireLogout(logoutBtn);
-            wireLogout(chatLogoutBtn);
-            if (logoutBtn) logoutBtn.style.display = '';
-            if (chatLogoutBtn) chatLogoutBtn.style.display = '';
-            if (dashboardBtn) dashboardBtn.style.display = '';
-            if (chatAuthBtn) {
-                chatAuthBtn.innerHTML = `<i class="bi bi-person-circle me-1"></i>${user.fullName || user.email}`;
-                chatAuthBtn.href = '#';
+
+            if (userMenuBtn && userMenuDropdown && !userMenuBtn._menuWired) {
+                userMenuBtn._menuWired = true;
+                const closeMenu = () => {
+                    userMenuDropdown.hidden = true;
+                    userMenu.classList.remove('open');
+                    userMenuBtn.setAttribute('aria-expanded', 'false');
+                };
+                const openMenu = () => {
+                    userMenuDropdown.hidden = false;
+                    userMenu.classList.add('open');
+                    userMenuBtn.setAttribute('aria-expanded', 'true');
+                };
+                userMenuBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (userMenu.classList.contains('open')) closeMenu(); else openMenu();
+                });
+                document.addEventListener('click', (e) => {
+                    if (!userMenu.contains(e.target)) closeMenu();
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') closeMenu();
+                });
             }
         } else {
             if (authBtn) authBtn.style.display = '';
-            if (logoutBtn) logoutBtn.style.display = 'none';
-            if (chatLogoutBtn) chatLogoutBtn.style.display = 'none';
+            if (userMenu) userMenu.style.display = 'none';
             if (dashboardBtn) dashboardBtn.style.display = 'none';
         }
+    }
 
-        const settingsLink = document.getElementById('orgSettingsLink');
-        const activityLink = document.getElementById('activityLink');
-        if (settingsLink && user && user.role !== 'OrgAdmin' && user.role !== 'SuperAdmin') {
-            settingsLink.style.display = 'none';
-        }
-        if (activityLink && user && (user.role === 'OrgAdmin' || user.role === 'SuperAdmin')) {
-            activityLink.style.display = '';
+    // Update nav auth button based on login state
+    async function updateNavAuth() {
+        let user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+        const hasToken = !!localStorage.getItem('cp_token');
+
+        // Apply cached state synchronously to eliminate flicker
+        applyNavAuthUi(hasToken ? user : null);
+
+        // Verify auth state with server (only if we have a token)
+        if (hasToken) {
+            try {
+                const r = await fetch('/api/auth/me');
+                if (r.ok) {
+                    user = await r.json();
+                    localStorage.setItem('cp_user', JSON.stringify(user));
+                    applyNavAuthUi(user);
+                } else {
+                    // Server says not authenticated — clear stale local data
+                    localStorage.removeItem('cp_user');
+                    localStorage.removeItem('cp_token');
+                    user = null;
+                    applyNavAuthUi(null);
+                }
+            } catch (e) {
+                console.error('Auth verification failed:', e);
+            }
         }
 
-        // Update left panel org name
-        const orgNameEl = document.getElementById('orgName');
-        if (orgNameEl && user) {
-            const displayName = user.orgName || user.fullName || 'My Organization';
-            orgNameEl.textContent = displayName;
-            orgNameEl.title = displayName;
-        }
+        // Nothing else to do — sidebar links and org name are applied via applyNavAuthUi.
     }
 
     // Load subscription info
@@ -98,6 +132,41 @@
         } catch {}
     }
 
+    // Render workspace list items into #workspaceList. Preserves active state
+    // by matching against the current active data-workspace-id if present.
+    function _renderWorkspaceList(workspaces) {
+        const list = document.getElementById('workspaceList');
+        if (!list || !workspaces || !workspaces.length) return;
+        const prevActive = list.querySelector('.panel-list-item.active');
+        const activeId = prevActive ? prevActive.getAttribute('data-workspace-id') : null;
+        list.innerHTML = workspaces.map(w =>
+            `<div class="panel-list-item${activeId && activeId === w.guid ? ' active' : ''}" data-workspace-id="${w.guid}">
+                ${w.logoUrl
+                    ? `<img src="${_escHtml(w.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
+                    : '<i class="bi bi-folder me-2"></i>'}${_escHtml(w.name)}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
+             </div>`
+        ).join('');
+        list.querySelectorAll('.panel-list-item').forEach(function (el, i) {
+            el.title = workspaces[i]?.description || '';
+        });
+    }
+
+    // Hydrate workspace list synchronously from localStorage cache (stale-while-revalidate).
+    // Call this as early as possible on page load so names appear instantly.
+    function hydrateWorkspacesFromCache() {
+        try {
+            const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+            if (!user || !user.organizationId) return;
+            const key = 'cp_workspaces_' + user.organizationId;
+            const cached = localStorage.getItem(key);
+            if (!cached) return;
+            const workspaces = JSON.parse(cached);
+            if (Array.isArray(workspaces) && workspaces.length) {
+                _renderWorkspaceList(workspaces);
+            }
+        } catch {}
+    }
+
     // Load workspaces into left panel
     async function loadWorkspaces() {
         const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
@@ -105,19 +174,18 @@
         try {
             const r = await fetch('/api/workspaces?organizationId=' + user.organizationId);
             const workspaces = await r.json();
-            const list = document.getElementById('workspaceList');
-            if (!list) return;
             if (workspaces.length) {
-                list.innerHTML = workspaces.map(w =>
-                    `<div class="panel-list-item" data-workspace-id="${w.guid}">
-                        ${w.logoUrl
-                            ? `<img src="${_escHtml(w.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
-                            : '<i class="bi bi-folder me-2"></i>'}${_escHtml(w.name)}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
-                     </div>`
-                ).join('');
-                list.querySelectorAll('.panel-list-item').forEach(function (el, i) {
-                    el.title = workspaces[i]?.description || '';
-                });
+                _renderWorkspaceList(workspaces);
+                // Cache a minimal snapshot for instant hydration on the next visit
+                try {
+                    const slim = workspaces.map(w => ({
+                        guid: w.guid,
+                        name: w.name,
+                        logoUrl: w.logoUrl,
+                        description: w.description
+                    }));
+                    localStorage.setItem('cp_workspaces_' + user.organizationId, JSON.stringify(slim));
+                } catch {}
             }
         } catch {}
 
@@ -152,7 +220,7 @@
                 if (user.role !== 'OrgAdmin' && user.role !== 'SuperAdmin') {
                     showContactAdminUpgradeModal(user);
                 } else {
-                    window.location.href = '/admin/billing';
+                    window.location.href = '/org/settings?tab=users';
                 }
             });
         });
@@ -248,6 +316,8 @@
     window.showAccessDenied = showAccessDenied;
 
     document.addEventListener('DOMContentLoaded', function() {
+        // Paint cached state first (synchronously) to avoid flicker on names + sidebar links
+        hydrateWorkspacesFromCache();
         updateNavAuth();
         loadPlan();
         loadWorkspaces();

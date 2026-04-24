@@ -450,6 +450,87 @@
             </div>`;
     }
 
+    function renderStoppedBubble(bubble) {
+        if (!bubble) return;
+        bubble.innerHTML = `
+            <div class="tp-stopped-card" style="display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;border-radius:10px;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);color:#475569;font-size:.85rem">
+                <i class="bi bi-pause-circle" style="font-size:1rem;color:#64748b"></i>
+                <span>You stopped this response. Ask me something else when you're ready.</span>
+            </div>`;
+    }
+
+    function renderFollowUpChips(bubble, suggestions) {
+        if (!bubble || !Array.isArray(suggestions) || !suggestions.length) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'chat-followup-chips';
+        suggestions.slice(0, 3).forEach(s => {
+            if (!s || typeof s !== 'string') return;
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'chat-followup-chip';
+            chip.textContent = s;
+            chip.addEventListener('click', () => {
+                const input = document.getElementById('chatInput');
+                if (input) { input.value = s; input.focus(); }
+            });
+            wrap.appendChild(chip);
+        });
+        bubble.appendChild(wrap);
+    }
+
+    // Strip technical sentences the AI sometimes leaks into the description
+    // (references to queries, tables, records, schema, SQL/DAX, joins, etc.).
+    function sanitizeDescription(text) {
+        if (!text || typeof text !== 'string') return '';
+        const technical = /\b(query|queries|queried|records?|rows?|columns?|tables?|dbo\.|schema|SQL|DAX|database|fetched|join(ed)?|separately|unrelated|select\b|from\b|where\b|group by|order by)\b/i;
+        const sentences = text.split(/(?<=[.!?])\s+/);
+        const cleaned = sentences.filter(s => s && !technical.test(s)).join(' ').trim();
+        return cleaned || "Here's what your data shows.";
+    }
+
+    // Pull a trailing <followups>["q1","q2","q3"]</followups> tag out of the AI response.
+    // Returns { cleanText, suggestions } where cleanText has the tag stripped.
+    function extractFollowUps(text) {
+        if (!text || typeof text !== 'string') return { cleanText: text || '', suggestions: [] };
+        const m = text.match(/<followups>\s*(\[[\s\S]*?\])\s*<\/followups>\s*$/i);
+        if (!m) return { cleanText: text, suggestions: [] };
+        let suggestions = [];
+        try {
+            const arr = JSON.parse(m[1]);
+            if (Array.isArray(arr)) suggestions = arr.filter(x => typeof x === 'string' && x.trim()).slice(0, 3);
+        } catch {}
+        return { cleanText: text.slice(0, m.index).trimEnd(), suggestions };
+    }
+
+    // Scrub technical leakage from a free-text (markdown) assistant reply:
+    // - remove ```sql / ```dax / ```tsql fenced code blocks entirely
+    // - drop lines mentioning dbo./schema/SELECT/FROM and similar internals
+    // - strip all markdown headers (end-users don't need '### Query' style sections)
+    function sanitizeMarkdown(text) {
+        if (!text || typeof text !== 'string') return '';
+        let t = text.replace(/```(?:sql|dax|tsql|mssql|postgres|mysql|plsql)[\s\S]*?```/gi, '');
+        t = t.replace(/```[\s\S]*?(SELECT|FROM|EVALUATE|SUMMARIZECOLUMNS|dbo\.)[\s\S]*?```/gi, '');
+        const technicalLine = /\b(dbo\.|INFORMATION_SCHEMA|SELECT\s+TOP|SELECT\s+\*|FROM\s+\w|WHERE\s+\w|GROUP\s+BY|ORDER\s+BY|EVALUATE|SUMMARIZECOLUMNS|\bJOIN\b|schema prefix|data_response|suggestedChart|suggestedFields|followUpSuggestions|top\s+\d+\s+rows?|first\s+\d+\s+rows?|\brows?\b|\bcolumns?\b|\btables?\b|\bquery\b|\bqueries\b)\b/i;
+        const lines = t.split(/\r?\n/).map(line => {
+            // Strip any markdown header prefix (#, ##, ###, ####, etc.) but keep the text
+            const headerMatch = line.match(/^\s*#{1,6}\s*\*{0,2}\s*(.*?)\s*\*{0,2}\s*$/);
+            if (headerMatch) return headerMatch[1];
+            return line;
+        }).filter(line => {
+            const s = line.trim();
+            if (!s) return true;
+            if (technicalLine.test(s)) return false;
+            return true;
+        });
+        return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    const DEFAULT_FOLLOWUPS = [
+        'Can you show this as a chart?',
+        'Break this down further',
+        'What should I look at next?'
+    ];
+
     function renderErrorBubble(bubble, details) {
         if (!bubble) return;
         const status  = details.httpStatus ? `HTTP ${details.httpStatus}` : 'Network Error';
@@ -519,7 +600,7 @@
     // Try to parse AI JSON data_response and render as structured card
     function renderDataResponse(bubble, jsonObj) {
         const q = escapeHtml(jsonObj.query || '');
-        const desc = escapeHtml(jsonObj.description || '');
+        const desc = escapeHtml(sanitizeDescription(jsonObj.description || ''));
         const prompt = escapeHtml(jsonObj.prompt || '');
         const chart = jsonObj.suggestedChart || 'bar';
 
@@ -617,6 +698,44 @@
         if (!resultArea || !data.length) return;
 
         const cols = Object.keys(data[0]);
+
+        // Resolve the AI-suggested label/value fields against the REAL column names.
+        // The AI often returns differently-cased names (e.g. "region" vs "Region") which
+        // causes <option selected> to match nothing and the chart renders with zeros.
+        function resolveCol(wanted, fallback) {
+            if (!wanted) return fallback;
+            if (cols.includes(wanted)) return wanted;
+            const lower = String(wanted).toLowerCase();
+            const hit = cols.find(c => c.toLowerCase() === lower);
+            return hit || fallback;
+        }
+        // Pick smart defaults: first non-numeric col for label, first numeric col for value.
+        // IMPORTANT: parseFloat("2020-07-12") returns 2020 (not NaN), so plain parseFloat
+        // would misclassify date strings as numeric. Require the whole cell to be a finite
+        // number by re-serializing and comparing, and explicitly reject ISO-date-ish values.
+        function isNumericCol(col) {
+            let sampled = 0;
+            for (let i = 0; i < data.length && sampled < 5; i++) {
+                const v = data[i][col];
+                if (v === null || v === undefined || v === '') continue;
+                sampled++;
+                if (typeof v === 'number') {
+                    if (!isFinite(v)) return false;
+                    continue;
+                }
+                const s = String(v).trim();
+                // Reject date-ish values (YYYY-MM-DD, ISO timestamps, etc.)
+                if (/[-/:T ]/.test(s) && /\d{4}/.test(s)) return false;
+                const n = Number(s);
+                if (!isFinite(n)) return false;
+            }
+            return sampled > 0;
+        }
+        const firstNumeric = cols.find(isNumericCol) || cols[1] || cols[0];
+        const firstNonNumeric = cols.find(c => !isNumericCol(c)) || cols[0];
+        const resolvedLabel = resolveCol(jsonObj.suggestedFields?.label, firstNonNumeric);
+        const resolvedValue = resolveCol(jsonObj.suggestedFields?.value, firstNumeric);
+
         const thead = `<tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
         const tbody = data.map(row =>
             `<tr>${cols.map(c => `<td>${escapeHtml(String(row[c] ?? ''))}</td>`).join('')}</tr>`
@@ -654,11 +773,11 @@
                     </select>
                     <label class="form-label mb-0 small">Label:</label>
                     <select class="form-select form-select-sm dr-label-sel" style="width:auto">
-                        ${Object.keys(data[0]).map(c => `<option value="${escapeHtml(c)}" ${c===(jsonObj.suggestedFields?.label||'')?'selected':''}>${escapeHtml(c)}</option>`).join('')}
+                        ${Object.keys(data[0]).map(c => `<option value="${escapeHtml(c)}" ${c===resolvedLabel?'selected':''}>${escapeHtml(c)}</option>`).join('')}
                     </select>
                     <label class="form-label mb-0 small">Value:</label>
                     <select class="form-select form-select-sm dr-value-sel" style="width:auto">
-                        ${Object.keys(data[0]).map(c => `<option value="${escapeHtml(c)}" ${c===(jsonObj.suggestedFields?.value||'')?'selected':''}>${escapeHtml(c)}</option>`).join('')}
+                        ${Object.keys(data[0]).map(c => `<option value="${escapeHtml(c)}" ${c===resolvedValue?'selected':''}>${escapeHtml(c)}</option>`).join('')}
                     </select>
                     <button class="btn btn-sm btn-outline-secondary dr-render-chart-btn">Render</button>
                     <button class="btn btn-sm btn-outline-success dr-send-dashboard-btn">
@@ -715,43 +834,147 @@
         const chartArea = resultArea.querySelector('.dr-chart-area');
         vizBtn?.addEventListener('click', function() {
             chartArea.style.display = chartArea.style.display === 'none' ? 'block' : 'none';
-            if (chartArea.style.display !== 'none') renderChart();
+            if (chartArea.style.display !== 'none') {
+                // Wait for layout so the chart container has a real width before ApexCharts measures it.
+                requestAnimationFrame(() => requestAnimationFrame(renderChart));
+            }
         });
 
         function renderChart() {
-            const chartDiv = resultArea.querySelector('.dr-chart-canvas-div');
+            const chartHost = resultArea.querySelector('.dr-chart-canvas-div');
             const chartType = resultArea.querySelector('.dr-chart-type-sel')?.value || 'bar';
-            const labelField = resultArea.querySelector('.dr-label-sel')?.value || Object.keys(data[0])[0];
-            const valueField = resultArea.querySelector('.dr-value-sel')?.value || Object.keys(data[0])[1];
+            let labelField = resultArea.querySelector('.dr-label-sel')?.value || resolvedLabel;
+            let valueField = resultArea.querySelector('.dr-value-sel')?.value || resolvedValue;
+
+            // Safety: if the chosen value column is non-numeric (e.g. first col picked by
+            // default), switch to the first numeric column so the chart is not flat.
+            if (!isNumericCol(valueField)) {
+                const alt = cols.find(isNumericCol);
+                if (alt) {
+                    valueField = alt;
+                    const sel = resultArea.querySelector('.dr-value-sel');
+                    if (sel) sel.value = alt;
+                }
+            }
+            // Label should not equal value; fall back if user picked same column.
+            if (labelField === valueField) {
+                labelField = cols.find(c => c !== valueField) || labelField;
+                const sel = resultArea.querySelector('.dr-label-sel');
+                if (sel) sel.value = labelField;
+            }
+
             const labels = data.map(r => String(r[labelField] ?? ''));
-            const values = data.map(r => parseFloat(r[valueField]) || 0);
-            if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-            if (typeof ApexCharts !== 'undefined' && chartDiv) {
-                const apexType = (chartType === 'donut' || chartType === 'doughnut') ? 'donut' : chartType;
-                const isPieLike = ['pie', 'donut'].includes(apexType);
-                const colors = ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548'];
-                chartInstance = new ApexCharts(chartDiv, {
-                    chart: { type: apexType, height: 280, toolbar: { show: false }, fontFamily: "'Inter', sans-serif", animations: { speed: 500 } },
-                    series: isPieLike ? values : [{ name: valueField, data: values }],
-                    ...(isPieLike ? { labels } : { xaxis: { categories: labels } }),
-                    colors,
-                    legend: { show: isPieLike, position: 'top' },
-                    tooltip: { theme: 'dark' },
-                    dataLabels: { enabled: false },
-                    grid: { borderColor: 'rgba(0,0,0,0.04)' },
-                    plotOptions: isPieLike ? {} : { bar: { borderRadius: 4 } },
-                    stroke: (apexType === 'line' || apexType === 'area') ? { curve: 'smooth', width: 2 } : undefined
+            const values = data.map(r => {
+                const n = Number(r[valueField]);
+                return isFinite(n) ? n : 0;
+            });
+
+            // Always destroy the previous instance before creating a new one.
+            if (chartInstance) {
+                try { chartInstance.destroy(); } catch {}
+                chartInstance = null;
+            }
+            if (typeof ApexCharts === 'undefined') {
+                console.warn('[chat] ApexCharts library is not loaded — cannot render chart.');
+                if (chartHost) chartHost.innerHTML =
+                    '<div class="text-muted small p-3">Chart library failed to load. Please refresh the page.</div>';
+                return;
+            }
+            if (!chartHost) return;
+
+            if (!values.length || !labels.length) {
+                chartHost.innerHTML = '<div class="text-muted small p-3">No data to visualize.</div>';
+                return;
+            }
+
+            // ApexCharts throws the 'getComputedStyle on Window' / 'reading colors' pair
+            // when ANY ancestor of the mount is display:none or has zero layout. We must
+            // verify the host is actually laid out in the document, not just width>0.
+            const rect = chartHost.getBoundingClientRect();
+            if (!chartHost.offsetParent || rect.width < 10) {
+                requestAnimationFrame(() => requestAnimationFrame(renderChart));
+                return;
+            }
+
+            // CRITICAL: render into a FRESH child element, not the reused host.
+            // ApexCharts keeps internal refs to nodes it created; wiping innerHTML leaves
+            // those refs pointing at detached DOM and getComputedStyle(detached) fails.
+            chartHost.innerHTML = '';
+            const mount = document.createElement('div');
+            mount.style.width = '100%';
+            mount.style.height = '280px';
+            chartHost.appendChild(mount);
+
+            const apexType = (chartType === 'donut' || chartType === 'doughnut') ? 'donut' : chartType;
+            const isPieLike = ['pie', 'donut'].includes(apexType);
+            const isBar     = apexType === 'bar';
+
+            // Single fixed palette — used the same way across every chart type so the
+            // visual theme stays consistent between renders / type switches.
+            const PALETTE = ['#4A90D9','#E87C3E','#4CAF50','#9C27B0','#FF5722','#00BCD4','#FFC107','#795548'];
+
+            const config = {
+                chart: {
+                    type: apexType,
+                    height: 280,
+                    width: '100%',
+                    toolbar: { show: false },
+                    animations: { enabled: true, speed: 400 },
+                    fontFamily: 'Inter, sans-serif'
+                },
+                series: isPieLike ? values : [{ name: String(valueField), data: values }],
+                colors: PALETTE,
+                // For bar we want each bar coloured from the palette (distributed),
+                // so we hide the per-color legend to avoid a noisy strip at the top.
+                legend: { show: isPieLike, position: 'top' },
+                tooltip: { enabled: true, theme: 'light' },
+                dataLabels: { enabled: false },
+                grid: { borderColor: 'rgba(0,0,0,0.06)' },
+                plotOptions: isPieLike
+                    ? {}
+                    : { bar: { borderRadius: 4, columnWidth: '60%', distributed: isBar } },
+                stroke: (apexType === 'line' || apexType === 'area')
+                    ? { curve: 'smooth', width: 2 }
+                    : { width: 0 }
+            };
+            if (isPieLike) {
+                config.labels = labels;
+            } else {
+                config.xaxis = {
+                    categories: labels,
+                    labels: { rotate: -30, trim: true, style: { fontSize: '11px' } }
+                };
+            }
+
+            try {
+                chartInstance = new ApexCharts(mount, config);
+                chartInstance.render().catch(err => {
+                    console.error('[chat] ApexCharts async render failed:', err, config);
+                    chartHost.innerHTML =
+                        '<div class="text-muted small p-3"><i class="bi bi-exclamation-triangle me-1"></i>' +
+                        'Unable to render this chart. Try a different chart type or value column.</div>';
                 });
-                chartInstance.render();
+            } catch (err) {
+                console.error('[chat] ApexCharts sync render failed:', err, config);
+                chartHost.innerHTML =
+                    '<div class="text-muted small p-3"><i class="bi bi-exclamation-triangle me-1"></i>' +
+                    'Unable to render this chart. Try a different chart type or value column.</div>';
             }
         }
 
         resultArea.querySelector('.dr-render-chart-btn')?.addEventListener('click', renderChart);
         resultArea.querySelector('.dr-send-dashboard-btn')?.addEventListener('click', function() {
-            // Read current selector state (or fall back to first two columns)
+            // Read current selector state (or fall back to resolved smart defaults)
             const chartType  = resultArea.querySelector('.dr-chart-type-sel')?.value || suggestedChart || 'bar';
-            const labelField = resultArea.querySelector('.dr-label-sel')?.value  || Object.keys(data[0])[0];
-            const valueField = resultArea.querySelector('.dr-value-sel')?.value  || Object.keys(data[0])[1];
+            let labelField   = resultArea.querySelector('.dr-label-sel')?.value  || resolvedLabel;
+            let valueField   = resultArea.querySelector('.dr-value-sel')?.value  || resolvedValue;
+            if (!isNumericCol(valueField)) {
+                const alt = cols.find(isNumericCol);
+                if (alt) valueField = alt;
+            }
+            if (labelField === valueField) {
+                labelField = cols.find(c => c !== valueField) || labelField;
+            }
             const labels     = data.map(r => String(r[labelField] ?? ''));
             const values     = data.map(r => parseFloat(r[valueField]) || 0);
             const title      = (jsonObj.prompt || 'Chat Chart').substring(0, 50);
@@ -915,21 +1138,27 @@
             } catch (err) {
                 clearTimeout(_step2Timer);
                 clearTimeout(_step3Timer);
-                ThinkingPanel.showError({
-                    message: prompt,
-                    workspaceId: currentWorkspaceId,
-                    userId: user?.id,
-                    httpStatus: _httpStatus,
-                    errorText: err?.message || 'Network error',
-                    timestamp: new Date().toLocaleTimeString()
-                });
-                CohereProgress.error();
-                renderErrorBubble(aiBubble, {
-                    httpStatus: _httpStatus,
-                    errorText: err?.message || 'Network error',
-                    message: prompt,
-                    timestamp: new Date().toLocaleTimeString()
-                });
+                if (err?.name === 'AbortError') {
+                    ThinkingPanel.allDone();
+                    CohereProgress.done(false);
+                    renderStoppedBubble(aiBubble);
+                } else {
+                    ThinkingPanel.showError({
+                        message: prompt,
+                        workspaceId: currentWorkspaceId,
+                        userId: user?.id,
+                        httpStatus: _httpStatus,
+                        errorText: err?.message || 'Network error',
+                        timestamp: new Date().toLocaleTimeString()
+                    });
+                    CohereProgress.error();
+                    renderErrorBubble(aiBubble, {
+                        httpStatus: _httpStatus,
+                        errorText: err?.message || 'Network error',
+                        message: prompt,
+                        timestamp: new Date().toLocaleTimeString()
+                    });
+                }
             } finally {
                 analyzeSendBtn.disabled = false;
             }
@@ -1094,17 +1323,28 @@
 
             // Try to detect structured JSON response
             if (aiBubble && fullText) {
-                const parsed = tryParseDataResponse(fullText);
+                // Always peel off the <followups>[...]</followups> tag first; the JSON parser
+                // would choke on it and we want chips to appear on every turn.
+                const { cleanText: withoutTag, suggestions: tagSuggestions } = extractFollowUps(fullText);
+                const parsed = tryParseDataResponse(withoutTag);
                 if (parsed) {
                     clearTimeout(step3Timer);
                     ThinkingPanel.allDone();
                     CohereProgress.done(true);
                     setTimeout(() => ThinkingPanel.showDetails(parsed), 350);
                     renderDataResponse(aiBubble, parsed);
+                    const chips = (parsed.followUpSuggestions && parsed.followUpSuggestions.length)
+                        ? parsed.followUpSuggestions
+                        : (tagSuggestions.length ? tagSuggestions : DEFAULT_FOLLOWUPS);
+                    renderFollowUpChips(aiBubble, chips);
                 } else {
-                    aiBubble.textContent = fullText;
+                    const safeText = sanitizeMarkdown(withoutTag) || "Here's what I found. Ask me to explain any part or dig deeper.";
+                    aiBubble.textContent = safeText;
+                    fullText = safeText;
                     CohereProgress.done(false);
-                    const _preview = fullText.length > 400 ? fullText.substring(0, 400) + '…' : fullText;
+                    const chips = tagSuggestions.length ? tagSuggestions : DEFAULT_FOLLOWUPS;
+                    renderFollowUpChips(aiBubble, chips);
+                    const _preview = safeText.length > 400 ? safeText.substring(0, 400) + '…' : safeText;
                     setTimeout(() => ThinkingPanel.showDetails({ prompt: message, description: _preview }), 350);
                 }
                 // Save AI response to browser history
@@ -1117,21 +1357,27 @@
         } catch (err) {
             clearTimeout(step2Timer);
             clearTimeout(step3Timer);
-            ThinkingPanel.showError({
-                message: message,
-                workspaceId: currentWorkspaceId,
-                userId: user?.id,
-                httpStatus: _httpStatus,
-                errorText: err?.message || 'Network error',
-                timestamp: new Date().toLocaleTimeString()
-            });
-            CohereProgress.error();
-            renderErrorBubble(aiBubble, {
-                httpStatus: _httpStatus,
-                errorText: err?.message || 'Network error',
-                message: message,
-                timestamp: new Date().toLocaleTimeString()
-            });
+            if (err?.name === 'AbortError') {
+                ThinkingPanel.allDone();
+                CohereProgress.done(false);
+                renderStoppedBubble(aiBubble);
+            } else {
+                ThinkingPanel.showError({
+                    message: message,
+                    workspaceId: currentWorkspaceId,
+                    userId: user?.id,
+                    httpStatus: _httpStatus,
+                    errorText: err?.message || 'Network error',
+                    timestamp: new Date().toLocaleTimeString()
+                });
+                CohereProgress.error();
+                renderErrorBubble(aiBubble, {
+                    httpStatus: _httpStatus,
+                    errorText: err?.message || 'Network error',
+                    message: message,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
         } finally {
             isStreaming = false;
             _abortController = null;
@@ -1150,10 +1396,16 @@
     window.ChatApp = {
         copyMessage: function(btn) {
             const bubble = btn.closest('.msg-content').querySelector('.msg-bubble');
-            navigator.clipboard.writeText(bubble?.textContent || '').then(() => {
+            if (!bubble) return;
+            const flash = () => {
                 btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
                 setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i>'; }, 2000);
-            });
+            };
+            if (window.copyRichContent) {
+                window.copyRichContent(bubble, null, flash);
+            } else {
+                navigator.clipboard.writeText(bubble.textContent || '').then(flash);
+            }
         }
     };
 

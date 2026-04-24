@@ -44,6 +44,50 @@
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
+/* ── Draggable "tracer" FAB states ───────────────────────── */
+.rv-qa-fab {
+    touch-action: none;          /* enable pointer drag on touch devices */
+    user-select: none;
+    will-change: transform, left, top;
+}
+.rv-qa-fab-dragging {
+    cursor: grabbing !important;
+    transform: scale(1.15) !important;
+    box-shadow: 0 14px 38px rgba(102, 126, 234, 0.55) !important;
+    animation: none !important;           /* kill entrance animation during drag */
+}
+.rv-qa-fab-dragging::before,
+.rv-qa-fab-dragging::after {
+    animation: none !important;           /* stop pulse ring + tooltip flicker */
+    opacity: 0 !important;
+}
+.rv-qa-fab-snapping {
+    transition: left 0.28s cubic-bezier(0.34, 1.35, 0.64, 1),
+                top  0.28s cubic-bezier(0.34, 1.35, 0.64, 1),
+                transform 0.2s ease,
+                box-shadow 0.2s ease !important;
+}
+/* After first drag, tooltip disabled (would be wrong-side anchored) */
+.rv-qa-fab[style*="left"]::after { display: none; }
+
+/* Sparkle trail particles emitted while dragging */
+.rv-qa-fab-sparkle {
+    position: fixed;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9989;
+    background: radial-gradient(circle, rgba(118, 75, 162, 0.85) 0%, rgba(102, 126, 234, 0.55) 45%, rgba(102, 126, 234, 0) 75%);
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.9;
+    animation: rv-qa-sparkle 0.7s ease-out forwards;
+}
+@keyframes rv-qa-sparkle {
+    0%   { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0;   transform: translate(-50%, -50%) scale(0.2); }
+}
+
 /* Tooltip label on hover */
 .rv-qa-fab::after {
     content: 'Ask AI';

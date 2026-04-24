@@ -158,10 +158,18 @@ public class ReportController : Controller
     }
 
     [HttpGet("/api/reports")]
-    public async Task<IActionResult> GetByWorkspace([FromQuery] string workspaceGuid)
+    public async Task<IActionResult> GetByWorkspace([FromQuery] string workspaceGuid, [FromQuery] int? agentId = null, [FromQuery] string? agentGuid = null)
     {
         var ws = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == workspaceGuid);
         if (ws == null) return NotFound();
+
+        // Resolve agent scoping: if agentGuid is supplied, translate to id.
+        int? resolvedAgentId = agentId;
+        if (!resolvedAgentId.HasValue && !string.IsNullOrEmpty(agentGuid))
+        {
+            var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Guid == agentGuid || a.Id.ToString() == agentGuid);
+            if (agent != null) resolvedAgentId = agent.Id;
+        }
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         if (!await _permissions.CanViewReportsAsync(ws.Id, userId))
@@ -183,8 +191,23 @@ public class ReportController : Controller
             }
         }
 
-        var reports = await _db.Reports
-            .Where(r => r.WorkspaceId == ws.Id)
+        var query = _db.Reports.Where(r => r.WorkspaceId == ws.Id);
+        if (resolvedAgentId.HasValue)
+        {
+            // Agent-scoped: return only reports tied to this agent. Legacy reports without
+            // an AgentId that were created against the agent's datasource are also included
+            // so upsert lookups can still find them when migrating to per-agent scoping.
+            var agentForFallback = await _db.Agents
+                .Where(a => a.Id == resolvedAgentId.Value)
+                .Select(a => new { a.DatasourceId })
+                .FirstOrDefaultAsync();
+            var agentDsId = agentForFallback?.DatasourceId;
+            query = query.Where(r =>
+                r.AgentId == resolvedAgentId.Value
+                || (r.AgentId == null && agentDsId != null && r.DatasourceId == agentDsId));
+        }
+
+        var reports = await query
             .Include(r => r.Datasource)
             .Include(r => r.Agent)
             .OrderByDescending(r => r.CreatedAt)
@@ -195,6 +218,7 @@ public class ReportController : Controller
                 r.Name,
                 r.Status,
                 r.ChartIds,
+                r.AgentId,
                 datasourceName = r.Datasource != null ? r.Datasource.Name : null,
                 agentName = r.Agent != null ? r.Agent.Name : null,
                 r.CreatedBy,
@@ -308,8 +332,40 @@ public class ReportController : Controller
 
         if (req.Name != null) report.Name = req.Name;
         if (req.ChartIds != null) report.ChartIds = JsonConvert.SerializeObject(req.ChartIds);
-        if (req.CanvasJson != null) report.CanvasJson = req.CanvasJson;
+        if (req.CanvasJson != null)
+        {
+            // Phase 34b B18: capture prior canvas state as an auto-revision before overwriting.
+            if (!string.IsNullOrEmpty(report.CanvasJson) && report.CanvasJson != req.CanvasJson)
+            {
+                _db.ReportRevisions.Add(new ReportRevision
+                {
+                    ReportId = report.Id,
+                    Kind = "Auto",
+                    Name = null,
+                    CanvasJson = report.CanvasJson,
+                    ReportName = report.Name,
+                    CreatedBy = userId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // Trim auto-revisions to the most recent 20 per report.
+                const int MaxAutoRevisions = 20;
+                var autoCount = await _db.ReportRevisions
+                    .CountAsync(r => r.ReportId == report.Id && r.Kind == "Auto");
+                if (autoCount >= MaxAutoRevisions)
+                {
+                    var stale = await _db.ReportRevisions
+                        .Where(r => r.ReportId == report.Id && r.Kind == "Auto")
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Skip(MaxAutoRevisions - 1)
+                        .ToListAsync();
+                    _db.ReportRevisions.RemoveRange(stale);
+                }
+            }
+            report.CanvasJson = req.CanvasJson;
+        }
         if (req.Status != null) report.Status = req.Status;
+        report.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
         return Ok(new { report.Id, report.Guid, report.Name, report.Status });
@@ -348,6 +404,116 @@ public class ReportController : Controller
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    // ─── Phase 34b — Revisions & Named Snapshots ─────────────────────────────
+
+    [HttpGet("/api/reports/{guid}/revisions")]
+    public async Task<IActionResult> GetRevisions(string guid, [FromQuery] string kind = "Auto")
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanViewReportsAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You do not have access to this report." });
+
+        var list = await _db.ReportRevisions
+            .Where(r => r.ReportId == report.Id && r.Kind == kind)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new { r.Id, r.Kind, r.Name, r.ReportName, r.CreatedBy, r.CreatedAt })
+            .ToListAsync();
+        return Ok(list);
+    }
+
+    [HttpPost("/api/reports/{guid}/snapshots")]
+    public async Task<IActionResult> CreateSnapshot(string guid, [FromBody] CreateSnapshotRequest req)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to create snapshots." });
+
+        if (string.IsNullOrWhiteSpace(req?.Name))
+            return BadRequest(new { error = "Snapshot name is required." });
+
+        var snap = new ReportRevision
+        {
+            ReportId = report.Id,
+            Kind = "Snapshot",
+            Name = req.Name.Trim(),
+            CanvasJson = req.CanvasJson ?? report.CanvasJson,
+            ReportName = report.Name,
+            CreatedBy = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.ReportRevisions.Add(snap);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { snap.Id, snap.Kind, snap.Name, snap.CreatedAt });
+    }
+
+    [HttpPost("/api/reports/{guid}/revisions/{revId}/restore")]
+    public async Task<IActionResult> RestoreRevision(string guid, int revId)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to restore revisions." });
+
+        var rev = await _db.ReportRevisions
+            .FirstOrDefaultAsync(r => r.Id == revId && r.ReportId == report.Id);
+        if (rev == null) return NotFound(new { error = "Revision not found." });
+
+        // Capture current state as an auto-revision before restoring.
+        if (!string.IsNullOrEmpty(report.CanvasJson))
+        {
+            _db.ReportRevisions.Add(new ReportRevision
+            {
+                ReportId = report.Id,
+                Kind = "Auto",
+                Name = "Before restore",
+                CanvasJson = report.CanvasJson,
+                ReportName = report.Name,
+                CreatedBy = userId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        report.CanvasJson = rev.CanvasJson;
+        report.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, canvasJson = rev.CanvasJson });
+    }
+
+    [HttpDelete("/api/reports/{guid}/revisions/{revId}")]
+    public async Task<IActionResult> DeleteRevision(string guid, int revId)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to delete revisions." });
+
+        var rev = await _db.ReportRevisions
+            .FirstOrDefaultAsync(r => r.Id == revId && r.ReportId == report.Id);
+        if (rev == null) return NotFound();
+
+        _db.ReportRevisions.Remove(rev);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+}
+
+public class CreateSnapshotRequest
+{
+    public string? Name { get; set; }
+    public string? CanvasJson { get; set; }
 }
 
 public class CreateReportRequest

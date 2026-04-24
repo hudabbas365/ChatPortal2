@@ -188,13 +188,12 @@ class PropertiesPanel {
         this.setVal('prop-agg-enabled', primaryAgg !== 'None', 'checkbox');
         this.setVal('prop-agg-function', primaryAgg);
         this._updateAggVisibility(c.chartType);
-        this.setVal('prop-row-limit', c.rowLimit || 100);
+        this.setVal('prop-row-limit', c.rowLimit || 15);
         // Populate condition builder from filterWhere
         this._populateConditions(c.filterWhere || '');
         // Show existing dataQuery in SQL area
         const sqlArea = document.getElementById('pp-sql-area');
         if (sqlArea) sqlArea.value = c.dataQuery || '';
-        this.setVal('prop-color-palette', this._resolveColorHex(c.style?.colorPalette));
         this.setVal('prop-show-legend', c.style?.showLegend !== false, 'checkbox');
         this.setVal('prop-legend-position', c.style?.legendPosition || 'top');
         this.setVal('prop-fill-area', c.style?.fillArea || false, 'checkbox');
@@ -202,6 +201,16 @@ class PropertiesPanel {
         this.setVal('prop-animated', c.style?.animated !== false, 'checkbox');
         this.setVal('prop-title-font-size', c.style?.titleFontSize || 14);
         this.setVal('prop-border-radius', c.style?.borderRadius || '4');
+        // Card visual customization
+        this.setVal('prop-box-shadow', c.style?.boxShadow || 'none');
+        this.setVal('prop-card-bg-color', c.style?.cardBackgroundColor || '#ffffff');
+        this.setVal('prop-font-color', c.style?.fontColor || '#1E2D3D');
+        this.setVal('prop-kpi-halign', c.style?.kpiHAlign || 'center');
+        this.setVal('prop-kpi-valign', c.style?.kpiVAlign || 'middle');
+        this.setVal('prop-bg-image', c.style?.backgroundImage || '');
+        this.setVal('prop-icon-image', c.style?.iconImage || '');
+        this._updateCardStylePreviews();
+        this._bindCardStyleUploads();
         this.setVal('prop-custom-json', c.customJsonData || '');
         // Render additional value fields
         this._renderMultiValueFields(c.mapping?.multiValueFields || []);
@@ -222,11 +231,113 @@ class PropertiesPanel {
         return paletteMap[colorPalette] || '#4A90D9';
     }
 
+    /** Read an image file as a base64 data URL; rejects if larger than maxBytes. */
+    _fileToDataUrl(file, maxBytes = 500 * 1024) {
+        return new Promise((resolve, reject) => {
+            if (!file) return reject(new Error('No file'));
+            if (file.size > maxBytes) {
+                return reject(new Error(`Image is too large (max ${Math.round(maxBytes/1024)} KB).`));
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('Read failed'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    _updateCardStylePreviews() {
+        const bgImg = this.getVal('prop-bg-image') || '';
+        const bgPreview = document.getElementById('prop-bg-image-preview');
+        if (bgPreview) {
+            if (bgImg) {
+                bgPreview.style.display = 'block';
+                bgPreview.style.backgroundImage = `url("${bgImg}")`;
+            } else {
+                bgPreview.style.display = 'none';
+                bgPreview.style.backgroundImage = '';
+            }
+        }
+        const iconImg = this.getVal('prop-icon-image') || '';
+        const iconPreview = document.getElementById('prop-icon-image-preview');
+        if (iconPreview) {
+            if (iconImg) {
+                iconPreview.style.display = 'inline-block';
+                iconPreview.src = iconImg;
+            } else {
+                iconPreview.style.display = 'none';
+                iconPreview.removeAttribute('src');
+            }
+        }
+    }
+
+    _bindCardStyleUploads() {
+        if (this._cardStyleUploadsBound) return;
+        this._cardStyleUploadsBound = true;
+
+        const wire = (fileId, hiddenId, onChange) => {
+            const fileEl = document.getElementById(fileId);
+            if (!fileEl) return;
+            fileEl.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                try {
+                    const dataUrl = await this._fileToDataUrl(file);
+                    this.setVal(hiddenId, dataUrl);
+                    this._updateCardStylePreviews();
+                    onChange && onChange();
+                    this.apply();
+                } catch (err) {
+                    alert(err.message || 'Unable to read image.');
+                    fileEl.value = '';
+                }
+            });
+        };
+
+        wire('prop-bg-image-file', 'prop-bg-image');
+        wire('prop-icon-image-file', 'prop-icon-image');
+
+        const clearBgImg = document.getElementById('prop-bg-image-clear');
+        if (clearBgImg) clearBgImg.addEventListener('click', () => {
+            this.setVal('prop-bg-image', '');
+            const fileEl = document.getElementById('prop-bg-image-file');
+            if (fileEl) fileEl.value = '';
+            this._updateCardStylePreviews();
+            this.apply();
+        });
+        const clearIconImg = document.getElementById('prop-icon-image-clear');
+        if (clearIconImg) clearIconImg.addEventListener('click', () => {
+            this.setVal('prop-icon-image', '');
+            const fileEl = document.getElementById('prop-icon-image-file');
+            if (fileEl) fileEl.value = '';
+            this._updateCardStylePreviews();
+            this.apply();
+        });
+        const clearBgColor = document.getElementById('prop-card-bg-color-clear');
+        if (clearBgColor) clearBgColor.addEventListener('click', () => {
+            this.setVal('prop-card-bg-color', '');
+            this.apply();
+        });
+        const clearFontColor = document.getElementById('prop-font-color-clear');
+        if (clearFontColor) clearFontColor.addEventListener('click', () => {
+            this.setVal('prop-font-color', '');
+            this.apply();
+        });
+    }
+
     setVal(id, val, type = 'value') {
         const el = document.getElementById(id);
         if (!el) return;
-        if (type === 'checkbox') el.checked = !!val;
-        else el.value = val ?? '';
+        if (type === 'checkbox') { el.checked = !!val; return; }
+        // <input type="color"> emits a harmless-but-noisy browser warning when
+        // assigned an empty string ("The specified value \"\" does not conform
+        // to the required format. The format is \"#rrggbb\""). Fall back to
+        // black (the browser default) when clearing, and suppress the warning.
+        const v = val ?? '';
+        if (el.type === 'color' && (!v || !/^#[0-9a-fA-F]{6}$/.test(v))) {
+            el.value = '#000000';
+        } else {
+            el.value = v;
+        }
     }
 
     getVal(id, type = 'value') {
@@ -292,13 +403,12 @@ class PropertiesPanel {
                 enabled: (this.getVal('prop-value-field-agg') || 'None') !== 'None',
                 function: this.getVal('prop-value-field-agg') || 'None',
             },
-            rowLimit: parseInt(this.getVal('prop-row-limit')) || 100,
+            rowLimit: parseInt(this.getVal('prop-row-limit')) || 15,
             filterWhere: this._collectConditionsSQL(),
             // Use SQL from the sql area if provided; otherwise clear so it rebuilds from mappings
             dataQuery: (document.getElementById('pp-sql-area')?.value.trim()) || '',
             style: {
                 ...this.currentChart.style,
-                colorPalette: this.getVal('prop-color-palette'),
                 showLegend: this.getVal('prop-show-legend', 'checkbox'),
                 legendPosition: this.getVal('prop-legend-position'),
                 fillArea: this.getVal('prop-fill-area', 'checkbox'),
@@ -306,6 +416,13 @@ class PropertiesPanel {
                 animated: this.getVal('prop-animated', 'checkbox'),
                 titleFontSize: parseInt(this.getVal('prop-title-font-size')) || 14,
                 borderRadius: this.getVal('prop-border-radius'),
+                boxShadow: this.getVal('prop-box-shadow') || 'none',
+                cardBackgroundColor: this.getVal('prop-card-bg-color') || '',
+                fontColor: this.getVal('prop-font-color') || '',
+                kpiHAlign: this.getVal('prop-kpi-halign') || 'center',
+                kpiVAlign: this.getVal('prop-kpi-valign') || 'middle',
+                backgroundImage: this.getVal('prop-bg-image') || '',
+                iconImage: this.getVal('prop-icon-image') || '',
             },
             customJsonData: this.getVal('prop-custom-json'),
             navigation: this.currentChart.chartType === 'navigation'
@@ -909,6 +1026,107 @@ class PropertiesPanel {
                 this.apply();
             });
         }
+
+        // Phase 30-B4: Fix-with-AI button (visible only when #pp-sql-err-note has content)
+        const fixBtn = document.getElementById('pp-fix-sql-btn');
+        if (fixBtn) {
+            const newFixBtn = fixBtn.cloneNode(true);
+            fixBtn.parentNode.replaceChild(newFixBtn, fixBtn);
+            newFixBtn.addEventListener('click', () => this._aiFixSQL());
+        }
+        this._wireFixSqlVisibility();
+    }
+
+    /** Phase 30-B4: Observe the SQL error note and toggle the Fix-with-AI button accordingly. */
+    _wireFixSqlVisibility() {
+        if (this._fixSqlObs) return; // wire once
+        const errNote = document.getElementById('pp-sql-err-note');
+        const fixBtn  = document.getElementById('pp-fix-sql-btn');
+        if (!errNote || !fixBtn) return;
+        const sync = () => {
+            const visible = errNote.style.display !== 'none' && (errNote.textContent || '').trim().length > 0;
+            fixBtn.style.display = visible ? '' : 'none';
+        };
+        this._fixSqlObs = new MutationObserver(sync);
+        this._fixSqlObs.observe(errNote, {
+            childList: true, characterData: true, subtree: true,
+            attributes: true, attributeFilter: ['style']
+        });
+        sync();
+    }
+
+    /** Phase 30-B4: Ask AI to fix the current SQL using the error message + schema context. */
+    async _aiFixSQL() {
+        const btn     = document.getElementById('pp-fix-sql-btn');
+        const sqlArea = document.getElementById('pp-sql-area');
+        const errNote = document.getElementById('pp-sql-err-note');
+        if (!sqlArea) return;
+
+        const currentSql = (sqlArea.value || '').trim();
+        const errMsg     = (errNote?.textContent || '').trim();
+        if (!currentSql) return;
+
+        const tableName = this.getVal('prop-dataset') || '';
+        const dsId      = this.currentChart?.datasourceId || window.currentDatasourceId || null;
+        const previousSql = currentSql;
+
+        let prompt = `The following SQL query failed to execute:\n\n${currentSql}\n\n`;
+        if (errMsg) prompt += `Error message:\n${errMsg}\n\n`;
+        if (tableName) prompt += `Target table: [${tableName}].\n`;
+        prompt += `Please return a corrected version of the SQL. `;
+        prompt += `Use only columns that actually exist in the schema. `;
+        prompt += `ALWAYS wrap every column and table name in square brackets. `;
+        prompt += `Return ONLY the corrected SQL statement, no explanation.`;
+
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+        try {
+            const token = localStorage.getItem('cp_token') || '';
+            const response = await fetch('/api/chat/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    message      : prompt,
+                    workspaceId  : (new URLSearchParams(window.location.search)).get('workspace') || window.currentWorkspaceGuid || null,
+                    datasourceId : dsId,
+                    userId       : (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || '',
+                    reportGuid   : window._currentReportGuid || null,
+                    pageIndex    : window.canvasManager?.activePageIndex ?? null,
+                    agentId      : window._dashboardWsData?.agentId || null
+                })
+            });
+
+            if (!response.ok) {
+                if (errNote) {
+                    errNote.textContent = 'AI fix failed: HTTP ' + response.status;
+                    errNote.style.display = '';
+                }
+                return;
+            }
+
+            let fullText = '';
+            await window.aiStream.readSseText(response, function (chunk) { fullText += chunk; });
+
+            const sqlMatch = fullText.match(/```(?:sql)?\s*([\s\S]*?)```/i);
+            const fixed = (sqlMatch ? sqlMatch[1] : fullText).trim();
+            if (fixed) {
+                sqlArea.value = fixed;
+                if (errNote) { errNote.textContent = ''; errNote.style.display = 'none'; }
+            } else {
+                sqlArea.value = previousSql;
+            }
+        } catch (e) {
+            sqlArea.value = previousSql;
+            if (errNote) {
+                errNote.textContent = 'AI fix failed: ' + (e?.message || 'network error');
+                errNote.style.display = '';
+            }
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-wrench-adjustable me-1"></i>Fix with AI'; }
+        }
     }
 
     /** Call the AI to generate a SQL statement from current field selections. */
@@ -1364,9 +1582,91 @@ class PropertiesPanel {
 
 window.propertiesPanel = new PropertiesPanel();
 
+// Phase 29-B3: Filter the properties panel by label text.
+// Phase 29-B1 extra: Expand/Collapse all sections.
+PropertiesPanel.prototype.initPropertySearch = function () {
+    const input = document.getElementById('pp-search-input');
+    const clearBtn = document.getElementById('pp-search-clear');
+    if (!input) return;
+
+    const norm = (s) => (s || '').toLowerCase().trim();
+
+    function rowLabelText(row) {
+        // Prefer <label> text; fall back to any text or placeholder.
+        const label = row.querySelector('label');
+        if (label) return label.textContent;
+        const input = row.querySelector('input,select,textarea');
+        if (input && input.placeholder) return input.placeholder;
+        return row.textContent || '';
+    }
+
+    function apply(q) {
+        const query = norm(q);
+        const showAll = query.length === 0;
+        const sections = document.querySelectorAll('#properties-tab-content .prop-section');
+        sections.forEach(sec => {
+            // Treat each direct child (except the title) as a filterable row.
+            const rows = Array.from(sec.children).filter(el => !el.classList.contains('prop-section-title'));
+            let anyVisible = false;
+            rows.forEach(row => {
+                if (showAll) {
+                    row.style.display = '';
+                    anyVisible = true;
+                    return;
+                }
+                const match = norm(rowLabelText(row)).includes(query);
+                row.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            // Hide the whole section when nothing matches; auto-expand matches.
+            sec.style.display = (showAll || anyVisible) ? '' : 'none';
+            if (!showAll && anyVisible) sec.classList.remove('collapsed');
+        });
+        if (clearBtn) clearBtn.style.display = showAll ? 'none' : '';
+    }
+
+    input.addEventListener('input', (e) => apply(e.target.value));
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            input.value = '';
+            apply('');
+            input.focus();
+        });
+    }
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { input.value = ''; apply(''); input.blur(); }
+    });
+};
+
+PropertiesPanel.prototype.initExpandAllToggle = function () {
+    const btn = document.getElementById('pp-expand-all-btn');
+    if (!btn) return;
+    btn.style.display = '';
+    btn.addEventListener('click', () => {
+        const sections = document.querySelectorAll('#properties-tab-content .prop-section');
+        // If any section is collapsed, expand all; otherwise collapse all.
+        const anyCollapsed = Array.from(sections).some(s => s.classList.contains('collapsed'));
+        sections.forEach(sec => {
+            const title = sec.querySelector('.prop-section-title');
+            if (anyCollapsed) sec.classList.remove('collapsed');
+            else sec.classList.add('collapsed');
+            const chev = title && title.querySelector('.prop-chevron');
+            if (chev) {
+                chev.className = anyCollapsed
+                    ? 'bi bi-chevron-down prop-chevron ms-auto'
+                    : 'bi bi-chevron-right prop-chevron ms-auto';
+            }
+        });
+        const icon = btn.querySelector('i');
+        if (icon) icon.className = anyCollapsed ? 'bi bi-arrows-collapse' : 'bi bi-arrows-expand';
+    });
+};
+
 // Init collapsible sections, data field resize, and tabs after DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     propertiesPanel.initCollapsibleSections();
     propertiesPanel.initDataFieldResize();
     propertiesPanel.initTabs();
+    propertiesPanel.initPropertySearch();
+    propertiesPanel.initExpandAllToggle();
 });

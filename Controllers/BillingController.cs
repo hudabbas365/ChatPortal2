@@ -40,18 +40,46 @@ public class BillingController : Controller
         return caller.Role == "OrgAdmin" && caller.OrganizationId == organizationId;
     }
 
-    [HttpGet("/admin/billing")]
-    public async Task<IActionResult> Index()
+    // Map raw PayPal error payloads to short, user-friendly messages.
+    private static string FriendlyPayPalError(string? raw)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-        var user = await _db.Users
-            .Include(u => u.Subscription)
-            .FirstOrDefaultAsync(u => u.Id == userId);
+        if (string.IsNullOrWhiteSpace(raw))
+            return "Payment could not be completed. Please try again.";
 
-        ViewBag.User = user;
-        ViewBag.Plan = user?.Subscription;
-        ViewBag.StripePublishableKey = _config["Stripe:PublishableKey"] ?? "";
-        return View("~/Views/Admin/Billing.cshtml");
+        // Common cancel / abort cases
+        if (raw.Contains("ORDER_NOT_APPROVED", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("PAYER_ACTION_REQUIRED", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("PAYER_CANNOT_PAY", StringComparison.OrdinalIgnoreCase))
+            return "Payment was cancelled before approval. You were not charged.";
+
+        if (raw.Contains("ORDER_ALREADY_CAPTURED", StringComparison.OrdinalIgnoreCase))
+            return "This payment was already processed.";
+
+        if (raw.Contains("INSTRUMENT_DECLINED", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("PAYER_ACCOUNT_RESTRICTED", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("TRANSACTION_REFUSED", StringComparison.OrdinalIgnoreCase))
+            return "Your payment method was declined by PayPal. Please try a different card or account.";
+
+        if (raw.Contains("INSUFFICIENT_FUNDS", StringComparison.OrdinalIgnoreCase))
+            return "Insufficient funds. Please use a different payment method.";
+
+        if (raw.Contains("AUTHENTICATION_FAILURE", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("PERMISSION_DENIED", StringComparison.OrdinalIgnoreCase))
+            return "PayPal could not authenticate this request. Please try again.";
+
+        // Try to pull a clean message from a JSON error body
+        try
+        {
+            var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("message", out var m))
+            {
+                var msg = m.GetString();
+                if (!string.IsNullOrWhiteSpace(msg)) return msg!;
+            }
+        }
+        catch { }
+
+        return "Payment could not be completed. Please try again or contact support.";
     }
 
     [HttpPost("/api/billing/subscribe")]
@@ -92,15 +120,13 @@ public class BillingController : Controller
 
         var org = await _db.Organizations.FindAsync(req.OrganizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
-        if (org.Plan != PlanType.Enterprise)
-            return BadRequest(new { error = "Token packs are available for Enterprise plan only." });
 
         var packs = req.Packs <= 0 ? 1 : req.Packs;
-        org.EnterpriseExtraTokenPacks += packs;
+        org.EnterpriseExtraTokenPacks += packs; // +2M tokens each, $15 each — available to all plans
         _db.ActivityLogs.Add(new ActivityLog
         {
-            Action = "enterprise_token_pack_purchased",
-            Description = $"{packs} enterprise token pack(s) purchased.",
+            Action = "token_pack_purchased",
+            Description = $"{packs} token pack(s) purchased (+{packs * 2_000_000:N0} tokens).",
             UserId = caller.Id,
             OrganizationId = req.OrganizationId
         });
@@ -229,9 +255,9 @@ public class BillingController : Controller
         var caller = await GetCallerAsync();
         if (caller == null) return Unauthorized();
 
-        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
-        var returnUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&paypal=success";
-        var cancelUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&paypal=cancel";
+        var baseUrl = (_config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
+        var returnUrl = $"{baseUrl}/org/settings?tab=users&paypal=success";
+        var cancelUrl = $"{baseUrl}/org/settings?tab=users&paypal=cancel";
 
         try
         {
@@ -275,7 +301,7 @@ public class BillingController : Controller
                 PlanKey = req.PlanKey
             });
             await _db.SaveChangesAsync();
-            return StatusCode(500, new { error = $"Payment capture error: {ex.Message}" });
+            return StatusCode(500, new { error = FriendlyPayPalError(ex.Message) });
         }
         if (!capture.Success)
         {
@@ -293,7 +319,7 @@ public class BillingController : Controller
                 PlanKey = req.PlanKey
             });
             await _db.SaveChangesAsync();
-            return BadRequest(new { error = capture.Error });
+            return BadRequest(new { error = FriendlyPayPalError(capture.Error) });
         }
 
         // Apply the purchase based on type
@@ -398,9 +424,9 @@ public class BillingController : Controller
         if (monthlyPrice == 0)
             return BadRequest(new { error = "Invalid plan. Choose Professional or Enterprise." });
 
-        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
-        var returnUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&subscription=success&orgId={req.OrganizationId}&planKey={req.PlanKey}";
-        var cancelUrl = $"{baseUrl}/OrgAdmin/Settings?tab=billing&subscription=cancel";
+        var baseUrl = (_config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
+        var returnUrl = $"{baseUrl}/org/settings?tab=users&subscription=success&orgId={req.OrganizationId}&planKey={req.PlanKey}";
+        var cancelUrl = $"{baseUrl}/org/settings?tab=users&subscription=cancel";
 
         try
         {
@@ -485,6 +511,16 @@ public class BillingController : Controller
                 });
                 await _db.SaveChangesAsync();
 
+                // Send invoice email for the subscription activation
+                if (!string.IsNullOrEmpty(caller.Email))
+                {
+                    _ = _emailService.SendInvoiceEmailAsync(
+                        caller.Email, caller.FullName ?? caller.Email, org.Name,
+                        $"Monthly {req.PlanKey} subscription — activated",
+                        subPrice, "USD",
+                        org.PayPalSubscriptionId ?? "", DateTime.UtcNow);
+                }
+
                 return Ok(new { success = true, status = "ACTIVE", nextBilling = org.SubscriptionNextBillingDate });
             }
 
@@ -492,7 +528,7 @@ public class BillingController : Controller
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = $"Activation error: {ex.Message}" });
+            return StatusCode(500, new { error = FriendlyPayPalError(ex.Message) });
         }
     }
 
@@ -598,6 +634,20 @@ public class BillingController : Controller
                             OrganizationId = org.Id
                         });
                         await _db.SaveChangesAsync();
+
+                        // Email invoice to the org admin (first OrgAdmin found for the org)
+                        var orgAdmin = await _db.Users
+                            .Where(u => u.OrganizationId == org.Id && u.Role == "OrgAdmin" && !string.IsNullOrEmpty(u.Email))
+                            .OrderBy(u => u.CreatedAt)
+                            .FirstOrDefaultAsync();
+                        if (orgAdmin != null && !string.IsNullOrEmpty(orgAdmin.Email))
+                        {
+                            _ = _emailService.SendInvoiceEmailAsync(
+                                orgAdmin.Email, orgAdmin.FullName ?? orgAdmin.Email, org.Name,
+                                $"Monthly {org.Plan} subscription — recurring payment",
+                                amount, "USD",
+                                billingAgreementId, DateTime.UtcNow);
+                        }
                     }
                 }
             }

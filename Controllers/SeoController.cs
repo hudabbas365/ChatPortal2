@@ -30,22 +30,9 @@ public class SeoController : Controller
     }
 
     // PUBLIC ENDPOINTS
-
-    [HttpGet("/sitemap.xml")]
-    public async Task<IActionResult> Sitemap()
-    {
-        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
-        var xml = await _seoService.GenerateSitemapXmlAsync(baseUrl);
-        return Content(xml, "application/xml");
-    }
-
-    [HttpGet("/robots.txt")]
-    public async Task<IActionResult> RobotsTxt()
-    {
-        var baseUrl = _config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
-        var txt = await _seoService.GenerateRobotsTxtAsync(baseUrl);
-        return Content(txt, "text/plain");
-    }
+    // Note: /sitemap.xml and /robots.txt are served by HomeController (which delegates
+    // to ISeoService.GenerateSitemapXmlAsync / GenerateRobotsTxtAsync) to avoid
+    // an ambiguous route match.
 
     // ADMIN API ENDPOINTS
 

@@ -1,46 +1,59 @@
-<div id="emailVerifyBannerContainer"></div>
-<div id="trialBannerContainer"></div>
 <script>
 (function() {
-    const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+    function resolvePlanInfo(plan) {
+        if (!plan) return { isPaid: false, planStr: '', planNum: 0, label: '' };
+        var raw = (plan.licenseType != null ? plan.licenseType : plan.plan);
+        var planStr = String(raw == null ? '' : raw).toLowerCase();
+        var planNum = (typeof raw === 'number') ? raw : Number(raw);
+        if (isNaN(planNum)) planNum = -1;
+        var isPro        = planStr === 'pro' || planStr === 'professional' || planNum === 1;
+        var isEnterprise = planStr === 'enterprise' || planNum === 2;
+        var isFreeTrial  = planStr === 'freetrial' || planStr === 'free' || planStr === 'trial' || planNum === 0;
+        var isPaid = isPro || isEnterprise ||
+            (!isFreeTrial && planNum > 0) ||
+            (plan.hasUsedTrial === true && plan.isTrialActive === false && plan.isTrialExpired === false);
+        var label = isEnterprise ? 'Enterprise'
+                  : isPro ? 'Pro'
+                  : isPaid ? (planNum >= 2 ? 'Enterprise' : 'Pro')
+                  : 'Free Trial';
+        return { isPaid: isPaid, isEnterprise: isEnterprise, isPro: isPro, planStr: planStr, planNum: planNum, label: label };
+    }
+
+    function renderLicenseBadge(plan) {
+        var el = document.getElementById('navLicenseBadge');
+        if (!el) return;
+        var info = resolvePlanInfo(plan);
+        el.classList.remove('cp-license-badge-trial', 'cp-license-badge-pro', 'cp-license-badge-enterprise');
+        if (info.isEnterprise) el.classList.add('cp-license-badge-enterprise');
+        else if (info.isPro || info.isPaid) el.classList.add('cp-license-badge-pro');
+        else el.classList.add('cp-license-badge-trial');
+        el.textContent = info.label;
+        el.style.display = 'inline-flex';
+    }
+
+    // Public: re-fetch the current user's plan, refresh cache, and redraw the license badge.
+    // Trial / email-verify notices are now delivered via the notification bell (see NotificationSeedingService).
+    window.refreshTrialBanner = function() {
+        var user = null;
+        try { user = JSON.parse(localStorage.getItem('cp_user') || 'null'); } catch {}
+        if (!user || !user.id) return Promise.resolve();
+        return fetch('/api/subscription/' + user.id, { credentials: 'same-origin' })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(fresh) {
+                if (!fresh) return;
+                try { localStorage.setItem('cp_plan', JSON.stringify(fresh)); } catch {}
+                renderLicenseBadge(fresh);
+            })
+            .catch(function() {});
+    };
+
+    var user = null;
+    try { user = JSON.parse(localStorage.getItem('cp_user') || 'null'); } catch {}
     if (!user) return;
 
-    // Email verification banner
-    if (user.organizationId) {
-        fetch('/api/auth/org-verified?orgId=' + user.organizationId, { credentials: 'same-origin' })
-            .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
-            .then(function(d) {
-                if (d && d.isVerified === false) {
-                    var c = document.getElementById('emailVerifyBannerContainer');
-                    if (c) c.innerHTML = '<div class="cp-trial-banner expired" style="background:linear-gradient(135deg,#ff6b35,#f72585);"><i class="bi bi-envelope-exclamation me-2"></i>Your email is not verified. Please check your inbox for the confirmation link. <a href="#" onclick="resendVerification()" class="trial-upgrade-link" style="color:#fff;text-decoration:underline;">Resend</a></div>';
-                }
-            }).catch(function() {});
-    }
-
-    const plan = JSON.parse(localStorage.getItem('cp_plan') || 'null');
-    if (!plan) return;
-    const licenseType = String(plan.licenseType || plan.plan || '').toLowerCase();
-    if (licenseType === 'pro' || licenseType === 'professional' || licenseType === 'enterprise') return;
-    const container = document.getElementById('trialBannerContainer');
-    if (!container) return;
-    if (plan.isTrialActive) {
-        const days = Number(plan.daysRemaining || 0);
-        container.innerHTML = `<div class="cp-trial-banner active">
-            <i class="bi bi-clock me-2"></i>
-            You have <strong>${days} of 30 days</strong> remaining in your free trial.
-            <a href="/pricing" class="trial-upgrade-link">Upgrade Now</a>
-        </div>`;
-    } else if (plan.isTrialExpired) {
-        container.innerHTML = `<div class="cp-trial-banner expired">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            Your free trial (30 days) has expired.
-            <a href="/pricing" class="trial-upgrade-link">Upgrade to continue</a>
-        </div>`;
-    }
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem('cp_plan') || 'null'); } catch {}
+    renderLicenseBadge(cached);
+    window.refreshTrialBanner();
 })();
-function resendVerification() {
-    fetch('/api/auth/resend-confirmation', { method: 'POST', credentials: 'same-origin' })
-        .then(function(r) { if (r.ok) alert('Confirmation email sent! Please check your inbox.'); else throw new Error(); })
-        .catch(function() { alert('Failed to resend. Please try again later.'); });
-}
 </script>

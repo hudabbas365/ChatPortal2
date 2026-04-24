@@ -79,11 +79,57 @@ public class SeoService : ISeoService
     public async Task<string> GenerateSitemapXmlAsync(string baseUrl)
     {
         var entries = await _db.SeoEntries.Where(s => s.IncludeInSitemap).OrderBy(s => s.PageUrl).ToListAsync();
+        var byUrl = entries.ToDictionary(e => e.PageUrl, StringComparer.OrdinalIgnoreCase);
+
+        // Dynamically include every published DocArticle / BlogPost even if its
+        // matching SeoEntry is missing (e.g. seeded outside the admin UI).
+        var docUrls = await _db.DocArticles
+            .Where(d => d.IsPublished)
+            .Select(d => new { Url = "/docs/" + d.Slug, LastMod = d.UpdatedAt })
+            .ToListAsync();
+        var blogUrls = await _db.BlogPosts
+            .Where(b => b.IsPublished)
+            .Select(b => new { Url = "/blog/" + b.Slug, LastMod = b.PublishedAt })
+            .ToListAsync();
+
+        foreach (var d in docUrls)
+        {
+            if (!byUrl.ContainsKey(d.Url))
+            {
+                var virt = new SeoEntry
+                {
+                    PageUrl = d.Url,
+                    LastModified = d.LastMod,
+                    SitemapChangeFreq = "monthly",
+                    SitemapPriority = 0.7m,
+                    IncludeInSitemap = true
+                };
+                entries.Add(virt);
+                byUrl[d.Url] = virt;
+            }
+        }
+        foreach (var b in blogUrls)
+        {
+            if (!byUrl.ContainsKey(b.Url))
+            {
+                var virt = new SeoEntry
+                {
+                    PageUrl = b.Url,
+                    LastModified = b.LastMod,
+                    SitemapChangeFreq = "weekly",
+                    SitemapPriority = 0.8m,
+                    IncludeInSitemap = true
+                };
+                entries.Add(virt);
+                byUrl[b.Url] = virt;
+            }
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.AppendLine("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
 
-        foreach (var entry in entries)
+        foreach (var entry in entries.OrderBy(e => e.PageUrl))
         {
             var loc = baseUrl.TrimEnd('/') + entry.PageUrl;
             sb.AppendLine("  <url>");
@@ -173,6 +219,18 @@ Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
                 OgDescription = "Latest updates, tips, and insights from the AIInsights team.",
                 SitemapPriority = 0.6m,
                 SitemapChangeFreq = "daily",
+                CreatedBy = "system"
+            },
+            new SeoEntry
+            {
+                PageUrl = "/terms",
+                Title = "Terms & Conditions — AIInsights",
+                MetaDescription = "Terms of use, billing, cancellation and no-refund policy for AIInsights365.",
+                MetaKeywords = "terms, conditions, refund, billing, cancellation",
+                OgTitle = "AIInsights Terms & Conditions",
+                OgDescription = "Terms of use, billing, cancellation and no-refund policy.",
+                SitemapPriority = 0.3m,
+                SitemapChangeFreq = "yearly",
                 CreatedBy = "system"
             }
         };

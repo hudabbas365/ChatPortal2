@@ -35,9 +35,8 @@
                 </button>
                 <span class="chat-topbar-title" id="chatWorkspaceTitle">Workspace</span>
                 <div class="ms-auto d-flex align-items-center gap-2">
-                    <button id="chatLayoutLogoutBtn" class="btn btn-sm btn-outline-danger text-nowrap" title="Sign Out" style="display:none">
-                        <i class="bi bi-box-arrow-right"></i> <span class="d-none d-sm-inline">Sign Out</span>
-                    </button>
+                    <partial name="~/Views/Partials/_NotificationBell.cshtml" />
+                    <partial name="~/Views/Partials/_UserMenu.cshtml" />
                     <div class="dropdown d-none" id="newArtifactDropdown">
                         <button class="btn btn-sm cp-btn-gradient dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-plus-lg me-1"></i>New
@@ -48,7 +47,6 @@
                             <li><a class="dropdown-item" href="#" id="newAgentBtn"><i class="bi bi-robot me-2"></i>New AI Agent</a></li>
                         </ul>
                     </div>
-                    <a href="/auth/login" class="btn btn-sm cp-btn-gradient" id="chatAuthBtn">Sign In</a>
                 </div>
             </div>
             <div class="chat-subnav" id="chatSubnav">

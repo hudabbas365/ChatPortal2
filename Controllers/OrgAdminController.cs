@@ -323,6 +323,187 @@ public class OrgAdminController : Controller
         var status = await _tokenBudget.GetStatusAsync(organizationId);
         return Ok(status);
     }
+
+    // ──── License assignment (SuperAdmin grants licenses to the org, OrgAdmin assigns them to users) ────
+
+    [HttpGet("/api/org/{organizationId}/licenses")]
+    public async Task<IActionResult> GetLicenseSummary(int organizationId)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null || !IsOrgAdminOf(caller, organizationId))
+            return StatusCode(403, new { error = "You do not have permission to view this organization's licenses." });
+
+        var org = await _db.Organizations.FindAsync(organizationId);
+        if (org == null) return NotFound();
+
+        var assigned = await _db.SubscriptionPlans
+            .CountAsync(s => s.User!.OrganizationId == organizationId
+                             && (s.Plan == PlanType.Professional || s.Plan == PlanType.Enterprise));
+
+        return Ok(new
+        {
+            organizationId,
+            plan = org.Plan.ToString(),
+            purchased = org.PurchasedLicenses,
+            assigned,
+            available = Math.Max(0, org.PurchasedLicenses - assigned)
+        });
+    }
+
+    [HttpPost("/api/org/users/{id}/assign-license")]
+    public async Task<IActionResult> AssignLicense(string id)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return NotFound(new { error = "User not found." });
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to assign licenses for this user." });
+
+        var org = await _db.Organizations.FindAsync(user.OrganizationId.Value);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        if (org.Plan != PlanType.Professional && org.Plan != PlanType.Enterprise)
+            return BadRequest(new { error = "Organization does not have a paid plan. Ask SuperAdmin to upgrade the plan first." });
+
+        var assigned = await _db.SubscriptionPlans
+            .CountAsync(s => s.User!.OrganizationId == org.Id
+                             && (s.Plan == PlanType.Professional || s.Plan == PlanType.Enterprise));
+
+        var sub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == user.Id);
+        var alreadyLicensed = sub != null && (sub.Plan == PlanType.Professional || sub.Plan == PlanType.Enterprise);
+
+        if (!alreadyLicensed && assigned >= org.PurchasedLicenses)
+            return BadRequest(new { error = $"No licenses available. Purchased: {org.PurchasedLicenses}, assigned: {assigned}." });
+
+        if (sub == null)
+        {
+            sub = new SubscriptionPlan { UserId = user.Id, Plan = org.Plan };
+            _db.SubscriptionPlans.Add(sub);
+        }
+        else
+        {
+            sub.Plan = org.Plan;
+        }
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "license_assigned",
+            Description = $"License ({org.Plan}) assigned to user '{user.Email}'.",
+            UserId = caller.Id,
+            OrganizationId = org.Id
+        });
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, plan = sub.Plan.ToString() });
+    }
+
+    [HttpPost("/api/org/users/{id}/revoke-license")]
+    public async Task<IActionResult> RevokeLicense(string id)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return NotFound(new { error = "User not found." });
+        if (!user.OrganizationId.HasValue || !IsOrgAdminOf(caller, user.OrganizationId.Value))
+            return StatusCode(403, new { error = "You do not have permission to revoke licenses for this user." });
+
+        var sub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == user.Id);
+        if (sub == null || (sub.Plan != PlanType.Professional && sub.Plan != PlanType.Enterprise))
+            return BadRequest(new { error = "User does not currently hold a paid license." });
+
+        sub.Plan = PlanType.Free;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "license_revoked",
+            Description = $"License revoked from user '{user.Email}'.",
+            UserId = caller.Id,
+            OrganizationId = user.OrganizationId
+        });
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    // ── Notifications (OrgAdmin push to users in their org) ──────────────────
+    [HttpGet("/org/notifications")]
+    public async Task<IActionResult> Notifications()
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Redirect("/auth/login");
+        if (caller.Role != "OrgAdmin" && caller.Role != "SuperAdmin")
+            return RedirectToAction("AccessDenied", "Home", new { statusCode = 403 });
+        if (caller.OrganizationId == null)
+            return RedirectToAction("AccessDenied", "Home", new { statusCode = 403 });
+
+        var orgId = caller.OrganizationId.Value;
+        var items = await _db.Notifications
+            .Where(n => n.Scope == "Org" && n.OrganizationId == orgId)
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(100)
+            .ToListAsync();
+        ViewBag.OrganizationId = orgId;
+        return View("~/Views/OrgAdmin/Notifications.cshtml", items);
+    }
+
+    [HttpPost("/api/org/notifications")]
+    public async Task<IActionResult> SendOrgNotification([FromBody] OrgNotificationDto dto)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (caller.Role != "OrgAdmin" && caller.Role != "SuperAdmin")
+            return StatusCode(403, new { error = "OrgAdmin role required." });
+        if (caller.OrganizationId == null)
+            return StatusCode(403, new { error = "Not associated with an organization." });
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Body))
+            return BadRequest(new { error = "Title and body are required." });
+
+        var n = new Notification
+        {
+            Scope = "Org",
+            OrganizationId = caller.OrganizationId.Value,
+            Title = dto.Title.Trim(),
+            Body = dto.Body.Trim(),
+            Type = string.IsNullOrWhiteSpace(dto.Type) ? "Announcement" : dto.Type!.Trim(),
+            Severity = string.IsNullOrWhiteSpace(dto.Severity) ? "normal" : dto.Severity!.Trim(),
+            Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link!.Trim(),
+            ExpiresAt = dto.ExpiresAt,
+            CreatedByUserId = caller.Id,
+            CreatedByRole = "OrgAdmin",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Notifications.Add(n);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, id = n.Id });
+    }
+
+    [HttpDelete("/api/org/notifications/{id:int}")]
+    public async Task<IActionResult> DeleteOrgNotification(int id)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (caller.Role != "OrgAdmin" && caller.Role != "SuperAdmin") return StatusCode(403);
+        var n = await _db.Notifications.FindAsync(id);
+        if (n == null) return NotFound();
+        if (caller.Role != "SuperAdmin" && (n.Scope != "Org" || n.OrganizationId != caller.OrganizationId))
+            return StatusCode(403);
+        _db.Notifications.Remove(n);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+}
+
+public class OrgNotificationDto
+{
+    public string? Title { get; set; }
+    public string? Body { get; set; }
+    public string? Type { get; set; }
+    public string? Severity { get; set; }
+    public string? Link { get; set; }
+    public DateTime? ExpiresAt { get; set; }
 }
 
 public class InviteUserRequest

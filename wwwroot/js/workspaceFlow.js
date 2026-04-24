@@ -560,7 +560,10 @@
                             </div>
                             `}
                         </div>
-                        <div class="modal-footer border-top" style="border-color:var(--cp-border)!important">
+                        <div class="modal-footer border-top d-flex justify-content-between" style="border-color:var(--cp-border)!important">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="dsRefreshCacheBtn" title="Flush cached query results for this datasource so the next request hits the live database.">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Refresh Cache
+                            </button>
                             <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
                     </div>
@@ -568,6 +571,40 @@
             document.body.appendChild(modal);
             const bsModal = new bootstrap.Modal(modal);
             modal.addEventListener('hidden.bs.modal', () => { modal.remove(); });
+            const refreshBtn = modal.querySelector('#dsRefreshCacheBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', async () => {
+                    const original = refreshBtn.innerHTML;
+                    refreshBtn.disabled = true;
+                    refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing...';
+                    try {
+                        const resp = await fetch(`/api/datasources/${encodeURIComponent(dsGuid)}/refresh-cache`, {
+                            method: 'POST',
+                            credentials: 'same-origin'
+                        });
+                        if (resp.ok) {
+                            refreshBtn.classList.remove('btn-outline-primary');
+                            refreshBtn.classList.add('btn-success');
+                            refreshBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Cache cleared';
+                        } else {
+                            refreshBtn.classList.remove('btn-outline-primary');
+                            refreshBtn.classList.add('btn-danger');
+                            refreshBtn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Failed';
+                        }
+                    } catch {
+                        refreshBtn.classList.remove('btn-outline-primary');
+                        refreshBtn.classList.add('btn-danger');
+                        refreshBtn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Failed';
+                    } finally {
+                        setTimeout(() => {
+                            refreshBtn.disabled = false;
+                            refreshBtn.classList.remove('btn-success', 'btn-danger');
+                            refreshBtn.classList.add('btn-outline-primary');
+                            refreshBtn.innerHTML = original;
+                        }, 1800);
+                    }
+                });
+            }
             bsModal.show();
         },
 

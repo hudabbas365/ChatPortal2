@@ -158,15 +158,19 @@
         <i class="bi bi-stars"></i>
     </button>
 
-    <!-- Q&A Panel -->
-    <div class="rv-qa-panel" id="rv-qa-panel" role="dialog" aria-label="AI Q&amp;A">
+    <!-- Q&A Panel (docked right) -->
+    <div class="rv-qa-panel" id="rv-qa-panel" role="complementary" aria-label="AI Q&amp;A">
         <div class="rv-qa-header">
             <div class="rv-qa-header-icon"><i class="bi bi-stars"></i></div>
             <div class="rv-qa-header-info">
                 <div class="rv-qa-header-title">Ask AI about this report</div>
                 <div class="rv-qa-header-sub">@reportName</div>
             </div>
-            <button class="rv-qa-close" aria-label="Close Q&amp;A panel"><i class="bi bi-x-lg"></i></button>
+            <div class="rv-qa-header-actions">
+                <button class="rv-qa-action-btn" id="rvQaCopyAllBtn" title="Copy conversation" aria-label="Copy conversation"><i class="bi bi-clipboard"></i></button>
+                <button class="rv-qa-action-btn" id="rvQaExportBtn" title="Export as PDF" aria-label="Export as PDF"><i class="bi bi-file-earmark-pdf"></i></button>
+                <button class="rv-qa-action-btn rv-qa-close" title="Close" aria-label="Close Q&amp;A panel"><i class="bi bi-x-lg"></i></button>
+            </div>
         </div>
         <div class="rv-qa-chips"></div>
         <div class="rv-qa-messages" id="rv-qa-messages"></div>
@@ -193,6 +197,7 @@
     window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
     window._rvWorkspaceName  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceName ?? ""));
     </script>
+    <script src="~/js/copyRichContent.js" asp-append-version="true"></script>
     <script src="~/js/report-qa-panel.js" asp-append-version="true"></script>
     <script src="~/js/report-share.js" asp-append-version="true"></script>
     <script>

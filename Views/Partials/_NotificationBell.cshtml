@@ -1,0 +1,24 @@
+<div class="nav-notify-wrap" id="navNotifyWrap" style="display:none">
+    <button type="button" class="nav-notify-btn" id="navNotifyBtn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+        <i class="bi bi-bell"></i>
+        <span class="nav-notify-badge" id="navNotifyBadge" hidden>0</span>
+    </button>
+    <div class="nav-notify-dropdown" id="navNotifyDropdown" hidden>
+        <div class="nav-notify-header">
+            <strong>Notifications</strong>
+            <button type="button" class="nav-notify-mark-all" id="navNotifyMarkAll" title="Mark all as read">
+                <i class="bi bi-check2-all"></i>
+            </button>
+        </div>
+        <div class="nav-notify-list" id="navNotifyList">
+            <div class="nav-notify-empty">
+                <i class="bi bi-bell-slash"></i>
+                <p>No notifications yet</p>
+            </div>
+        </div>
+        <div class="nav-notify-footer">
+            <button type="button" id="navNotifyCloseAll" class="nav-notify-footer-close">Close</button>
+        </div>
+    </div>
+</div>
+<script src="~/js/notificationBell.js" asp-append-version="true"></script>

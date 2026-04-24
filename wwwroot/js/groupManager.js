@@ -622,7 +622,8 @@ class GroupManager {
     async _deleteSelected() {
         if (this._selectedIds.size === 0) return;
         const count = this._selectedIds.size;
-        if (!confirm(`Delete ${count} selected item${count > 1 ? 's' : ''}?`)) return;
+        const confirmed = await this._showDeleteSelectedConfirm(count);
+        if (!confirmed) return;
         const ids = [...this._selectedIds];
         for (const id of ids) {
             await window.canvasManager?.deleteChart(id);
@@ -634,6 +635,53 @@ class GroupManager {
         this._selectedIds.clear();
         this._renderGroupOutlines();
         this._updateToolbarState();
+    }
+
+    _showDeleteSelectedConfirm(count) {
+        return new Promise(function (resolve) {
+            const plural = count > 1;
+            const overlay = document.createElement('div');
+            overlay.className = 'ar-overlay';
+            overlay.innerHTML =
+                '<div class="ar-modal" style="width:420px">' +
+                    '<div class="ar-modal-header" style="background:linear-gradient(135deg,#dc3545 0%,#c82333 100%)">' +
+                        '<i class="bi bi-trash3-fill"></i>Delete ' + (plural ? 'Items' : 'Item') +
+                    '</div>' +
+                    '<div class="ar-modal-body" style="text-align:center;padding:24px 20px">' +
+                        '<i class="bi bi-exclamation-triangle-fill" style="font-size:2.2rem;color:#dc3545;display:block;margin-bottom:12px"></i>' +
+                        '<div style="font-size:0.92rem;font-weight:600;color:var(--cp-text,#1e2d3d);margin-bottom:6px">Delete ' + count + ' selected item' + (plural ? 's' : '') + '?</div>' +
+                        '<div style="font-size:0.78rem;color:var(--cp-text-secondary,#6c757d)">' +
+                            (plural ? 'These charts' : 'This chart') + ' will be permanently removed from the page.<br>This action cannot be undone.' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="ar-modal-footer" style="justify-content:center;gap:12px">' +
+                        '<button class="ar-cancel-btn" id="arDelSelNo" style="min-width:90px">Cancel</button>' +
+                        '<button class="ar-generate-btn" id="arDelSelYes" style="min-width:90px;background:#dc3545"><i class="bi bi-trash3 me-1"></i>Delete</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            requestAnimationFrame(function () { overlay.classList.add('ar-open'); });
+
+            function close(result) {
+                overlay.classList.remove('ar-open');
+                document.removeEventListener('keydown', onKey, true);
+                setTimeout(function () { overlay.remove(); }, 260);
+                resolve(result);
+            }
+            function onKey(e) {
+                if (e.key === 'Escape') { e.preventDefault(); close(false); }
+                else if (e.key === 'Enter') { e.preventDefault(); close(true); }
+            }
+            document.addEventListener('keydown', onKey, true);
+
+            document.getElementById('arDelSelYes').addEventListener('click', function () { close(true); });
+            document.getElementById('arDelSelNo').addEventListener('click', function () { close(false); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+            setTimeout(function () {
+                const yes = document.getElementById('arDelSelYes');
+                if (yes) yes.focus();
+            }, 120);
+        });
     }
 
     // ── Toolbar state ───────────────────────────────────────────

@@ -45,13 +45,44 @@ public class DatasourceController : ControllerBase
     private readonly IQueryExecutionService _queryService;
     private readonly IWorkspacePermissionService _permissions;
     private readonly IEncryptionService _encryption;
+    private readonly IRelationshipService _relationships;
+    private readonly IQueryCacheInvalidator _cacheInvalidator;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator)
     {
         _db = db;
         _queryService = queryService;
         _permissions = permissions;
         _encryption = encryption;
+        _relationships = relationships;
+        _cacheInvalidator = cacheInvalidator;
+    }
+
+    // Manual cache refresh — flushes every cached query result for this datasource so the
+    // next request re-runs against the live database. Surfaced to the UI via a refresh
+    // button on the datasource details modal.
+    [HttpPost("{guid}/refresh-cache")]
+    public async Task<IActionResult> RefreshCache(string guid)
+    {
+        Datasource? ds = null;
+        if (int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        ds ??= await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+        if (appUser?.Role != "SuperAdmin" && callerOrgId > 0 && ds.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this datasource." });
+
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0
+            && !await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId)
+            && appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+            return StatusCode(403, new { error = "You do not have access to this datasource." });
+
+        _cacheInvalidator.InvalidateDatasource(ds.Id);
+        return Ok(new { success = true, datasourceId = ds.Id, datasourceGuid = ds.Guid });
     }
 
     private async Task<int> ResolveOrganizationIdAsync(int supplied, string? userId)
@@ -615,6 +646,9 @@ public class DatasourceController : ControllerBase
         if (req.ApiMethod != null) ds.ApiMethod = req.ApiMethod;
 
         await _db.SaveChangesAsync();
+        // Flush any cached query results for this datasource — connection details or
+        // selected tables may have changed, so stale results must not be served.
+        _cacheInvalidator.InvalidateDatasource(ds.Id);
         return Ok(new { ds.Id, ds.Guid, ds.Name, ds.SelectedTables });
     }
 
@@ -646,6 +680,7 @@ public class DatasourceController : ControllerBase
 
         _db.Datasources.Remove(ds);
         await _db.SaveChangesAsync();
+        _cacheInvalidator.InvalidateDatasource(ds.Id);
         return Ok(new { success = true });
     }
 
@@ -670,6 +705,116 @@ public class DatasourceController : ControllerBase
         var s = value.ToString() ?? "";
         if (DateTime.TryParse(s, out _)) return "datetime";
         return "string";
+    }
+
+    [HttpGet("{id}/relationships")]
+    public async Task<IActionResult> GetRelationships(string id)
+    {
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == id);
+        if (ds == null && int.TryParse(id, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        if (appUser?.Role != "SuperAdmin" && appUser?.OrganizationId > 0 && ds.OrganizationId != appUser.OrganizationId)
+            return StatusCode(403, new { error = "You do not have access to this datasource." });
+
+        try
+        {
+            var rels = await _relationships.GetRelationshipsAsync(ds);
+            return Ok(new
+            {
+                datasourceId = ds.Id,
+                datasourceGuid = ds.Guid,
+                relationships = rels.Select(r => new { r.FromTable, r.FromColumn, r.ToTable, r.ToColumn, r.Source, r.Confidence })
+            });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { datasourceId = ds.Id, datasourceGuid = ds.Guid, relationships = Array.Empty<object>(), error = ex.Message });
+        }
+    }
+
+    // ─── Phase 36 — Column Profiling (A11 stats + A9 quality) ─────────────────
+
+    private static string QuoteIdent(string type, string name)
+    {
+        var safe = new string((name ?? "").Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == ' ').ToArray());
+        if (QueryExecutionService.PowerBiTypes.Contains(type)) return "'" + safe.Replace("'", "''") + "'";
+        if (string.Equals(type, "PostgreSQL", StringComparison.OrdinalIgnoreCase) || string.Equals(type, "Postgres", StringComparison.OrdinalIgnoreCase))
+            return "\"" + safe + "\"";
+        if (string.Equals(type, "MySQL", StringComparison.OrdinalIgnoreCase) || string.Equals(type, "MariaDB", StringComparison.OrdinalIgnoreCase))
+            return "`" + safe + "`";
+        return "[" + safe + "]";
+    }
+
+    [HttpGet("{id}/profile")]
+    public async Task<IActionResult> ProfileColumn(int id,
+        [FromQuery] string table, [FromQuery] string column,
+        [FromQuery] bool numeric = false, [FromQuery] int topN = 5)
+    {
+        var ds = await _db.Datasources.FindAsync(id);
+        if (ds == null) return NotFound();
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
+        if (string.IsNullOrWhiteSpace(table) || string.IsNullOrWhiteSpace(column))
+            return BadRequest(new { error = "table and column are required." });
+        if (QueryExecutionService.PowerBiTypes.Contains(ds.Type) || QueryExecutionService.RestApiTypes.Contains(ds.Type))
+            return Ok(new { supported = false, reason = "Profiling is not supported for this datasource type." });
+
+        var col = QuoteIdent(ds.Type, column);
+        var tbl = QuoteIdent(ds.Type, table);
+        var summarySql = numeric
+            ? $"SELECT COUNT(*) AS total_count, COUNT({col}) AS non_null_count, COUNT(DISTINCT {col}) AS distinct_count, MIN({col}) AS min_val, MAX({col}) AS max_val, AVG(CAST({col} AS FLOAT)) AS avg_val FROM {tbl}"
+            : $"SELECT COUNT(*) AS total_count, COUNT({col}) AS non_null_count, COUNT(DISTINCT {col}) AS distinct_count FROM {tbl}";
+        var summary = await _queryService.ExecuteReadOnlyAsync(ds, summarySql, 1);
+        if (!summary.Success || summary.Data.Count == 0)
+            return Ok(new { supported = true, success = false, error = summary.Error ?? "No data returned." });
+        var row = summary.Data[0];
+        object? GetVal(string k) => row.TryGetValue(k, out var v) ? v : null;
+
+        List<object>? topValues = null;
+        try
+        {
+            var limit = Math.Max(1, Math.Min(20, topN));
+            var isPgMy = string.Equals(ds.Type, "PostgreSQL", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(ds.Type, "Postgres", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(ds.Type, "MySQL", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(ds.Type, "MariaDB", StringComparison.OrdinalIgnoreCase);
+            string topSql = isPgMy
+                ? $"SELECT {col} AS value, COUNT(*) AS freq FROM {tbl} WHERE {col} IS NOT NULL GROUP BY {col} ORDER BY COUNT(*) DESC LIMIT {limit}"
+                : $"SELECT TOP {limit} {col} AS value, COUNT(*) AS freq FROM {tbl} WHERE {col} IS NOT NULL GROUP BY {col} ORDER BY COUNT(*) DESC";
+            var topRes = await _queryService.ExecuteReadOnlyAsync(ds, topSql, limit);
+            if (topRes.Success)
+                topValues = topRes.Data.Select(r => (object)new { value = r.TryGetValue("value", out var v) ? v : null, count = r.TryGetValue("freq", out var c) ? c : 0 }).ToList();
+        }
+        catch { }
+
+        return Ok(new
+        {
+            supported = true,
+            success = true,
+            datasourceId = ds.Id,
+            table,
+            column,
+            numeric,
+            rowCount = GetVal("total_count"),
+            nonNullCount = GetVal("non_null_count"),
+            distinctCount = GetVal("distinct_count"),
+            min = GetVal("min_val"),
+            max = GetVal("max_val"),
+            avg = GetVal("avg_val"),
+            topValues
+        });
     }
 }
 

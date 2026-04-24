@@ -314,7 +314,7 @@ public class AuthController : Controller
             orgName = meOrg?.Name;
         }
 
-        return Ok(new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName });
+        return Ok(new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName, orgEmail = user.Email });
     }
 
     [HttpGet("/api/auth/org-verified")]

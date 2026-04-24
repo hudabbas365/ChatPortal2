@@ -5,6 +5,7 @@ using AIInsights.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -102,13 +103,25 @@ builder.Services.AddScoped<ISeoService, SeoService>();
 builder.Services.AddSingleton<IChartService, ChartService>();
 builder.Services.AddSingleton<IDataService, DataService>();
 builder.Services.AddSingleton<IPowerBiService, PowerBiService>();
-builder.Services.AddSingleton<IQueryExecutionService, QueryExecutionService>();
+// Query execution with caching decorator — reduces redundant hits to live datasources.
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<QueryExecutionService>();
+builder.Services.AddSingleton<CachingQueryExecutionService>(sp =>
+    new CachingQueryExecutionService(
+        sp.GetRequiredService<QueryExecutionService>(),
+        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<ILogger<CachingQueryExecutionService>>()));
+builder.Services.AddSingleton<IQueryExecutionService>(sp => sp.GetRequiredService<CachingQueryExecutionService>());
+builder.Services.AddSingleton<IQueryCacheInvalidator>(sp => sp.GetRequiredService<CachingQueryExecutionService>());
+builder.Services.AddScoped<IRelationshipService, RelationshipService>();
 builder.Services.AddSingleton<IEncryptionService, AesEncryptionService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();
-builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
+builder.Services.AddScoped<IContentSeeder, ContentSeeder>();
 builder.Services.AddScoped<ITrialEnforcementService, TrialEnforcementService>();
+builder.Services.AddHostedService<NotificationSeedingService>();
 builder.Services.AddHttpClient("PayPal");
 builder.Services.AddScoped<IPayPalService, PayPalService>();
 
@@ -148,6 +161,19 @@ using (var scope = app.Services.CreateScope())
 
     var seoService = scope.ServiceProvider.GetRequiredService<ISeoService>();
     await seoService.SeedDefaultEntriesAsync();
+
+    // Seed release-note docs + AIInsights365.net Phase 1/2 blog posts
+    // (also registers their URLs in sitemap.xml via SeoEntries).
+    try
+    {
+        var contentSeeder = scope.ServiceProvider.GetRequiredService<IContentSeeder>();
+        await contentSeeder.SeedAsync();
+        startupLogger.LogInformation("ContentSeeder completed (docs + blog posts).");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogWarning(ex, "ContentSeeder failed to seed docs/blog posts.");
+    }
 }
 
 // Middleware pipeline

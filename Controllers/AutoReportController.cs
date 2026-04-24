@@ -16,12 +16,14 @@ public class AutoReportController : ControllerBase
     private readonly CohereService _cohere;
     private readonly IQueryExecutionService _queryService;
     private readonly AppDbContext _db;
+    private readonly IRelationshipService _relationships;
 
-    public AutoReportController(CohereService cohere, IQueryExecutionService queryService, AppDbContext db)
+    public AutoReportController(CohereService cohere, IQueryExecutionService queryService, AppDbContext db, IRelationshipService relationships)
     {
         _cohere = cohere;
         _queryService = queryService;
         _db = db;
+        _relationships = relationships;
     }
 
     public class AutoReportRequest
@@ -72,7 +74,19 @@ public class AutoReportController : ControllerBase
                 ? string.Join(", ", req.TableNames)
                 : "No specific tables provided";
 
-            var systemPrompt = BuildSystemPrompt(ds?.Type, tables, schemaSnippet, req.ExistingCharts);
+            // Discover table relationships so the AI emits FK-correct JOINs.
+            var relationshipsSnippet = "";
+            if (ds != null)
+            {
+                try
+                {
+                    var rels = await _relationships.GetRelationshipsAsync(ds);
+                    relationshipsSnippet = BuildRelationshipsSnippet(rels);
+                }
+                catch { /* best-effort */ }
+            }
+
+            var systemPrompt = BuildSystemPrompt(ds?.Type, tables, schemaSnippet, req.ExistingCharts, relationshipsSnippet);
 
             var userPrompt = string.IsNullOrWhiteSpace(req.Prompt)
                 ? "Generate a comprehensive multi-page report covering all available data with KPIs, charts, and tables."
@@ -107,7 +121,21 @@ public class AutoReportController : ControllerBase
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
     }
 
-    private string BuildSystemPrompt(string? dsType, string tables, string schemaSnippet, string? existingCharts)
+    private static string BuildRelationshipsSnippet(IReadOnlyList<RelationshipInfo>? rels)
+    {
+        if (rels == null || rels.Count == 0) return string.Empty;
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("## Known Table Relationships (use these for JOINs)");
+        sb.AppendLine("The left-hand column is a foreign key referencing the right-hand column. Prefer these when writing multi-table queries — do NOT invent joins that are not listed here.");
+        foreach (var r in rels.Take(40))
+        {
+            sb.AppendLine($"- {r.FromTable}.{r.FromColumn} -> {r.ToTable}.{r.ToColumn}" + (string.IsNullOrEmpty(r.Source) ? "" : $"  (source: {r.Source})"));
+        }
+        return sb.ToString();
+    }
+
+    private string BuildSystemPrompt(string? dsType, string tables, string schemaSnippet, string? existingCharts, string relationshipsSnippet = "")
     {
         var isPbi = QueryExecutionService.PowerBiTypes.Contains(dsType ?? "");
         var isRest = QueryExecutionService.RestApiTypes.Contains(dsType ?? "");
@@ -141,6 +169,13 @@ public class AutoReportController : ControllerBase
 
         return $@"You are an expert BI report designer. Given a data schema, generate a structured JSON report plan.
 
+## CRITICAL COLUMN RULE — READ FIRST
+- ONLY reference columns that are EXPLICITLY listed in the schema snippet below for the exact table/view you are querying.
+- NEVER invent columns. NEVER assume columns like [ModifiedDate], [CreatedDate], [Id], [Name] exist unless they appear in the snippet for that specific object.
+- NEVER write ORDER BY on a column that is not in that table/view's listed columns. If no suitable sort column exists, OMIT ORDER BY entirely.
+- Items marked (VIEW) are views — their column list in the schema is AUTHORITATIVE; treat any column not listed as non-existent.
+- If you need a metric and the chosen object has no matching column, pick a DIFFERENT object from the schema or skip that chart. Do NOT guess.
+
 ## Rules
 - Return ONLY valid JSON — no markdown, no explanation, no code fences.
 - The JSON must be an object with a ""pages"" array.
@@ -153,8 +188,8 @@ public class AutoReportController : ControllerBase
   - ""valueField"": the primary numeric column/field (MUST be an actual column name from the schema, NOT a SQL alias)
   - ""description"": 1-2 sentence explanation of what this chart shows
   - ""tableName"": the table name this chart queries (must match one of the available tables)
-  - ""width"": grid width 3-12 (default 6)
-  - ""height"": pixel height (shape-textbox: 80, kpi: 200, table: 380, charts: 300-320)
+  - ""width"": grid width per Layout Rules (title textbox: 12, KPI: 2, middle chart: 4, bottom table: 12)
+  - ""height"": pixel height (shape-textbox: 90, kpi/card: 220, middle chart: 320, bottom table: 380)
 {queryRules}
 
 ## Chart-Type Guidance — pick SIMPLE, SENSIBLE visuals the user can actually read
@@ -179,20 +214,22 @@ public class AutoReportController : ControllerBase
 - For KPI cards, use chartType ""kpi"" with a query that returns a single aggregated value aliased [Value].
 
 ## Layout Rules
-- Each page MUST have 6-8 charts (including KPI cards and text boxes).
-- Spread charts across 2-4 pages. Name pages descriptively (e.g. ""Overview"", ""Sales Analysis"", ""Trends"").
-- On page 1, include a shape-textbox (width 12) with a report title and brief description.
-- Start each page with 3-4 KPI cards (width 3, height 200) in a row — these are the ""cards"" at the top of the dashboard.
-- Follow the KPI row with 1-2 medium charts side by side (width 6 each), then a full-width chart or table (width 12) below.
-- Use a variety of chart types across the report (kpi, bar, line, pie, table).
-- Plan chart widths so they tile in rows of 12 columns total (e.g. four width-3 cards, two width-6 charts, one width-12 full-width). Avoid leftover gaps.
+- Each page MUST follow this exact structure, top-to-bottom:
+  1. A **title textbox** at the very top: chartType ""shape-textbox"", width 12, height 90, with a bold title + 1-line description in the ""text"" field.
+  2. A **row of exactly 5 KPI cards** (chartType ""kpi"" or ""card""). Use width 2 and height 220 for each so they span columns 1..10 — leave the last 2 columns empty on that row (do NOT squeeze a 6th card in).
+  3. A **row of exactly 3 middle visuals** (bar/line/pie/doughnut/area). Use width 4 and height 320 for each so they tile perfectly across 12 columns.
+  4. A **full-width table** at the bottom: chartType ""table"", width 12, height 380.
+- This 4-tier skeleton is MANDATORY. Do not replace it with 4 KPIs or 2 charts. If the page would have fewer than 5 meaningful KPIs, generate extra aggregates (counts, totals, averages, distincts) from the schema to fill the row.
+- Spread the report across 2-4 pages. Name pages descriptively (e.g. ""Overview"", ""Sales Analysis"", ""Trends""). EVERY page uses the same 4-tier skeleton above.
+- Use a variety of chart types across the report for the middle 3-visual row (mix bar, line, pie, doughnut, area).
+- KPIs at the top — keep their titles short (max ~18 chars) so they fit the width-2 card.
 {redesignNote}
 ## Available Tables
 {tables}
 
 {schemaSnippet}
-
-## Example Output (notice 8 charts per page — always aim for 7-8)
+{relationshipsSnippet}
+## Example Output (MANDATORY skeleton per page: 1 title textbox → 5 KPIs → 3 charts → 1 table)
 {{
   ""pages"": [
     {{
@@ -204,7 +241,7 @@ public class AutoReportController : ControllerBase
           ""text"": ""Analytics Report\nGenerated overview of key metrics and trends."",
           ""tableName"": """",
           ""width"": 12,
-          ""height"": 80
+          ""height"": 90
         }},
         {{
           ""chartType"": ""kpi"",
@@ -214,8 +251,8 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""Value"",
           ""tableName"": ""Sales"",
           ""description"": ""Shows total revenue."",
-          ""width"": 3,
-          ""height"": 200
+          ""width"": 2,
+          ""height"": 220
         }},
         {{
           ""chartType"": ""kpi"",
@@ -225,8 +262,8 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""Value"",
           ""tableName"": ""Sales"",
           ""description"": ""Total number of orders."",
-          ""width"": 3,
-          ""height"": 200
+          ""width"": 2,
+          ""height"": 220
         }},
         {{
           ""chartType"": ""kpi"",
@@ -236,8 +273,8 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""Value"",
           ""tableName"": ""Sales"",
           ""description"": ""Average order value."",
-          ""width"": 3,
-          ""height"": 200
+          ""width"": 2,
+          ""height"": 220
         }},
         {{
           ""chartType"": ""kpi"",
@@ -247,8 +284,19 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""Value"",
           ""tableName"": ""Sales"",
           ""description"": ""Unique customer count."",
-          ""width"": 3,
-          ""height"": 200
+          ""width"": 2,
+          ""height"": 220
+        }},
+        {{
+          ""chartType"": ""card"",
+          ""title"": ""Active Regions"",
+          {kpiExample},
+          ""labelField"": ""Value"",
+          ""valueField"": ""Value"",
+          ""tableName"": ""Sales"",
+          ""description"": ""Number of regions with sales."",
+          ""width"": 2,
+          ""height"": 220
         }},
         {{
           ""chartType"": ""bar"",
@@ -258,8 +306,19 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""TotalRevenue"",
           ""tableName"": ""Sales"",
           ""description"": ""Bar chart showing revenue distribution across regions."",
-          ""width"": 6,
-          ""height"": 300
+          ""width"": 4,
+          ""height"": 320
+        }},
+        {{
+          ""chartType"": ""line"",
+          ""title"": ""Revenue Trend"",
+          {chartExample},
+          ""labelField"": ""Month"",
+          ""valueField"": ""TotalRevenue"",
+          ""tableName"": ""Sales"",
+          ""description"": ""Monthly revenue trend over time."",
+          ""width"": 4,
+          ""height"": 320
         }},
         {{
           ""chartType"": ""pie"",
@@ -269,7 +328,7 @@ public class AutoReportController : ControllerBase
           ""valueField"": ""TotalSales"",
           ""tableName"": ""Sales"",
           ""description"": ""Pie chart of sales distribution by category."",
-          ""width"": 6,
+          ""width"": 4,
           ""height"": 320
         }},
         {{
@@ -355,19 +414,24 @@ public class AutoReportController : ControllerBase
                 sb.AppendLine("- Could not retrieve Power BI model schema.");
             }
         }
-        // ── SQL Server: use sys.tables / sys.columns ──
+        // ── SQL Server: use sys.objects so BOTH tables (U) AND views (V) are included ──
         else
         {
             sb.AppendLine("## SQL Server Schema");
             try
             {
                 var schemaQuery = @"
-                    SELECT s.name AS SchemaName, t.name AS TableName, c.name AS ColumnName, ty.name AS DataType
-                    FROM sys.tables t
-                    JOIN sys.schemas s ON t.schema_id = s.schema_id
-                    JOIN sys.columns c ON c.object_id = t.object_id
-                    JOIN sys.types ty ON c.user_type_id = ty.user_type_id
-                    ORDER BY s.name, t.name, c.column_id";
+                    SELECT s.name AS SchemaName,
+                           o.name AS TableName,
+                           c.name AS ColumnName,
+                           ty.name AS DataType,
+                           CASE o.type WHEN 'V' THEN 'VIEW' ELSE 'TABLE' END AS ObjectKind
+                    FROM sys.objects o
+                    JOIN sys.schemas s ON o.schema_id = s.schema_id
+                    JOIN sys.columns c ON c.object_id = o.object_id
+                    JOIN sys.types  ty ON c.user_type_id = ty.user_type_id
+                    WHERE o.type IN ('U','V')
+                    ORDER BY s.name, o.name, c.column_id";
                 var result = await _queryService.ExecuteReadOnlyAsync(ds, schemaQuery);
                 if (result.Success && result.Data.Count > 0)
                 {
@@ -376,18 +440,22 @@ public class AutoReportController : ControllerBase
                         {
                             var schema = r.ContainsKey("SchemaName") ? r["SchemaName"]?.ToString() ?? "dbo" : "dbo";
                             var table = r.ContainsKey("TableName") ? r["TableName"]?.ToString() ?? "" : "";
-                            return $"[{schema}].[{table}]";
+                            var kind = r.ContainsKey("ObjectKind") ? r["ObjectKind"]?.ToString() ?? "TABLE" : "TABLE";
+                            return $"[{schema}].[{table}]|{kind}";
                         })
                         .Where(g => !string.IsNullOrEmpty(g.Key));
                     foreach (var tbl in grouped)
                     {
+                        var parts = tbl.Key.Split('|');
+                        var qualified = parts[0];
+                        var kind = parts.Length > 1 ? parts[1] : "TABLE";
                         var cols = tbl.Select(r =>
                         {
                             var name = r.ContainsKey("ColumnName") ? r["ColumnName"]?.ToString() ?? "" : "";
                             var dtype = r.ContainsKey("DataType") ? r["DataType"]?.ToString() ?? "" : "";
                             return $"[{name}] ({dtype})";
                         });
-                        sb.AppendLine($"- **{tbl.Key}**: {string.Join(", ", cols)}");
+                        sb.AppendLine($"- **{qualified}** ({kind}): {string.Join(", ", cols)}");
                     }
                 }
             }

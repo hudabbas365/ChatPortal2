@@ -1,5 +1,60 @@
 // ── Chart renderer using ApexCharts ──────────────────────────────────────────
 
+// Install ApexCharts error suppressor FIRST (before class definition and
+// before any chart instance exists). ApexCharts' internal async work (inside
+// apexcharts.min.js) can reject with "Cannot read properties of undefined
+// (reading 'colors')" or "reading 'w'" after an instance is destroyed during
+// rapid re-renders (theme switches, resize cascades). Those rejections are
+// orphaned — they have no caller try/catch — and surface as
+// "Uncaught (in promise)" console noise. Swallow only ApexCharts-origin
+// failures; everything else passes through untouched.
+(function installApexErrorSuppressor() {
+    if (window.__apexRejectionHandlerInstalled) return;
+    window.__apexRejectionHandlerInstalled = true;
+
+    const isApexError = (reason) => {
+        if (!reason) return false;
+        const msg = String(reason.message || reason);
+        const stack = String(reason.stack || '').toLowerCase();
+        return stack.includes('apexcharts') ||
+               msg.includes("reading 'colors'") ||
+               msg.includes("reading 'w'") ||
+               msg.includes("reading 'call'") ||
+               msg.includes("reading 'getAttribute'") ||
+               msg.includes("getComputedStyle");
+    };
+
+    window.addEventListener('unhandledrejection', (e) => {
+        if (isApexError(e.reason)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+
+    window.addEventListener('error', (e) => {
+        const src = String(e.filename || '').toLowerCase();
+        const msg = String(e.message || '');
+        if (src.includes('apexcharts') ||
+            msg.includes("reading 'colors'") ||
+            msg.includes("reading 'w'") ||
+            msg.includes("reading 'getAttribute'") ||
+            msg.includes("getComputedStyle")) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return true;
+        }
+    }, true);
+})();
+
+// Chart-render diagnostic logs are off by default. Enable at runtime with
+// `window.__chartRendererDebug = true` in the DevTools console to surface the
+// full [ChartRender] / [CardStyle] trace (used when diagnosing ApexCharts
+// structural crashes like "Cannot read properties of undefined (reading
+// 'colors')").
+if (typeof window.__chartRendererDebug === 'undefined') {
+    window.__chartRendererDebug = false;
+}
+
 // Chart rendering engine using ApexCharts
 class ChartRenderer {
     constructor() {
@@ -113,6 +168,14 @@ class ChartRenderer {
     async render(chartDef, containerEl) {
         this.destroy(chartDef.id);
 
+        if (window.__chartRendererDebug) {
+            console.log('[ChartRender] start', {
+                id: chartDef && chartDef.id,
+                chartType: chartDef && chartDef.chartType,
+                title: chartDef && chartDef.title
+            });
+        }
+
         // Accept either a <canvas> (legacy call) or a wrapper div.
         // For ApexCharts we always use the wrapper div as the mount point.
         let wrap, canvasEl;
@@ -176,6 +239,26 @@ class ChartRenderer {
             return;
         }
 
+        // CRITICAL: destroy the previous ApexCharts instance for this chart id
+        // BEFORE removing its DOM. Leaving it alive keeps internal refs to nodes we
+        // are about to detach; the next render() then calls getComputedStyle on a
+        // detached element (falls back to Window) and blows up with:
+        //   "Failed to execute 'getComputedStyle' on 'Window'"
+        //   "Cannot read properties of undefined (reading 'colors')"
+        const prevInst = this.instances[chartDef.id];
+        if (prevInst) {
+            try { prevInst.destroy(); } catch (_) {}
+            delete this.instances[chartDef.id];
+        }
+
+        // Bump the render-generation token for this chart id. A newer render()
+        // call will increment this again, and any still-pending _renderWhenReady
+        // closure detects the mismatch and bails out — preventing ApexCharts from
+        // mounting on a detached node (the root cause of the
+        // "getComputedStyle on Window" and "undefined.colors" errors).
+        this._renderSeq = this._renderSeq || {};
+        const mySeq = (this._renderSeq[chartDef.id] = (this._renderSeq[chartDef.id] || 0) + 1);
+
         // Remove any previous ApexCharts mount and custom render
         const existingApex = wrap.querySelector('.apex-chart-wrap');
         if (existingApex) existingApex.remove();
@@ -190,29 +273,165 @@ class ChartRenderer {
 
         const options = this.buildApexConfig(chartDef, data);
 
+        // Defensive: ApexCharts throws "Cannot read properties of undefined (reading 'colors')"
+        // if options.colors is missing or empty on certain chart types, so guarantee a palette.
+        if (!Array.isArray(options.colors) || options.colors.length === 0) {
+            options.colors = this.colorPalettes.default.slice();
+        }
+
         // Wire up cross-filter click events via ApexCharts events
         const labelField = chartDef.mapping?.labelField || 'label';
         if (!options.chart) options.chart = {};
         if (!options.chart.events) options.chart.events = {};
-        options.chart.events.dataPointSelection = (event, chartCtx, config) => {
+        const _onDataPointSelection = (event, chartCtx, config) => {
             const labels = options.xaxis?.categories || options.labels || [];
             const label = labels[config.dataPointIndex];
             if (label !== undefined && window.CrossFilter) {
-                if (window.CrossFilter.activeFilter?.value === label) {
+                const af = window.CrossFilter.activeFilter;
+                // Toggle-clear only when the SAME chart re-selects the SAME value.
+                if (af && af.sourceChartId === chartDef.id && String(af.value) === String(label)) {
                     window.CrossFilter.clear();
                 } else {
-                    window.CrossFilter.apply(labelField, label, label);
+                    const sourceRow = (data.rawData && data.rawData[config.dataPointIndex]) || null;
+                    window.CrossFilter.apply(labelField, label, label, {
+                        sourceChartId: chartDef.id,
+                        sourceDatasetName: chartDef.datasetName,
+                        sourceDatasourceId: chartDef.datasourceId || window.currentDatasourceId || null,
+                        sourceRow
+                    });
                 }
             }
         };
+        options.chart.events.dataPointSelection = _onDataPointSelection;
 
-        try {
-            const chart = new ApexCharts(apexDiv, options);
-            await chart.render();
-            this.instances[chartDef.id] = chart;
-        } catch(e) {
-            console.warn('ApexCharts render error:', e);
-        }
+        // Wait until the host wrapper actually has layout. If any ancestor is
+        // display:none or zero width, ApexCharts' computed-style probes collapse
+        // to the Window object and throw.
+        const _renderWhenReady = async (attempt = 0) => {
+            const rect = wrap.getBoundingClientRect();
+            if (window.__chartRendererDebug) {
+                console.log('[ChartRender] ready-check', {
+                    chartId: chartDef.id,
+                    chartType: chartDef.chartType,
+                    attempt,
+                    rectW: Math.round(rect.width),
+                    rectH: Math.round(rect.height),
+                    hasOffsetParent: !!wrap.offsetParent,
+                    apexConnected: apexDiv.isConnected,
+                    seqMatch: this._renderSeq[chartDef.id] === mySeq
+                });
+            }
+            if ((!wrap.offsetParent || rect.width < 10 || rect.height < 10) && attempt < 20) {
+                return new Promise(resolve => {
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        _renderWhenReady(attempt + 1).then(resolve);
+                    }));
+                });
+            }
+            try {
+                // Bail out if a newer render() has superseded this one, or if
+                // our mount node was detached from the DOM while we were waiting.
+                // Mounting ApexCharts on a detached element causes its internal
+                // getComputedStyle() probes to collapse to Window and throw.
+                if (this._renderSeq[chartDef.id] !== mySeq) return;
+                if (!apexDiv.isConnected) return;
+                // NOTE: do NOT JSON.parse(JSON.stringify(options)) here — it drops
+                // formatter functions (yaxis labels, tooltip.custom, radialBar value
+                // formatter, etc.) and ApexCharts then throws:
+                //   "Cannot read properties of undefined (reading 'call')"
+                // and emits "Expected length, NaN" SVG warnings. Each render()
+                // already produces a FRESH options via buildApexConfig(), so a
+                // clone is unnecessary.
+                // Preflight-sanitize to prevent ApexCharts' internal
+                // "Cannot read properties of undefined (reading 'colors')" crash,
+                // which happens when series/colors/labels arrays are malformed
+                // (sparse, empty, or with undefined entries).
+                this._sanitizeApexOptions(options);
+                // Force explicit pixel dimensions so ApexCharts never resolves
+                // '100%' against a zero/unset-height ancestor — that produces
+                // NaN in SVG width/height/foreignObject attributes and triggers
+                // the "getComputedStyle on Window" crash during layout probes.
+                options.chart = options.chart || {};
+                const _w = Math.max(10, Math.round(rect.width));
+                const _h = Math.max(10, Math.round(rect.height));
+                options.chart.width = _w;
+                options.chart.height = _h;
+                if (window.__chartRendererDebug) {
+                    try {
+                        console.log('[ChartRender] mounting', {
+                            id: chartDef.id,
+                            chartType: chartDef.chartType,
+                            chartConfig: options.chart,
+                            seriesSample: Array.isArray(options.series)
+                                ? options.series.slice(0, 2)
+                                : options.series,
+                            seriesLen: Array.isArray(options.series) ? options.series.length : 'n/a',
+                            labels: options.labels,
+                            colors: options.colors,
+                            stroke: options.stroke,
+                            fill: options.fill,
+                            plotOptions: options.plotOptions,
+                            theme: options.theme,
+                            xaxisCategoriesSample: options.xaxis && options.xaxis.categories
+                                ? options.xaxis.categories.slice(0, 5)
+                                : undefined,
+                            optionKeys: Object.keys(options)
+                        });
+                    } catch (_) { /* logging must never throw */ }
+                }
+                const chart = new ApexCharts(apexDiv, options);
+                await chart.render();
+                // After the async render, re-check — if a newer render started
+                // while we were rendering, dispose this instance instead of
+                // storing it (otherwise we'd leak and paint stale data).
+                if (this._renderSeq[chartDef.id] !== mySeq || !apexDiv.isConnected) {
+                    try { chart.destroy(); } catch (_) {}
+                    return;
+                }
+                this.instances[chartDef.id] = chart;
+            } catch (e) {
+                // Classify: transient DOM races retry; structural options errors
+                // (the "reading 'colors'" / "reading 'w'" / "reading 'call'"
+                // family) will NEVER succeed on retry — fail fast and paint the
+                // fallback so we don't spam the console with 25 identical errors.
+                const msg = String((e && e.message) || e || '');
+                const isStructural =
+                    msg.includes("reading 'colors'") ||
+                    msg.includes("reading 'w'") ||
+                    msg.includes("reading 'call'") ||
+                    msg.includes('getComputedStyle');
+                if (!isStructural && attempt < 25) {
+                    await new Promise(r => setTimeout(r, 120));
+                    if (this._renderSeq[chartDef.id] !== mySeq || !apexDiv.isConnected) return;
+                    return _renderWhenReady(attempt + 5);
+                }
+                // Demoted to debug so it doesn't pollute the console. The
+                // fallback UI below already tells the user what to do.
+                if (window.__chartRendererDebug) {
+                    console.warn('[ChartRender] fallback painted', {
+                        chartId: chartDef.id,
+                        chartType: chartDef.chartType,
+                        attempt,
+                        isStructural,
+                        errorMsg: msg,
+                        rectW: Math.round(rect.width),
+                        rectH: Math.round(rect.height),
+                        optionKeys: Object.keys(options || {}),
+                        seriesLen: Array.isArray(options.series) ? options.series.length : 'n/a',
+                        labelsLen: Array.isArray(options.labels) ? options.labels.length : 'n/a',
+                        colorsLen: Array.isArray(options.colors) ? options.colors.length : 'n/a',
+                        error: e
+                    });
+                }
+                // Render a readable fallback so the panel doesn't stay blank.
+                apexDiv.innerHTML =
+                    '<div class="chart-no-data" style="padding:1rem;color:#6c757d">' +
+                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                    'Unable to render chart — please try a different type or refresh.' +
+                    '</div>';
+            }
+        };
+        await _renderWhenReady();
 
         // Helper: push updated data into the existing ApexCharts instance
         const _updateApex = (inst, newLabels, newValues) => {
@@ -238,7 +457,43 @@ class ChartRenderer {
             if (!inst) return;
             let newValues, newLabels;
             if (filter && data.rawData) {
-                const fData = data.rawData.filter(row => String(row[filter.field]) === String(filter.value));
+                // Translate the filter field/value when the source chart's table
+                // differs from this chart's table, using the datasource's
+                // relationship graph. No translation needed for the clicked
+                // chart itself (sourceChartId match) or same-table charts.
+                let fField = filter.field;
+                let fValue = filter.value;
+                const srcTable = filter.sourceDatasetName;
+                const myTable = chartDef.datasetName;
+                const sameChart = filter.sourceChartId && filter.sourceChartId === chartDef.id;
+                const sameTable = srcTable && myTable && String(srcTable).toLowerCase() === String(myTable).toLowerCase();
+                if (!sameChart && !sameTable && srcTable && myTable && window.CrossFilter) {
+                    const rel = window.CrossFilter.findRelationship(filter.sourceDatasourceId, srcTable, myTable);
+                    if (rel && rel.sourceColumn && rel.thisColumn && filter.sourceRow) {
+                        const keys = Object.keys(filter.sourceRow);
+                        const srcKey = keys.find(k => k.toLowerCase() === String(rel.sourceColumn).toLowerCase());
+                        const srcVal = srcKey ? filter.sourceRow[srcKey] : filter.sourceRow[rel.sourceColumn];
+                        if (srcVal !== undefined && srcVal !== null) {
+                            fField = rel.thisColumn;
+                            fValue = srcVal;
+                        } else {
+                            // No usable foreign-key value on the source row — leave chart unfiltered.
+                            newLabels = data.labels || [];
+                            newValues = data.values || [];
+                            _updateApex(inst, newLabels, newValues);
+                            return;
+                        }
+                    } else {
+                        // No relationship between these tables — leave chart unfiltered.
+                        newLabels = data.labels || [];
+                        newValues = data.values || [];
+                        _updateApex(inst, newLabels, newValues);
+                        return;
+                    }
+                }
+                const rowKeys = data.rawData[0] ? Object.keys(data.rawData[0]) : [];
+                const resolvedField = rowKeys.find(k => k.toLowerCase() === String(fField).toLowerCase()) || fField;
+                const fData = data.rawData.filter(row => String(row[resolvedField]) === String(fValue));
                 newLabels = fData.map(r => String(r[labelField] ?? ''));
                 newValues = fData.map(r => parseFloat(r[chartDef.mapping?.valueField || 'value']) || 0);
             } else {
@@ -327,7 +582,7 @@ class ChartRenderer {
         return `[${tableName}]`;
     }
 
-    _buildLimitQuery(columns, tableName, limit = 100, whereClause = '') {
+    _buildLimitQuery(columns, tableName, limit = 15, whereClause = '') {
         // Power BI — generate DAX instead of SQL
         if (this._isPowerBi()) {
             return this._buildDaxQuery(tableName, limit, null, null, null, null);
@@ -409,7 +664,7 @@ class ChartRenderer {
                     throw new Error('Invalid table name');
                 }
                 const fmtTable = this._formatTableName(tableName);
-                const rowLimit = chartDef.rowLimit || 100;
+                const rowLimit = chartDef.rowLimit || 15;
                 const whereClause = chartDef.filterWhere || '';
                 const mvFieldsRaw = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
                 // Normalize multi-value fields: support both string[] and {field,agg}[]
@@ -551,9 +806,124 @@ class ChartRenderer {
         return { labels: [], values: [], error: lastFetchError || window._lastDatasourceError || null };
     }
 
+    // Preflight sanitizer: guards against the internal ApexCharts crash
+    //   "Cannot read properties of undefined (reading 'colors')"
+    // which happens when certain option arrays are sparse, empty, or contain
+    // undefined entries. Mutates `options` in place.
+    _sanitizeApexOptions(options) {
+        if (!options || typeof options !== 'object') return;
+        const fallback = this.colorPalettes.default.slice();
+
+        // 1. colors — must be a non-empty array of strings
+        if (!Array.isArray(options.colors) || options.colors.length === 0) {
+            options.colors = fallback.slice();
+        } else {
+            options.colors = options.colors.map(c => (typeof c === 'string' && c) ? c : fallback[0]);
+        }
+
+        // 2. series — must be a defined, non-sparse array; strip any null/undefined
+        //    entries that ApexCharts would iterate and crash on.
+        if (!Array.isArray(options.series)) {
+            options.series = [];
+        } else {
+            options.series = options.series.filter(s => s !== null && s !== undefined);
+        }
+
+        // 3. labels (used by pie/donut/polarArea/radialBar) — must be array of strings
+        if (options.labels !== undefined && !Array.isArray(options.labels)) {
+            options.labels = [];
+        }
+        if (Array.isArray(options.labels)) {
+            options.labels = options.labels.map(l => String(l ?? ''));
+        }
+
+        // 4. If pie-like chart has zero data points, substitute a single
+        //    zero-value slice so ApexCharts doesn't crash iterating series.
+        const chartType = options.chart && options.chart.type;
+        const isPieLike = ['pie', 'donut', 'polarArea', 'radialBar'].includes(chartType);
+        if (isPieLike) {
+            const hasData = Array.isArray(options.series) && options.series.length > 0 &&
+                            options.series.some(v => typeof v === 'number' && isFinite(v));
+            if (!hasData) {
+                options.series = [0];
+                if (Array.isArray(options.labels) && options.labels.length === 0) {
+                    options.labels = [''];
+                }
+            }
+        }
+
+        // 5. For cartesian types, ensure each series has a defined data array
+        if (!isPieLike && Array.isArray(options.series)) {
+            options.series = options.series.map(s => {
+                if (s && typeof s === 'object') {
+                    if (!Array.isArray(s.data)) s.data = [];
+                    // Strip undefined/null points that can confuse theme iteration
+                    s.data = s.data.filter(p => p !== undefined && p !== null);
+                }
+                return s;
+            });
+        }
+
+        // 6. theme.monochrome.color — if set, must be a string (ApexCharts
+        //    iterates theme in the crashing code path).
+        if (options.theme && options.theme.monochrome && !options.theme.monochrome.color) {
+            options.theme.monochrome.color = fallback[0];
+        }
+
+        // 7. plotOptions.bar.colors — if present, must be well-formed
+        if (options.plotOptions && options.plotOptions.bar && options.plotOptions.bar.colors) {
+            const bc = options.plotOptions.bar.colors;
+            if (bc.ranges && !Array.isArray(bc.ranges)) delete bc.ranges;
+            if (bc.backgroundBarColors && !Array.isArray(bc.backgroundBarColors)) {
+                delete bc.backgroundBarColors;
+            }
+        }
+
+        // 8. fill.colors / stroke.colors — when arrays, filter out undefined
+        ['fill', 'stroke', 'markers'].forEach(key => {
+            const opt = options[key];
+            if (opt && Array.isArray(opt.colors)) {
+                opt.colors = opt.colors.map(c => (typeof c === 'string' && c) ? c : fallback[0]);
+            }
+        });
+
+        // 9. Materialize fill/stroke/plotOptions.bar.colors so ApexCharts' bar,
+        //    stacked-bar, and area renderers never dereference properties on
+        //    `undefined`. The generic buildApexConfig fallback emits
+        //    `fill: undefined` / `stroke: undefined` for bar-family charts,
+        //    which crashes internals with
+        //    "Cannot read properties of undefined (reading 'colors')".
+        const paletteCopy = Array.isArray(options.colors) ? options.colors.slice() : fallback.slice();
+        if (!options.fill || typeof options.fill !== 'object') {
+            options.fill = { colors: paletteCopy.slice() };
+        } else if (!Array.isArray(options.fill.colors)) {
+            options.fill.colors = paletteCopy.slice();
+        }
+        if (!options.stroke || typeof options.stroke !== 'object') {
+            options.stroke = { colors: paletteCopy.slice() };
+        } else if (!Array.isArray(options.stroke.colors)) {
+            options.stroke.colors = paletteCopy.slice();
+        }
+        options.plotOptions = options.plotOptions || {};
+        if (options.plotOptions.bar) {
+            const bc = (options.plotOptions.bar.colors && typeof options.plotOptions.bar.colors === 'object')
+                ? options.plotOptions.bar.colors
+                : {};
+            options.plotOptions.bar.colors = {
+                ranges: Array.isArray(bc.ranges) ? bc.ranges : [],
+                backgroundBarColors: Array.isArray(bc.backgroundBarColors) ? bc.backgroundBarColors : [],
+                backgroundBarOpacity: typeof bc.backgroundBarOpacity === 'number' ? bc.backgroundBarOpacity : 1,
+                backgroundBarRadius: typeof bc.backgroundBarRadius === 'number' ? bc.backgroundBarRadius : 0
+            };
+        }
+    }
+
     _baseApexOptions(chartDef) {
         const style = chartDef.style || {};
         const fontFamily = style.fontFamily || "'Inter', sans-serif";
+        const hasFontColor = typeof style.fontColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(style.fontColor);
+        const titleColor = hasFontColor ? style.fontColor : '#1E2D3D';
+        const labelColor = hasFontColor ? style.fontColor : '#7A90A8';
         return {
             chart: {
                 height: '100%',
@@ -567,18 +937,18 @@ class ChartRenderer {
                 position: style.legendPosition || 'top',
                 fontFamily,
                 fontSize: '11px',
-                labels: { colors: '#7A90A8' },
+                labels: { colors: labelColor },
                 markers: { width: 8, height: 8, radius: 2 }
             },
             tooltip: { enabled: style.showTooltips !== false, theme: 'dark' },
             title: {
                 text: chartDef.title || '',
-                style: { fontSize: `${style.titleFontSize || 14}px`, fontFamily, fontWeight: '600', color: '#1E2D3D' }
+                style: { fontSize: `${style.titleFontSize || 14}px`, fontFamily, fontWeight: '600', color: titleColor }
             },
             grid: { borderColor: 'rgba(0,0,0,0.04)', strokeDashArray: 0 },
             dataLabels: { enabled: !!style.showDataLabels },
-            xaxis: { labels: { style: { colors: '#7A90A8', fontFamily, fontSize: '11px' } } },
-            yaxis: { labels: { style: { colors: '#7A90A8', fontFamily, fontSize: '11px' } } }
+            xaxis: { labels: { style: { colors: labelColor, fontFamily, fontSize: '11px' } } },
+            yaxis: { labels: { style: { colors: labelColor, fontFamily, fontSize: '11px' } } }
         };
     }
 
@@ -684,8 +1054,11 @@ class ChartRenderer {
             xaxis: { ...opts.xaxis, categories: labels },
             colors,
             plotOptions: { bar: { horizontal: isHorizontal, borderRadius: parseInt(style.borderRadius || '4'), columnWidth: '60%' } },
-            stroke: (actualType === 'line' || actualType === 'area') ? { curve: 'smooth', width: 2 } : undefined,
-            fill: isArea ? { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } } : undefined
+            // Always emit well-formed objects (never `undefined`) — ApexCharts'
+            // internal bar/stacked-bar renderer dereferences `config.fill.colors[i]`
+            // and crashes when these slots are missing.
+            stroke: (actualType === 'line' || actualType === 'area') ? { curve: 'smooth', width: 2 } : {},
+            fill: isArea ? { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } } : {}
         };
     }
 
@@ -736,18 +1109,24 @@ class ChartRenderer {
             if (i === 0 || i === last) return colors[0];
             return (vals[i] || 0) >= 0 ? '#4CAF50' : '#E87C3E';
         });
+        // Embed per-bar fill color on each datum so ApexCharts picks them up
+        // for rangeBar (top-level `colors` alone does not map 1:1 to bars).
+        const dataWithColors = floatData.map((d, i) => ({ ...d, fillColor: barColors[i] }));
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
             chart: { ...opts.chart, type: 'rangeBar' },
-            series: [{ name: chartDef.title || 'Waterfall', data: floatData }],
+            series: [{ name: chartDef.title || 'Waterfall', data: dataWithColors }],
             colors: barColors,
-            plotOptions: { bar: { columnWidth: '60%', borderRadius: 2 } },
+            plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 2 } },
             tooltip: {
-                custom: ({ series, seriesIndex, dataPointIndex, w }) => {
-                    const d = w.config.series[0].data[dataPointIndex];
-                    const change = d.y[1] - d.y[0];
-                    return `<div style="padding:8px;font-size:12px"><b>${d.x}</b><br>Change: ${change.toFixed(1)} (Total: ${d.y[1].toFixed(1)})</div>`;
+                custom: ({ dataPointIndex, w }) => {
+                    try {
+                        const d = w.config.series[0].data[dataPointIndex];
+                        if (!d || !Array.isArray(d.y)) return '';
+                        const change = (d.y[1] || 0) - (d.y[0] || 0);
+                        return `<div style="padding:8px;font-size:12px"><b>${d.x}</b><br>Change: ${change.toFixed(1)} (Total: ${(d.y[1] || 0).toFixed(1)})</div>`;
+                    } catch (_) { return ''; }
                 }
             }
         };
@@ -802,7 +1181,7 @@ class ChartRenderer {
             })),
             xaxis: { ...opts.xaxis, categories: lbls.slice(0, n) },
             colors: colors.slice(0, 3),
-            plotOptions: { bar: { borderRadius: 3, columnWidth: '60%', grouped: true } }
+            plotOptions: { bar: { borderRadius: 3, columnWidth: '60%' } }
         };
     }
 
@@ -891,7 +1270,7 @@ class ChartRenderer {
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
-            chart: { ...opts.chart, type: 'scatter' },
+            chart: { ...opts.chart, type: 'line' },
             series: [
                 { name: 'Data Points', type: 'scatter', data: pts.map(p => ({ x: p.x, y: p.y })) },
                 { name: 'Regression', type: 'line', data: lineData.map(p => ({ x: p.x, y: p.y })) }
@@ -1063,7 +1442,7 @@ class ChartRenderer {
             ],
             xaxis: { ...opts.xaxis, categories: lbls },
             colors: ['#e9ecef', colors[0]],
-            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%', isFunnel: false } },
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%' } },
             dataLabels: { enabled: false }
         };
     }
@@ -1109,8 +1488,9 @@ class ChartRenderer {
             chart: { ...opts.chart, type: 'bar' },
             series: [{ name: chartDef.title || 'Diverging', data: vals.map((v,i) => ({ x: lbls[i], y: v, fillColor: barColors[i] })) }],
             colors: barColors,
-            plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
-            xaxis: { labels: { formatter: v => Math.abs(v) } }
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
+            xaxis: { ...opts.xaxis, categories: lbls, labels: { formatter: v => Math.abs(Number(v) || 0) } },
+            legend: { show: false }
         };
     }
 
@@ -1196,7 +1576,7 @@ class ChartRenderer {
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
-            chart: { ...opts.chart, type: 'area', stacked: true, stackType: '100%' },
+            chart: { ...opts.chart, type: 'area', stacked: true },
             series: seriesNames.map((name, si) => ({ name: `Series ${name}`, data: lbls.map((_,li) => normalized[li][si]) })),
             xaxis: { ...opts.xaxis, categories: lbls },
             colors: colors.slice(0, 3),
@@ -1958,13 +2338,50 @@ class ChartRenderer {
             ? '—'
             : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
         const len = display.length;
-        const valFont = len > 12 ? 24 : (len > 8 ? 30 : 38);
-        // Card-relative layout: accent bar on the left, title wraps to 2 lines,
-        // big number below. No ellipsis on the title so the full KPI name is visible.
-        container.style.cssText += `background:#fff;display:block;border-radius:8px;overflow:hidden;border-left:3px solid ${color};`;
-        container.innerHTML = `<div style="font-family:Inter,sans-serif;padding:12px 14px;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between">
-            <div style="font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#64748b;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${this._esc(title)}</div>
-            <div style="font-size:${valFont}px;font-weight:700;color:${color};line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:6px">${this._esc(display)}</div>
+        const valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+
+        // Alignment (defaults: horizontal=center, vertical=middle).
+        const hAlign = chartDef.style?.kpiHAlign || 'center';
+        const vAlign = chartDef.style?.kpiVAlign || 'middle';
+        const hFlex = hAlign === 'left' ? 'flex-start' : (hAlign === 'right' ? 'flex-end' : 'center');
+        const vFlex = vAlign === 'top' ? 'flex-start' : (vAlign === 'bottom' ? 'flex-end' : 'center');
+        const textAlign = hAlign;
+
+        // Derive a progress percentage for the bar visual.
+        const vals = (data && Array.isArray(data.values)) ? data.values.filter(v => typeof v === 'number' && isFinite(v)) : [];
+        let pct = 100;
+        let deltaHtml = '';
+        if (vals.length > 1) {
+            const maxV = Math.max(...vals);
+            const curV = vals[vals.length - 1];
+            if (maxV > 0) pct = Math.max(2, Math.min(100, Math.round((curV / maxV) * 100)));
+            const prev = vals[vals.length - 2];
+            if (typeof prev === 'number' && prev !== 0) {
+                const d = ((curV - prev) / Math.abs(prev)) * 100;
+                const up = d >= 0;
+                const arrow = up ? '▲' : '▼';
+                const dColor = up ? '#16a34a' : '#dc2626';
+                deltaHtml = `<span style="font-size:11px;font-weight:600;color:${dColor};margin-left:8px;white-space:nowrap">${arrow} ${Math.abs(d).toFixed(1)}%</span>`;
+            }
+        }
+
+        container.style.cssText += `background:#fff;display:block;border-radius:8px;overflow:hidden;`;
+        // Shrink title font and padding on narrow cards so long headers don't
+        // get clipped at low widths — let the header wrap naturally instead of
+        // line-clamping to 2 lines.
+        const cw = container.clientWidth || container.offsetWidth || 240;
+        const titleFont = cw < 160 ? 10 : (cw < 220 ? 10.5 : 11.5);
+        const padX = cw < 160 ? 10 : 18;
+        const padY = cw < 160 ? 10 : 16;
+        container.innerHTML = `<div style="font-family:Inter,sans-serif;padding:${padY}px ${padX}px;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:${vFlex};align-items:stretch;gap:10px;text-align:${textAlign}">
+            <div style="font-size:${titleFont}px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
+            <div style="display:flex;align-items:baseline;justify-content:${hFlex};flex-wrap:wrap">
+                <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${this._esc(display)}</div>
+                ${deltaHtml}
+            </div>
+            <div style="width:100%;height:8px;background:${color}1A;border-radius:999px;overflow:hidden;position:relative">
+                <div style="position:absolute;left:0;top:0;bottom:0;width:${pct}%;background:linear-gradient(90deg,${color} 0%,${color}CC 100%);border-radius:999px;transition:width 0.4s ease"></div>
+            </div>
         </div>`;
     }
 
@@ -2003,14 +2420,20 @@ class ChartRenderer {
             ? '—'
             : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
         const len = display.length;
-        const valFont = len > 12 ? 22 : (len > 8 ? 28 : 34);
-        container.style.cssText += `background:linear-gradient(135deg,${color}10,${color}05);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;overflow:hidden;border:1px solid ${color}22;`;
-        container.innerHTML = `<div style="text-align:center;font-family:Inter,sans-serif;padding:14px 12px;width:100%;box-sizing:border-box">
-            <div style="width:36px;height:36px;border-radius:10px;background:${color}22;display:inline-flex;align-items:center;justify-content:center;margin-bottom:8px">
+        const valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+
+        const hAlign = chartDef.style?.kpiHAlign || 'center';
+        const vAlign = chartDef.style?.kpiVAlign || 'middle';
+        const hFlex = hAlign === 'left' ? 'flex-start' : (hAlign === 'right' ? 'flex-end' : 'center');
+        const vFlex = vAlign === 'top' ? 'flex-start' : (vAlign === 'bottom' ? 'flex-end' : 'center');
+
+        container.style.cssText += `background:linear-gradient(135deg,${color}10,${color}05);display:flex;flex-direction:column;align-items:${hFlex};justify-content:${vFlex};border-radius:8px;overflow:hidden;border:1px solid ${color}22;`;
+        container.innerHTML = `<div style="text-align:${hAlign};font-family:Inter,sans-serif;padding:16px 14px;width:100%;box-sizing:border-box">
+            <div style="width:36px;height:36px;border-radius:10px;background:${color}22;display:${hAlign === 'center' ? 'inline-flex' : 'flex'};align-items:center;justify-content:center;margin-bottom:8px;${hAlign === 'right' ? 'margin-left:auto' : ''}">
                 <div style="width:18px;height:18px;border-radius:5px;background:${color};"></div>
             </div>
             <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._esc(display)}</div>
-            <div style="font-size:10.5px;font-weight:600;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:0.4px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${this._esc(title)}</div>
+            <div style="font-size:11.5px;font-weight:600;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:0.4px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
         </div>`;
     }
 

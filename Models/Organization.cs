@@ -38,8 +38,8 @@ public class Organization
     public int MonthlyTokenBudget => Plan switch
     {
         PlanType.Enterprise    => 10_000_000 + (EnterpriseExtraTokenPacks * 2_000_000),
-        PlanType.Professional  => 2_000_000,
-        PlanType.FreeTrial     => 20_000,
+        PlanType.Professional  => 5_000_000  + (EnterpriseExtraTokenPacks * 2_000_000),
+        PlanType.FreeTrial     => 2_000_000  + (EnterpriseExtraTokenPacks * 2_000_000),
         _                      => 0 // Free plan = no AI access
     };
 

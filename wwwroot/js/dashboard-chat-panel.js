@@ -389,11 +389,19 @@
             }
         } catch (err) {
             if (aiBubble) {
-                aiBubble.innerHTML =
-                    '<span style="color:var(--cp-danger)">' +
-                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
-                    _esc(err?.message || 'Request failed') +
-                    '</span>';
+                if (err?.name === 'AbortError') {
+                    aiBubble.innerHTML =
+                        '<span style="display:inline-flex;align-items:center;gap:.4rem;color:#64748b;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);border-radius:10px;padding:.45rem .7rem;font-size:.85rem">' +
+                        '<i class="bi bi-pause-circle"></i>' +
+                        "You stopped this response. Ask me something else when you're ready." +
+                        '</span>';
+                } else {
+                    aiBubble.innerHTML =
+                        '<span style="color:var(--cp-danger)">' +
+                        '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                        _esc(err?.message || 'Something went wrong. Please try again.') +
+                        '</span>';
+                }
             }
         } finally {
             _isStreaming = false;

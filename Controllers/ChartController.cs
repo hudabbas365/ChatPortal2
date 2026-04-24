@@ -220,6 +220,26 @@ public class ChartController : ControllerBase
         return Ok(new { success = true });
     }
 
+    // Phase 32-B6: drag-reorder page tabs.
+    [HttpPost("/api/page/reorder")]
+    public IActionResult ReorderPage([FromBody] PageReorderRequest req)
+    {
+        var canvas = GetCanvas();
+        int from = req.FromIndex, to = req.ToIndex;
+        if (from < 0 || from >= canvas.Pages.Count) return BadRequest("Invalid from index");
+        if (to < 0 || to >= canvas.Pages.Count) return BadRequest("Invalid to index");
+        if (from == to) return Ok(new { success = true });
+        var page = canvas.Pages[from];
+        canvas.Pages.RemoveAt(from);
+        canvas.Pages.Insert(to, page);
+        // Keep the same active page selected after reorder.
+        if (canvas.ActivePageIndex == from) canvas.ActivePageIndex = to;
+        else if (from < canvas.ActivePageIndex && to >= canvas.ActivePageIndex) canvas.ActivePageIndex--;
+        else if (from > canvas.ActivePageIndex && to <= canvas.ActivePageIndex) canvas.ActivePageIndex++;
+        SaveCanvas(canvas);
+        return Ok(new { success = true, activePageIndex = canvas.ActivePageIndex });
+    }
+
     // ── XML export / import ────────────────────────────────────────
 
     [HttpGet("/api/report/export/xml")]
@@ -265,4 +285,10 @@ public class PageRenameRequest
 {
     public int Index { get; set; }
     public string Name { get; set; } = "";
+}
+
+public class PageReorderRequest
+{
+    public int FromIndex { get; set; }
+    public int ToIndex { get; set; }
 }

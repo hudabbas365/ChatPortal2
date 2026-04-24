@@ -7,6 +7,26 @@ function _chartApiUrl(path) {
     return ctx ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx) : path;
 }
 
+// Phase 28-B8: Floating size/position indicator shown during drag & resize.
+let _sizeIndicatorEl = null;
+function _showSizeIndicator() {
+    if (!_sizeIndicatorEl) {
+        _sizeIndicatorEl = document.createElement('div');
+        _sizeIndicatorEl.className = 'drag-size-indicator';
+        document.body.appendChild(_sizeIndicatorEl);
+    }
+    _sizeIndicatorEl.style.display = 'block';
+}
+function _updateSizeIndicator(ev, text) {
+    if (!_sizeIndicatorEl) return;
+    _sizeIndicatorEl.textContent = text;
+    _sizeIndicatorEl.style.left = (ev.clientX + 14) + 'px';
+    _sizeIndicatorEl.style.top  = (ev.clientY + 14) + 'px';
+}
+function _hideSizeIndicator() {
+    if (_sizeIndicatorEl) _sizeIndicatorEl.style.display = 'none';
+}
+
 class CanvasManager {
     constructor() {
         this.charts = [];
@@ -52,10 +72,19 @@ class CanvasManager {
     }
 
     // ── Undo support ──────────────────────────────────────────────────
-    _pushUndo() {
+    // Phase 34-A8: each entry carries a human label + timestamp so the
+    // undo-history panel can render a meaningful list. Stack changes are
+    // broadcast via `undo:stack-changed` so the panel can refresh.
+    _pushUndo(label) {
         const snapshot = JSON.stringify(this.pages);
-        this._undoStack.push({ pages: snapshot, activePageIndex: this.activePageIndex });
+        this._undoStack.push({
+            pages: snapshot,
+            activePageIndex: this.activePageIndex,
+            label: label || 'Change',
+            timestamp: Date.now()
+        });
         if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+        document.dispatchEvent(new CustomEvent('undo:stack-changed'));
     }
 
     undo() {
@@ -68,7 +97,25 @@ class CanvasManager {
             this.charts = this.pages[this.activePageIndex].charts || [];
             this.renderAll();
             this.renderPageTabs();
+            document.dispatchEvent(new CustomEvent('undo:stack-changed'));
         } catch (e) { console.warn('Undo failed:', e); }
+    }
+
+    // Phase 34-A8: revert to the exact state at `index` in the undo stack.
+    // Entries at and after `index` are discarded (redo is not supported).
+    revertToHistory(index) {
+        if (index < 0 || index >= this._undoStack.length) return;
+        const state = this._undoStack[index];
+        this._undoStack.length = index;
+        try {
+            this.pages = JSON.parse(state.pages);
+            this.activePageIndex = state.activePageIndex;
+            if (!this.pages[this.activePageIndex]) this.activePageIndex = 0;
+            this.charts = this.pages[this.activePageIndex].charts || [];
+            this.renderAll();
+            this.renderPageTabs();
+            document.dispatchEvent(new CustomEvent('undo:stack-changed'));
+        } catch (e) { console.warn('Revert failed:', e); }
     }
 
     initDropZone() {
@@ -97,7 +144,7 @@ class CanvasManager {
 
     async addChart(partial) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
-        this._pushUndo();
+        this._pushUndo('Add chart');
         const isShape = window.ShapeManager && ShapeManager.isShape(partial.chartType);
         const isNavigation = partial.chartType === 'navigation';
         const defaultX = 20 + (this.charts.length % 5) * 30;
@@ -159,7 +206,7 @@ class CanvasManager {
 
     async deleteChart(chartId) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
-        this._pushUndo();
+        this._pushUndo('Delete chart');
         await fetch(_chartApiUrl(`/api/chart/${chartId}`), { method: 'DELETE' });
         this.charts = this.charts.filter(c => c.id !== chartId);
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
@@ -179,6 +226,84 @@ class CanvasManager {
         copy.posX = (original.posX || 0) + 30;
         copy.posY = (original.posY || 0) + 30;
         await this.addChart(copy);
+    }
+
+    // Phase 30-B17: Stream an AI explanation of a chart into the Chart Insights modal.
+    async explainChart(chartId) {
+        const chart = this.charts.find(c => c.id === chartId);
+        if (!chart) return;
+        const modalEl = document.getElementById('explainChartModal');
+        const bodyEl  = document.getElementById('explainChartBody');
+        if (!modalEl || !bodyEl || !window.bootstrap) return;
+
+        bodyEl.innerHTML = '<div class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Analyzing chart&hellip;</div>';
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+
+        // Collect a small sample of the rendered data (if available)
+        let sampleText = '';
+        try {
+            const cached = window.chartRenderer && window.chartRenderer._lastData && window.chartRenderer._lastData[chart.id];
+            const rows = Array.isArray(cached) ? cached.slice(0, 20) : null;
+            if (rows && rows.length) sampleText = '\n\nSample data (first ' + rows.length + ' rows):\n' + JSON.stringify(rows);
+        } catch (_) { /* ignore */ }
+
+        const mapping = chart.mapping || {};
+        const fields = [];
+        if (mapping.labelField) fields.push('label=' + mapping.labelField);
+        if (mapping.valueField) fields.push('value=' + mapping.valueField);
+        if (mapping.xField)     fields.push('x=' + mapping.xField);
+        if (mapping.yField)     fields.push('y=' + mapping.yField);
+        if (mapping.groupByField) fields.push('groupBy=' + mapping.groupByField);
+
+        let prompt = `Explain this ${chart.chartType} chart titled "${chart.title}"`;
+        if (chart.datasetName) prompt += ` built from table [${chart.datasetName}]`;
+        if (fields.length) prompt += ` using fields: ${fields.join(', ')}`;
+        prompt += `. Describe what the chart shows, notable trends, outliers, and top categories. Keep it concise (3-5 short paragraphs, plain language).`;
+        if (sampleText) prompt += sampleText;
+
+        try {
+            const token = localStorage.getItem('cp_token') || '';
+            const response = await fetch('/api/chat/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    message      : prompt,
+                    workspaceId  : (new URLSearchParams(window.location.search)).get('workspace') || window.currentWorkspaceGuid || null,
+                    datasourceId : chart.datasourceId || window.currentDatasourceId || null,
+                    userId       : (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || '',
+                    reportGuid   : window._currentReportGuid || null,
+                    pageIndex    : this.activePageIndex ?? null,
+                    agentId      : window._dashboardWsData?.agentId || null
+                })
+            });
+
+            if (!response.ok) {
+                bodyEl.innerHTML = '<div class="text-danger">AI request failed (HTTP ' + response.status + ').</div>';
+                return;
+            }
+
+            bodyEl.textContent = '';
+            let fullText = '';
+            const render = () => {
+                // Minimal formatting: paragraphs from blank lines, escape HTML.
+                const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const paras = fullText.split(/\n{2,}/).map(p => '<p style="margin:0 0 10px 0">' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
+                bodyEl.innerHTML = paras || '<div class="text-muted">&hellip;</div>';
+            };
+            await window.aiStream.readSseText(response, function (chunk) {
+                fullText += chunk;
+                render();
+            });
+            if (!fullText.trim()) {
+                bodyEl.innerHTML = '<div class="text-muted">No explanation returned.</div>';
+            }
+        } catch (e) {
+            bodyEl.innerHTML = '<div class="text-danger">AI request failed: ' + (e?.message || 'network error') + '</div>';
+        }
     }
 
     selectChart(chartId, ctrlKey) {
@@ -223,6 +348,8 @@ class CanvasManager {
             // Update card width
             const cardWidth = this.colsToPixels(chartDef.width || 6);
             card.style.width = cardWidth + 'px';
+            // Re-apply card visual customization (shadow/background/icon) on update
+            this._applyCardStyle(card, chartDef);
             const canvasWrap = card.querySelector('.chart-canvas-wrap');
             if (canvasWrap) canvasWrap.style.height = (parseInt(chartDef.height) || 300) + 'px';
             if (window.ShapeManager && ShapeManager.isShape(chartDef.chartType)) {
@@ -253,6 +380,81 @@ class CanvasManager {
         return Math.round(Math.max(200, baseWidth * pct));
     }
 
+    // Apply card-level visual customization from chartDef.style:
+    //   boxShadow (preset), cardBackgroundColor, backgroundImage (data URL), iconImage (data URL)
+    _applyCardStyle(card, chartDef) {
+        const style = (chartDef && chartDef.style) || {};
+        // Visually-distinct shadow presets. Applied via CSS custom property
+        // so the `.chart-card.selected` ring can layer on top without being
+        // overridden by the inline `box-shadow` declaration.
+        const SHADOW_MAP = {
+            none: 'none',
+            soft: '0 2px 6px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)',
+            medium: '0 6px 18px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.10)',
+            strong: '0 16px 40px rgba(0,0,0,0.28), 0 6px 14px rgba(0,0,0,0.16)'
+        };
+        if (window.__chartRendererDebug) {
+            console.log('[CardStyle] apply', {
+                chartId: chartDef && chartDef.id,
+                chartType: chartDef && chartDef.chartType,
+                boxShadow: style.boxShadow,
+                cardBackgroundColor: style.cardBackgroundColor,
+                hasBackgroundImage: !!style.backgroundImage,
+                hasIconImage: !!style.iconImage
+            });
+        }
+        card.style.setProperty('--chart-card-shadow', SHADOW_MAP[style.boxShadow] || SHADOW_MAP.soft);
+        card.style.boxShadow = '';
+        if (style.cardBackgroundColor) {
+            card.style.backgroundColor = style.cardBackgroundColor;
+        } else {
+            card.style.backgroundColor = '';
+        }
+        if (style.backgroundImage) {
+            // Guard: backgroundImage must be a safe data: or http(s): URL.
+            // A bare string (e.g. accidentally saved raw value) becomes
+            // `url("garbage")` which fails silently but not the render.
+            const bg = String(style.backgroundImage);
+            const safe = /^data:image\//i.test(bg) || /^https?:\/\//i.test(bg) || /^\//.test(bg);
+            if (safe) {
+                // Escape embedded double-quotes defensively.
+                const esc = bg.replace(/"/g, '\\"');
+                card.style.backgroundImage = `url("${esc}")`;
+                card.style.backgroundSize = 'cover';
+                card.style.backgroundPosition = 'center';
+                card.style.backgroundRepeat = 'no-repeat';
+            } else {
+                if (window.__chartRendererDebug) {
+                    console.warn('[CardStyle] ignoring unsafe backgroundImage value', bg.slice(0, 80));
+                }
+                card.style.backgroundImage = '';
+            }
+        } else {
+            card.style.backgroundImage = '';
+        }
+        // Remove old icon if present (update path)
+        const oldIcon = card.querySelector(':scope > .chart-card-icon');
+        if (oldIcon) oldIcon.remove();
+        if (style.iconImage) {
+            const iconSrc = String(style.iconImage);
+            const safeIcon = /^data:image\//i.test(iconSrc) || /^https?:\/\//i.test(iconSrc) || /^\//.test(iconSrc);
+            if (safeIcon) {
+                const img = document.createElement('img');
+                img.className = 'chart-card-icon';
+                img.src = iconSrc;
+                img.alt = '';
+                // Pin the icon absolutely in the top-right corner so it can
+                // never steal layout from `.chart-canvas-wrap` (which would
+                // zero its width/height and trip the render-ready guard,
+                // producing the "Unable to render chart" fallback).
+                img.style.cssText = 'position:absolute;top:8px;right:8px;width:24px;height:24px;object-fit:contain;pointer-events:none;z-index:2;';
+                card.appendChild(img);
+            } else if (window.__chartRendererDebug) {
+                console.warn('[CardStyle] ignoring unsafe iconImage value', iconSrc.slice(0, 80));
+            }
+        }
+    }
+
     renderChart(chartDef) {
         const container = document.getElementById('chart-canvas-drop');
         if (!container) return;
@@ -269,6 +471,9 @@ class CanvasManager {
         card.dataset.chartId = chartDef.id;
         card.style.cssText = `left:${posX}px;top:${posY}px;width:${cardWidth}px;z-index:${zIdx};`;
 
+        // Apply card-level visual customization (shadow / background / icon)
+        this._applyCardStyle(card, chartDef);
+
         const isShape = window.ShapeManager && ShapeManager.isShape(chartDef.chartType);
         const isNavigation = chartDef.chartType === 'navigation';
 
@@ -281,7 +486,7 @@ class CanvasManager {
                     <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>
                 </div>
                 <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px"></div>
-                <div class="chart-resize-handle" title="Drag to resize"></div>
+                ${this._resizeHandlesHtml()}
             `;
         } else if (isNavigation) {
             card.classList.add('navigation-card');
@@ -292,7 +497,7 @@ class CanvasManager {
                     <button class="btn btn-xs btn-icon text-danger" data-action="delete" title="Delete"><i class="bi bi-trash"></i></button>
                 </div>
                 <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 80}px"></div>
-                <div class="chart-resize-handle" title="Drag to resize"></div>
+                ${this._resizeHandlesHtml()}
             `;
         } else {
             card.innerHTML = `
@@ -302,6 +507,9 @@ class CanvasManager {
                     <div class="chart-card-actions ms-auto">
                         <button class="btn btn-xs btn-icon" data-action="edit" title="Edit">
                             <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-xs btn-icon" data-action="explain" title="Explain with AI">
+                            <i class="bi bi-lightbulb"></i>
                         </button>
                         <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate">
                             <i class="bi bi-copy"></i>
@@ -314,7 +522,7 @@ class CanvasManager {
                 <div class="chart-canvas-wrap" style="height: ${parseInt(chartDef.height) || 300}px">
                     <canvas id="canvas-${safeId}"></canvas>
                 </div>
-                <div class="chart-resize-handle" title="Drag to resize"></div>
+                ${this._resizeHandlesHtml()}
             `;
         }
 
@@ -369,6 +577,14 @@ class CanvasManager {
             e.stopPropagation();
             this.deleteChart(chartDef.id);
         });
+        // Phase 30-B17: Explain with AI (only present on non-shape, non-navigation cards)
+        const explainBtn = card.querySelector('[data-action="explain"]');
+        if (explainBtn) {
+            explainBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.explainChart(chartDef.id);
+            });
+        }
 
         card.addEventListener('mousedown', (e) => {
             if (!e.target.closest('button')) this.selectChart(chartDef.id, e.ctrlKey || e.metaKey);
@@ -401,8 +617,13 @@ class CanvasManager {
         if (!handle) return;
 
         handle.addEventListener('mousedown', (e) => {
-            // For shapes/navigation, ignore clicks on action buttons and resize handle
-            if (useWholeCard && (e.target.closest('button') || e.target.closest('.chart-resize-handle'))) return;
+            // For shapes/navigation, ignore clicks on action buttons, resize handles,
+            // and the editable shape-text overlay (so the caret can focus for typing).
+            if (useWholeCard && (
+                e.target.closest('button') ||
+                e.target.closest('.chart-resize-handle') ||
+                e.target.closest('.shape-text-overlay')
+            )) return;
             e.preventDefault();
             e.stopPropagation();
 
@@ -433,6 +654,7 @@ class CanvasManager {
             if (gm) gm.snapshotDragPositions(chartDef.id);
 
             card.classList.add('dragging');
+            _showSizeIndicator();
 
             const onMouseMove = (ev) => {
                 const sl = scrollEl ? scrollEl.scrollLeft : 0;
@@ -444,8 +666,20 @@ class CanvasManager {
                     x = window.layoutManager.snapValue(x);
                     y = window.layoutManager.snapValue(y);
                 }
+                // Phase 33-B13: smart alignment guides — only when NOT moving
+                // a multi-selection (guides on groups would be noisy) and grid
+                // snap is off (grid already provides its own snap cadence).
+                if (window.smartGuides && (!gm || gm.selectedCount <= 1) && (!window.layoutManager || !window.layoutManager.snapToGrid)) {
+                    const w = card.offsetWidth;
+                    const h = card.offsetHeight;
+                    const res = window.smartGuides.compute(chartDef.id, x, y, w, h);
+                    x = Math.max(0, res.x);
+                    y = Math.max(0, res.y);
+                    window.smartGuides.render(res.guides);
+                }
                 card.style.left = x + 'px';
                 card.style.top  = y + 'px';
+                _updateSizeIndicator(ev, 'pos: ' + Math.round(x) + ', ' + Math.round(y) + ' px');
                 // Move all drag siblings (multi-selected + group members)
                 if (gm) {
                     const dx = x - startPosX;
@@ -456,6 +690,8 @@ class CanvasManager {
 
             const onMouseUp = (ev) => {
                 card.classList.remove('dragging');
+                _hideSizeIndicator();
+                if (window.smartGuides) window.smartGuides.clear();
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
 
@@ -466,6 +702,15 @@ class CanvasManager {
                 if (window.layoutManager && window.layoutManager.snapToGrid) {
                     x = window.layoutManager.snapValue(x);
                     y = window.layoutManager.snapValue(y);
+                }
+                // Phase 33-B13: apply final smart-guide snap so the drop position
+                // exactly matches the visual preview.
+                if (window.smartGuides && (!gm || gm.selectedCount <= 1) && (!window.layoutManager || !window.layoutManager.snapToGrid)) {
+                    const w = card.offsetWidth;
+                    const h = card.offsetHeight;
+                    const res = window.smartGuides.compute(chartDef.id, x, y, w, h);
+                    x = Math.max(0, res.x);
+                    y = Math.max(0, res.y);
                 }
                 chartDef.posX = Math.round(x);
                 chartDef.posY = Math.round(y);
@@ -494,57 +739,109 @@ class CanvasManager {
         });
     }
 
+    _resizeHandlesHtml() {
+        // 8 handles: corners + sides. `data-dir` encodes horizontal (w/e) and vertical (n/s).
+        return `
+            <div class="chart-resize-handle chart-resize-n"  data-dir="n"  title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-s"  data-dir="s"  title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-e"  data-dir="e"  title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-w"  data-dir="w"  title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-ne" data-dir="ne" title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-nw" data-dir="nw" title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-sw" data-dir="sw" title="Drag to resize"></div>
+            <div class="chart-resize-handle chart-resize-se" data-dir="se" title="Drag to resize"></div>
+        `;
+    }
+
     _makeCardResizable(card, chartDef) {
-        const handle = card.querySelector('.chart-resize-handle');
-        if (!handle) return;
+        const handles = card.querySelectorAll('.chart-resize-handle');
+        if (!handles.length) return;
 
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        handles.forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
 
-            const startX = e.clientX;
-            const startY = e.clientY;
-            const startW = card.offsetWidth;
-            const canvasWrap = card.querySelector('.chart-canvas-wrap');
-            const startH = canvasWrap ? canvasWrap.offsetHeight : (parseInt(chartDef.height) || 300);
+                const dir = handle.dataset.dir || 'se';
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startW = card.offsetWidth;
+                const canvasWrap = card.querySelector('.chart-canvas-wrap');
+                const startH = canvasWrap ? canvasWrap.offsetHeight : (parseInt(chartDef.height) || 300);
+                const startLeft = parseInt(card.style.left, 10) || chartDef.posX || 0;
+                const startTop  = parseInt(card.style.top,  10) || chartDef.posY || 0;
 
-            card.classList.add('resizing');
+                card.classList.add('resizing');
+                _showSizeIndicator();
 
-            const onMouseMove = (ev) => {
-                const newW = Math.max(200, startW + (ev.clientX - startX));
-                const newH = Math.max(150, startH + (ev.clientY - startY));
-                card.style.width = newW + 'px';
-                if (canvasWrap) canvasWrap.style.height = newH + 'px';
-            };
+                const compute = (ev) => {
+                    const dx = ev.clientX - startX;
+                    const dy = ev.clientY - startY;
+                    let newW = startW, newH = startH, newLeft = startLeft, newTop = startTop;
+                    if (dir.includes('e')) newW = Math.max(200, startW + dx);
+                    if (dir.includes('w')) {
+                        newW = Math.max(200, startW - dx);
+                        newLeft = startLeft + (startW - newW);
+                    }
+                    if (dir.includes('s')) newH = Math.max(150, startH + dy);
+                    if (dir.includes('n')) {
+                        newH = Math.max(150, startH - dy);
+                        newTop = startTop + (startH - newH);
+                    }
+                    return { newW, newH, newLeft, newTop };
+                };
 
-            const onMouseUp = (ev) => {
-                card.classList.remove('resizing');
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+                const onMouseMove = (ev) => {
+                    const { newW, newH, newLeft, newTop } = compute(ev);
+                    card.style.width = newW + 'px';
+                    card.style.left  = newLeft + 'px';
+                    card.style.top   = newTop + 'px';
+                    if (canvasWrap) canvasWrap.style.height = newH + 'px';
+                    _updateSizeIndicator(ev, Math.round(newW) + ' \u00D7 ' + Math.round(newH) + ' px');
+                };
 
-                const newW = Math.max(200, startW + (ev.clientX - startX));
-                const newH = Math.max(150, startH + (ev.clientY - startY));
+                const onMouseUp = (ev) => {
+                    card.classList.remove('resizing');
+                    _hideSizeIndicator();
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
 
-                chartDef.width = this.pixelsToCols(newW);
-                chartDef.height = Math.round(newH);
+                    const { newW, newH, newLeft, newTop } = compute(ev);
 
-                const chart = this.charts.find(c => c.id === chartDef.id);
-                if (chart) {
-                    chart.width = chartDef.width;
-                    chart.height = chartDef.height;
-                    fetch(_chartApiUrl(`/api/chart/${chartDef.id}`), {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(chart)
-                    }).then(() => {
-                        const canvasEl = card.querySelector('canvas');
-                        if (canvasEl) window.chartRenderer.render(chart, canvasEl);
-                    }).catch(err => console.warn('Could not persist chart resize:', err));
-                }
-            };
+                    chartDef.width  = this.pixelsToCols(newW);
+                    chartDef.height = Math.round(newH);
+                    chartDef.posX   = Math.max(0, Math.round(newLeft));
+                    chartDef.posY   = Math.max(0, Math.round(newTop));
 
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+                    const chart = this.charts.find(c => c.id === chartDef.id);
+                    if (chart) {
+                        chart.width  = chartDef.width;
+                        chart.height = chartDef.height;
+                        chart.posX   = chartDef.posX;
+                        chart.posY   = chartDef.posY;
+                        fetch(_chartApiUrl(`/api/chart/${chartDef.id}`), {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(chart)
+                        }).then(() => {
+                            const canvasEl = card.querySelector('canvas');
+                            if (canvasEl) window.chartRenderer.render(chart, canvasEl);
+                            else {
+                                // Shape / navigation re-render
+                                const wrap = card.querySelector('.chart-canvas-wrap');
+                                if (wrap && window.ShapeManager && ShapeManager.isShape(chart.chartType)) {
+                                    ShapeManager.render(wrap, chart);
+                                } else if (wrap && window.chartRenderer) {
+                                    window.chartRenderer.render(chart, wrap);
+                                }
+                            }
+                        }).catch(err => console.warn('Could not persist chart resize:', err));
+                    }
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
         });
     }
 
@@ -562,10 +859,55 @@ class CanvasManager {
         this.pages.forEach((page, index) => {
             const tab = document.createElement('div');
             tab.className = 'page-tab' + (index === this.activePageIndex ? ' active' : '');
-            tab.textContent = page.name;
-            tab.title = 'Double-click to rename';
-            tab.addEventListener('click', () => this.switchPage(index));
-            tab.addEventListener('dblclick', (e) => { e.stopPropagation(); this.renamePage(index); });
+            tab.title = 'Double-click to rename · Drag to reorder';
+            tab.draggable = true;
+            tab.dataset.pageIndex = String(index);
+            // Phase 29-B5: inline editable page-tab label.
+            const label = document.createElement('span');
+            label.className = 'page-tab-label';
+            label.textContent = page.name;
+            tab.appendChild(label);
+            tab.addEventListener('click', () => {
+                if (label.isContentEditable) return;
+                this.switchPage(index);
+            });
+            label.addEventListener('dblclick', (e) => { e.stopPropagation(); this._inlineRenamePage(index, label); });
+            // Phase 32-B6: drag-reorder.
+            tab.addEventListener('dragstart', (e) => {
+                // Don't hijack drag while the label is being edited.
+                if (label.isContentEditable) { e.preventDefault(); return; }
+                tab.classList.add('page-tab-dragging');
+                try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/page-index', String(index)); } catch {}
+            });
+            tab.addEventListener('dragend', () => {
+                tab.classList.remove('page-tab-dragging');
+                container.querySelectorAll('.page-tab-drop-before,.page-tab-drop-after').forEach(el => {
+                    el.classList.remove('page-tab-drop-before', 'page-tab-drop-after');
+                });
+            });
+            tab.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                try { e.dataTransfer.dropEffect = 'move'; } catch {}
+                const r = tab.getBoundingClientRect();
+                const after = (e.clientX - r.left) > r.width / 2;
+                tab.classList.toggle('page-tab-drop-before', !after);
+                tab.classList.toggle('page-tab-drop-after', after);
+            });
+            tab.addEventListener('dragleave', () => {
+                tab.classList.remove('page-tab-drop-before', 'page-tab-drop-after');
+            });
+            tab.addEventListener('drop', (e) => {
+                e.preventDefault();
+                tab.classList.remove('page-tab-drop-before', 'page-tab-drop-after');
+                const from = parseInt(e.dataTransfer.getData('text/page-index'), 10);
+                if (isNaN(from) || from === index) return;
+                const r = tab.getBoundingClientRect();
+                const after = (e.clientX - r.left) > r.width / 2;
+                let to = after ? index + 1 : index;
+                // Account for removal of `from` when `from < to`.
+                if (from < to) to--;
+                this._reorderPages(from, to);
+            });
             if (this.pages.length > 1) {
                 const closeBtn = document.createElement('span');
                 closeBtn.className = 'page-tab-close';
@@ -575,6 +917,84 @@ class CanvasManager {
                 tab.appendChild(closeBtn);
             }
             container.appendChild(tab);
+        });
+    }
+
+    // Phase 32-B6: swap two page indices in place, keep active page selected, persist.
+    _reorderPages(from, to) {
+        if (from < 0 || from >= this.pages.length) return;
+        if (to  < 0 || to  >= this.pages.length) return;
+        if (from === to) return;
+
+        // Flush the active page's chart array into its page object before shuffling refs.
+        if (this.pages[this.activePageIndex]) {
+            this.pages[this.activePageIndex].charts = this.charts;
+        }
+
+        const prevActiveId = this.activePageIndex;
+        const movedIsActive = (from === prevActiveId);
+
+        const [page] = this.pages.splice(from, 1);
+        this.pages.splice(to, 0, page);
+
+        // Recompute active index so the same page stays selected.
+        if (movedIsActive) {
+            this.activePageIndex = to;
+        } else if (from < prevActiveId && to >= prevActiveId) {
+            this.activePageIndex = prevActiveId - 1;
+        } else if (from > prevActiveId && to <= prevActiveId) {
+            this.activePageIndex = prevActiveId + 1;
+        }
+
+        this.charts = this.pages[this.activePageIndex].charts || [];
+        this.renderPageTabs();
+
+        fetch(_chartApiUrl('/api/page/reorder'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fromIndex: from, toIndex: to })
+        }).catch(err => console.warn('Could not persist page reorder:', err));
+    }
+
+    // Phase 29-B5: inline rename (contenteditable) replaces the old prompt() dialog.
+    _inlineRenamePage(index, labelEl) {
+        if (!labelEl) return;
+        const original = this.pages[index]?.name || `Page ${index + 1}`;
+        labelEl.contentEditable = 'true';
+        labelEl.classList.add('editing');
+        labelEl.focus();
+        // Select all text
+        const range = document.createRange();
+        range.selectNodeContents(labelEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        const commit = () => {
+            if (labelEl.contentEditable !== 'true') return;
+            labelEl.contentEditable = 'false';
+            labelEl.classList.remove('editing');
+            const newName = (labelEl.textContent || '').trim();
+            if (!newName || newName === original) {
+                labelEl.textContent = original;
+                return;
+            }
+            this.pages[index].name = newName;
+            labelEl.textContent = newName;
+            fetch(_chartApiUrl('/api/page/rename'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index, name: newName })
+            }).catch(err => console.warn('Could not persist page rename:', err));
+        };
+        labelEl.addEventListener('blur', commit, { once: true });
+        labelEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); labelEl.blur(); }
+            else if (e.key === 'Escape') {
+                labelEl.textContent = original;
+                labelEl.contentEditable = 'false';
+                labelEl.classList.remove('editing');
+            }
         });
     }
 
@@ -705,7 +1125,7 @@ class CanvasManager {
             var confirmed = await this._showResetConfirm();
             if (!confirmed) return;
         }
-        this._pushUndo();
+        this._pushUndo('Reset canvas');
         const resp = await fetch(_chartApiUrl('/api/chart/reset'), { method: 'POST' });
         const canvas = await resp.json();
         this.charts = canvas.charts || [];
@@ -752,12 +1172,63 @@ window.canvasManager = new CanvasManager();
 
 // ---- Cross-filtering global state ----
 window.CrossFilter = {
-    activeFilter: null,  // { field, value, label }
+    activeFilter: null,  // { field, value, label, sourceChartId, sourceDatasetName, sourceDatasourceId, sourceRow }
+    relGraphByDs: {},    // { [datasourceId]: [{fromTable, fromColumn, toTable, toColumn, ...}] }
+    _relLoading: {},
 
-    apply(field, value, label) {
-        this.activeFilter = { field, value, label };
+    // Lazy-load the relationship graph for a datasource (cached client-side).
+    async loadRelationships(dsId) {
+        if (!dsId) return [];
+        if (this.relGraphByDs[dsId]) return this.relGraphByDs[dsId];
+        if (this._relLoading[dsId]) return this._relLoading[dsId];
+        this._relLoading[dsId] = (async () => {
+            try {
+                const r = await fetch(`/api/datasources/${encodeURIComponent(dsId)}/relationships`);
+                if (!r.ok) { this.relGraphByDs[dsId] = []; return []; }
+                const data = await r.json();
+                const rels = Array.isArray(data.relationships) ? data.relationships : [];
+                this.relGraphByDs[dsId] = rels;
+                return rels;
+            } catch (_) {
+                this.relGraphByDs[dsId] = [];
+                return [];
+            } finally {
+                delete this._relLoading[dsId];
+            }
+        })();
+        return this._relLoading[dsId];
+    },
+
+    // Find a relationship linking two tables (bidirectional). Returns
+    // { sourceColumn, thisColumn } where sourceColumn lives on `fromTable`
+    // (the clicked chart's table) and thisColumn lives on `toTable`
+    // (the listening chart's table), or null if no path exists.
+    findRelationship(dsId, fromTable, toTable) {
+        if (!dsId || !fromTable || !toTable) return null;
+        if (String(fromTable) === String(toTable)) return { sourceColumn: null, thisColumn: null, sameTable: true };
+        const rels = this.relGraphByDs[dsId] || [];
+        const norm = (s) => String(s || '').toLowerCase();
+        const f = norm(fromTable), t = norm(toTable);
+        for (const r of rels) {
+            const rf = norm(r.fromTable), rt = norm(r.toTable);
+            if (rf === f && rt === t) return { sourceColumn: r.fromColumn, thisColumn: r.toColumn };
+            if (rf === t && rt === f) return { sourceColumn: r.toColumn, thisColumn: r.fromColumn };
+        }
+        return null;
+    },
+
+    apply(field, value, label, extra) {
+        this.activeFilter = Object.assign({ field, value, label }, extra || {});
         this._renderBadge();
-        document.dispatchEvent(new CustomEvent('crossfilter:change', { detail: this.activeFilter }));
+        // Ensure the relationship graph for the source datasource is loaded
+        // before listeners fan out, so they can translate the filter.
+        const dsId = this.activeFilter.sourceDatasourceId;
+        const dispatch = () => document.dispatchEvent(new CustomEvent('crossfilter:change', { detail: this.activeFilter }));
+        if (dsId) {
+            this.loadRelationships(dsId).then(dispatch).catch(dispatch);
+        } else {
+            dispatch();
+        }
     },
 
     clear() {

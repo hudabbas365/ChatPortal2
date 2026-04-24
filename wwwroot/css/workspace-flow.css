@@ -748,8 +748,114 @@
 .wf-ds-unbound   { color: var(--cp-danger, #dc3545); font-weight: 500; }
 
 /* ── Responsive ────────────────────────────────────────────── */
+
+/* Keep the horizontal flow diagram from pushing the whole layout into
+   body-level scroll when the main chat column is narrow. */
+.wf-lineage-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+.wf-lineage-container::-webkit-scrollbar { height: 6px; }
+.wf-lineage-container::-webkit-scrollbar-thumb {
+    background: var(--cp-border);
+    border-radius: 3px;
+}
+
+/* ≤ 1024px — chat left sidebar + flow diagram begin to compete */
+@media (max-width: 1024px) {
+    .wf-home-panel { padding: 22px 24px; }
+    .wf-flow-diagram { padding: 22px 24px; }
+    .wf-flow-h-line-out,
+    .wf-flow-h-line-in { width: 32px; }
+}
+
+/* ≤ 768px — tablet / split view */
 @media (max-width: 768px) {
     .wf-home-panel { padding: 16px; }
+    .wf-artifacts-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+    /* Header: title + new button stack cleanly */
+    .wf-home-header {
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+        padding-bottom: 14px;
+    }
+    .wf-home-meta { flex: 1 1 0; min-width: 0; }
+    .wf-home-header > .btn { flex-basis: 100%; }
+
+    /* Section title row — keep toggle on its own line */
+    .wf-section-title { row-gap: 6px; }
+    .wf-view-switch { margin-left: 0; }
+
+    /* Flow diagram still horizontal but scrolls; trim padding */
+    .wf-flow-diagram {
+        padding: 18px 20px;
+        margin-bottom: 18px;
+    }
+    .wf-flow-node {
+        min-width: 128px;
+        max-width: 180px;
+        padding: 10px 14px;
+    }
+    .wf-flow-label { font-size: 0.82rem; }
+
+    /* Wizard step indicator becomes horizontally scrollable */
+    .wf-steps {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+        padding-bottom: 4px;
+    }
+    .wf-steps::-webkit-scrollbar { height: 4px; }
+    .wf-step { flex-shrink: 0; }
+    .wf-step-line { width: 16px; }
+
+    /* Setup cards */
+    .wf-setup-section { padding: 16px; }
+    .wf-setup-actions { flex-wrap: wrap; }
+    .wf-setup-actions .btn { flex: 1 1 auto; }
+}
+
+/* ≤ 640px — phone landscape / narrow split */
+@media (max-width: 640px) {
+    .wf-home-panel { padding: 14px; }
     .wf-artifacts-grid { grid-template-columns: 1fr; }
-    .wf-home-header { flex-wrap: wrap; }
+    .wf-home-icon { width: 40px; height: 40px; font-size: 1.1rem; border-radius: 12px; }
+    .wf-home-title { font-size: 1.02rem; }
+    .wf-home-desc { font-size: 0.78rem; }
+
+    /* Flow nodes shrink one more notch on tiny screens */
+    .wf-flow-node { min-width: 112px; max-width: 160px; padding: 9px 12px; }
+    .wf-flow-sublabel { font-size: 0.66rem; }
+    .wf-flow-h-line-out,
+    .wf-flow-h-line-in { width: 24px; }
+
+    /* DS type grid: two columns minimum */
+    .wf-ds-type-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+
+    /* Empty state less vertical drama on small screens */
+    .wf-empty-state { padding: 48px 14px; }
+}
+
+/* ≤ 480px — phone portrait */
+@media (max-width: 480px) {
+    .wf-home-panel { padding: 12px; }
+    .wf-home-header {
+        gap: 8px;
+        align-items: flex-start;
+    }
+    .wf-home-meta { order: 1; flex: 1 1 auto; }
+    .wf-home-icon { order: 0; }
+
+    .wf-flow-diagram { padding: 14px 14px; border-radius: 10px; }
+    .wf-flow-node { min-width: 104px; max-width: 148px; }
+    .wf-flow-label { font-size: 0.78rem; white-space: normal; }
+
+    .wf-ds-type-grid { grid-template-columns: repeat(2, 1fr); }
+
+    .wf-setup-field input,
+    .wf-setup-field textarea,
+    .wf-setup-field select { font-size: 16px; } /* prevents iOS zoom on focus */
 }

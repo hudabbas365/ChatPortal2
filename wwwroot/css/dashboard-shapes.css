@@ -33,8 +33,11 @@
 .chart-card.shape-card .chart-canvas-wrap {
     padding: 0;
 }
-.chart-card.shape-card .chart-resize-handle {
-    background: linear-gradient(135deg, transparent 50%, var(--cp-primary) 50%);
+.chart-card.shape-card .chart-resize-handle.chart-resize-ne,
+.chart-card.shape-card .chart-resize-handle.chart-resize-nw,
+.chart-card.shape-card .chart-resize-handle.chart-resize-se,
+.chart-card.shape-card .chart-resize-handle.chart-resize-sw {
+    background: var(--cp-primary);
 }
 
 /* Floating actions for shapes (appear on hover, top-right corner) */

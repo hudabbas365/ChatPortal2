@@ -24,6 +24,7 @@
                 <th>Workspaces</th>
                 <th>Revenue</th>
                 <th>Plan Tier</th>
+                <th>Licenses</th>
                 <th>Created</th>
             </tr>
         </thead>
@@ -78,6 +79,19 @@
                             <button class="btn btn-sm btn-outline-primary" onclick="saveOrgPlan(@org.Id)">Save</button>
                         </div>
                     </td>
+                    <td>
+                        @{
+                            var assignedLicenses = org.Users?.Count(u =>
+                                u.Subscription != null &&
+                                (u.Subscription.Plan == AIInsights.Models.PlanType.Professional ||
+                                 u.Subscription.Plan == AIInsights.Models.PlanType.Enterprise)) ?? 0;
+                        }
+                        <div class="d-flex gap-1 align-items-center" title="Assigned / Purchased">
+                            <input type="number" min="0" class="form-control form-control-sm"
+                                   id="orgLic_@org.Id" value="@org.PurchasedLicenses" style="width:80px" />
+                            <span style="color:var(--text-muted);font-size:12px">@assignedLicenses&nbsp;used</span>
+                        </div>
+                    </td>
                     <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                 </tr>
             }
@@ -85,16 +99,80 @@
     </table>
 </div>
 
+<div id="toastHost" aria-live="polite" aria-atomic="true"
+     style="position:fixed;top:1.25rem;right:1.25rem;z-index:1080;display:flex;flex-direction:column;gap:.5rem;pointer-events:none"></div>
+
+<style>
+    .app-toast {
+        display:flex;align-items:flex-start;gap:.65rem;
+        min-width:280px;max-width:380px;
+        padding:.75rem .9rem;border-radius:10px;
+        background:#fff;border:1px solid var(--border);
+        box-shadow:0 10px 25px -5px rgba(30,58,95,.18),0 4px 6px -2px rgba(30,58,95,.08);
+        font-size:.85rem;color:var(--text);
+        opacity:0;transform:translateY(-8px);
+        transition:opacity .2s ease,transform .2s ease;
+        pointer-events:auto;
+    }
+    .app-toast.show { opacity:1;transform:translateY(0); }
+    .app-toast .app-toast-icon {
+        width:28px;height:28px;border-radius:8px;flex-shrink:0;
+        display:flex;align-items:center;justify-content:center;
+        font-size:.95rem;
+    }
+    .app-toast-success .app-toast-icon { background:rgba(52,211,153,.15);color:#059669; }
+    .app-toast-error   .app-toast-icon { background:rgba(244,63,94,.15);color:#e11d48; }
+    .app-toast-title { font-weight:600;color:#1e3a5f;line-height:1.2; }
+    .app-toast-msg   { color:var(--text-dim);font-size:.8rem;margin-top:.15rem; }
+    .app-toast-close {
+        background:transparent;border:none;color:var(--text-muted);
+        font-size:1.05rem;line-height:1;cursor:pointer;padding:0 .1rem;margin-left:auto;
+    }
+    .app-toast-close:hover { color:var(--text); }
+</style>
+
 <script>
+function showToast(message, type = 'success', title = null) {
+    const host = document.getElementById('toastHost');
+    if (!host) return;
+    const defaultTitle = type === 'error' ? 'Error' : 'Success';
+    const icon = type === 'error' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
+    const el = document.createElement('div');
+    el.className = 'app-toast app-toast-' + type;
+    el.innerHTML =
+        '<div class="app-toast-icon"><i class="bi ' + icon + '"></i></div>' +
+        '<div style="flex:1;min-width:0">' +
+            '<div class="app-toast-title"></div>' +
+            '<div class="app-toast-msg"></div>' +
+        '</div>' +
+        '<button type="button" class="app-toast-close" aria-label="Close">&times;</button>';
+    el.querySelector('.app-toast-title').textContent = title || defaultTitle;
+    el.querySelector('.app-toast-msg').textContent = message;
+    host.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    const dismiss = () => {
+        el.classList.remove('show');
+        setTimeout(() => el.remove(), 220);
+    };
+    el.querySelector('.app-toast-close').addEventListener('click', dismiss);
+    setTimeout(dismiss, type === 'error' ? 5000 : 3000);
+}
+
 async function saveOrgPlan(id) {
     const plan = document.getElementById('orgPlan_' + id)?.value;
+    const licRaw = document.getElementById('orgLic_' + id)?.value;
+    const purchasedLicenses = licRaw === '' || licRaw == null ? null : parseInt(licRaw, 10);
+    const body = { plan };
+    if (purchasedLicenses !== null && !isNaN(purchasedLicenses)) {
+        body.purchasedLicenses = purchasedLicenses;
+    }
     const r = await fetch('/api/admin/super/orgs/' + id + '/plan', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan })
+        body: JSON.stringify(body)
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) { alert(data.error || 'Failed to update plan.'); return; }
-    alert('Organization plan updated.');
+    if (!r.ok) { showToast(data.error || 'Failed to update plan.', 'error'); return; }
+    showToast('Organization plan & licenses updated.', 'success', 'Saved');
 }
 </script>

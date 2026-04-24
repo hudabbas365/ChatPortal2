@@ -7,7 +7,7 @@
 
     <!-- ── Main chat column ──────────────────────────── -->
     <div class="chat-main-col">
-        <div class="chat-messages" id="chatMessages">
+        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions">
             <div class="chat-welcome" id="chatWelcome">
                 <div class="welcome-icon">
                     <i class="bi bi-robot"></i>
@@ -72,15 +72,21 @@
             </div>
         </div>
 
+        <button class="chat-jump-latest" id="chatJumpLatest" type="button" hidden>
+            <i class="bi bi-arrow-down-circle-fill"></i>
+            <span>Jump to latest</span>
+        </button>
         <div class="chat-input-area">
             <div class="chat-suggestions-bar" id="chatSuggestionsBar" style="display:none"></div>
             <div class="chat-input-container">
-                <textarea class="chat-textarea" id="chatInput" placeholder="Ask anything about your data..." rows="1"></textarea>
+                <div class="chat-slash-menu" id="chatSlashMenu" role="listbox" aria-label="Slash commands" hidden></div>
+                <textarea class="chat-textarea" id="chatInput" placeholder="Ask anything about your data... (Ctrl+K to focus, / for commands)" rows="1" aria-label="Chat message" maxlength="2000"></textarea>
+                <span class="chat-char-counter" id="chatCharCounter" aria-hidden="true"></span>
                 <div class="chat-input-actions">
-                    <button class="btn btn-icon" id="chatStopBtn" title="Stop generating" style="display:none;">
+                    <button class="btn btn-icon" id="chatStopBtn" title="Stop generating (Esc)" style="display:none;">
                         <i class="bi bi-stop-circle-fill"></i>
                     </button>
-                    <button class="btn btn-icon" id="chatSendBtn" title="Send">
+                    <button class="btn btn-icon" id="chatSendBtn" title="Send (Enter)">
                         <i class="bi bi-send-fill"></i>
                     </button>
                 </div>
@@ -141,5 +147,7 @@
 
 @section Scripts {
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.54.0/dist/apexcharts.min.js"></script>
+<script src="~/js/copyRichContent.js" asp-append-version="true"></script>
 <script src="~/js/chat.js" asp-append-version="true"></script>
+<script src="~/js/chatUxEnhancements.js" asp-append-version="true"></script>
 }

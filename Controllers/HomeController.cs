@@ -111,40 +111,27 @@ public class HomeController : Controller
 
     [Route("/sitemap.xml")]
     [ResponseCache(Duration = 3600)]
-    public IActionResult Sitemap()
+    public async Task<IActionResult> Sitemap()
     {
-        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? "https://aiinsights.io";
-        var urls = new[]
-        {
-            new { Loc = "/",       Priority = "1.0", ChangeFreq = "daily"   },
-            new { Loc = "/about",  Priority = "0.8", ChangeFreq = "monthly" },
-            new { Loc = "/docs",   Priority = "0.8", ChangeFreq = "weekly"  },
-            new { Loc = "/blog",   Priority = "0.7", ChangeFreq = "weekly"  },
-            new { Loc = "/pricing",Priority = "0.7", ChangeFreq = "monthly" },
-        };
-
-        var sb = new StringBuilder();
-        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.AppendLine("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
-        foreach (var u in urls)
-        {
-            sb.AppendLine("  <url>");
-            sb.AppendLine($"    <loc>{baseUrl}{u.Loc}</loc>");
-            sb.AppendLine($"    <changefreq>{u.ChangeFreq}</changefreq>");
-            sb.AppendLine($"    <priority>{u.Priority}</priority>");
-            sb.AppendLine("  </url>");
-        }
-        sb.AppendLine("</urlset>");
-        return Content(sb.ToString(), "application/xml", Encoding.UTF8);
+        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? $"{Request.Scheme}://{Request.Host}";
+        var xml = await _seoService.GenerateSitemapXmlAsync(baseUrl);
+        return Content(xml, "application/xml", Encoding.UTF8);
     }
 
     [Route("/robots.txt")]
     [ResponseCache(Duration = 3600)]
-    public IActionResult Robots()
+    public async Task<IActionResult> Robots()
     {
-        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? "https://aiinsights.io";
-        var content = $"User-agent: *\nAllow: /\nDisallow: /auth/\nDisallow: /chat/\nDisallow: /dashboard/\nDisallow: /superadmin/\n\nSitemap: {baseUrl}/sitemap.xml\n";
-        return Content(content, "text/plain", Encoding.UTF8);
+        var baseUrl = _config["App:BaseUrl"]?.TrimEnd('/') ?? $"{Request.Scheme}://{Request.Host}";
+        var txt = await _seoService.GenerateRobotsTxtAsync(baseUrl);
+        return Content(txt, "text/plain", Encoding.UTF8);
+    }
+
+    [Route("/terms")]
+    public async Task<IActionResult> Terms()
+    {
+        await SetSeoAsync("/terms");
+        return View();
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]

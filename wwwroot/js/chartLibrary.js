@@ -14,6 +14,8 @@ class ChartLibrary {
         this.activeCategory = 'all';   // 'all' | 'recent' | <group name>
         this.recentKey = 'cp.chartLibrary.recent.v1';
         this.recentMax = 8;
+        // Phase 32-B2: pinned favorites (chart-type ids).
+        this.pinnedKey = 'cp.chartLibrary.pinned.v1';
         // Lightweight keyword synonyms — makes search forgiving across the 72 charts.
         this.synonyms = {
             bar: ['column', 'histogram', 'bar'],
@@ -116,6 +118,14 @@ class ChartLibrary {
         container.dataset.clKbBound = '1';
         // Simple click-to-add on the inline "+" button
         container.addEventListener('click', (e) => {
+            const pinBtn = e.target.closest('.cl-pin-btn');
+            if (pinBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const item = pinBtn.closest('.library-item');
+                if (item) this._togglePin(item.dataset.chartType);
+                return;
+            }
             const addBtn = e.target.closest('.cl-add-btn');
             if (!addBtn) return;
             e.preventDefault();
@@ -147,12 +157,19 @@ class ChartLibrary {
         if (this.activeCategory === 'recent') {
             const recent = this._buildRecentGroup();
             groups = recent ? [recent] : [];
+        } else if (this.activeCategory === 'favorites') {
+            const fav = this._buildPinnedGroup();
+            groups = fav ? [fav] : [];
         } else if (this.activeCategory !== 'all') {
             groups = groups.filter(g => g.group === this.activeCategory);
         } else {
-            // On "all", prepend recent group if populated and there's no active search
+            // On "all", prepend pinned + recent groups if populated and there's no active search
+            const pinned = this._buildPinnedGroup();
             const recent = this._buildRecentGroup();
-            if (recent && !term) groups = [recent, ...groups];
+            const prepend = [];
+            if (pinned && !term) prepend.push(pinned);
+            if (recent && !term) prepend.push(recent);
+            if (prepend.length) groups = [...prepend, ...groups];
         }
 
         // Text filter
@@ -201,6 +218,39 @@ class ChartLibrary {
         return { group: 'Recent', charts, _isRecent: true };
     }
 
+    // Phase 32-B2: pinned favorites ----------------------------------
+    _loadPinned() {
+        try { return JSON.parse(localStorage.getItem(this.pinnedKey)) || []; }
+        catch { return []; }
+    }
+    _savePinned(list) {
+        try { localStorage.setItem(this.pinnedKey, JSON.stringify(list)); }
+        catch { /* ignore quota */ }
+    }
+    _isPinned(id) {
+        return this._loadPinned().includes(id);
+    }
+    _togglePin(id) {
+        if (!id) return;
+        const list = this._loadPinned();
+        const i = list.indexOf(id);
+        if (i >= 0) list.splice(i, 1);
+        else list.unshift(id);
+        this._savePinned(list);
+        this.applyFilters();
+    }
+    _buildPinnedGroup() {
+        const ids = this._loadPinned();
+        if (!ids.length) return null;
+        const charts = [];
+        for (const id of ids) {
+            const found = this._findChartById(id);
+            if (found) charts.push(found.chart);
+        }
+        if (!charts.length) return null;
+        return { group: 'Favorites', charts, _isPinned: true };
+    }
+
     _addItemToCanvas(item) {
         const id = item.dataset.chartType;
         this._trackRecent(id);
@@ -218,8 +268,10 @@ class ChartLibrary {
         if (!chips) return;
         const totalCount = this.charts.reduce((s, g) => s + (g.charts ? g.charts.length : 0), 0);
         const recentCount = this._loadRecent().length;
+        const pinnedCount = this._loadPinned().length;
         const items = [];
         items.push({ key: 'all', label: 'All', count: totalCount });
+        if (pinnedCount) items.push({ key: 'favorites', label: '★ Favorites', count: pinnedCount });
         if (recentCount) items.push({ key: 'recent', label: 'Recent', count: recentCount });
         this.charts.forEach(g => {
             if (!g.charts || !g.charts.length) return;
@@ -285,12 +337,12 @@ class ChartLibrary {
         const expandAll = !!this.searchTerm; // auto-expand all groups during search
         this.filteredCharts.forEach((group, idx) => {
             if (!group.charts || group.charts.length === 0) return;
-            const isBasic = group.group === 'Basic' || group._isRecent;
+            const isBasic = group.group === 'Basic' || group._isRecent || group._isPinned;
             const open = expandAll || isBasic;
             const groupEl = document.createElement('div');
-            groupEl.className = 'library-group mb-2' + (group._isRecent ? ' is-recent' : '');
+            groupEl.className = 'library-group mb-2' + (group._isRecent ? ' is-recent' : '') + (group._isPinned ? ' is-pinned' : '');
             const gid = 'group-' + idx + '-' + (group.group || '').replace(/\W+/g, '');
-            const headerIcon = group._isRecent ? 'bi-clock-history' : 'bi-folder2-open';
+            const headerIcon = group._isPinned ? 'bi-star-fill' : (group._isRecent ? 'bi-clock-history' : 'bi-folder2-open');
             groupEl.innerHTML = `
                 <div class="library-group-header${open ? '' : ' collapsed'}" data-bs-toggle="collapse" data-bs-target="#${gid}">
                     <i class="bi ${headerIcon} group-icon me-2"></i>
@@ -300,7 +352,9 @@ class ChartLibrary {
                 </div>
                 <div class="collapse${open ? ' show' : ''}" id="${gid}">
                     <div class="library-items">
-                        ${group.charts.map(c => `
+                        ${group.charts.map(c => {
+                            const pinned = this._isPinned(c.id);
+                            return `
                             <div class="library-item"
                                  data-chart-type="${escapeHtml(c.id)}"
                                  data-chart-name="${escapeHtml(c.name)}"
@@ -309,11 +363,14 @@ class ChartLibrary {
                                  title="${escapeHtml(c.description || c.name)}">
                                 <span class="cl-item-icon"><i class="bi ${escapeHtml(c.icon || 'bi-bar-chart')}"></i></span>
                                 <span class="cl-item-text">${this._highlight(c.name)}</span>
+                                <button type="button" class="cl-pin-btn${pinned ? ' pinned' : ''}" title="${pinned ? 'Unpin from favorites' : 'Pin to favorites'}" aria-label="${pinned ? 'Unpin' : 'Pin'} ${escapeHtml(c.name)}">
+                                    <i class="bi ${pinned ? 'bi-star-fill' : 'bi-star'}"></i>
+                                </button>
                                 <button type="button" class="cl-add-btn" title="Add to canvas" aria-label="Add ${escapeHtml(c.name)} to canvas">
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
-                            </div>
-                        `).join('')}
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>
             `;

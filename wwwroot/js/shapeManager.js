@@ -140,8 +140,18 @@ class ShapeManager {
                 el.setAttribute('x', '2'); el.setAttribute('y', '2');
                 el.setAttribute('width', '196'); el.setAttribute('height', '116');
                 el.setAttribute('fill', fill === 'transparent' ? 'transparent' : fill);
-                el.setAttribute('stroke', stroke); el.setAttribute('stroke-width', sw);
-                el.setAttribute('stroke-dasharray', '4,3');
+                // Only paint a dashed "placeholder" border while the textbox is empty.
+                // Once the user has typed text, remove the border entirely so the
+                // textbox reads as plain text rather than a framed rectangle.
+                var hasText = !!(props.text && String(props.text).trim().length > 0);
+                if (hasText) {
+                    el.setAttribute('stroke', 'none');
+                    el.setAttribute('stroke-width', 0);
+                } else {
+                    el.setAttribute('stroke', stroke);
+                    el.setAttribute('stroke-width', sw);
+                    el.setAttribute('stroke-dasharray', '4,3');
+                }
                 el.setAttribute('opacity', opacity);
                 svg.appendChild(el);
                 break;
@@ -172,6 +182,9 @@ class ShapeManager {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(chart)
                         }).catch(() => {});
+                        // Re-render so the dashed "empty" border is swapped for
+                        // a clean solid/no border now that text exists.
+                        try { ShapeManager.render(wrapEl, chart); } catch (_) {}
                     }
                 }
             });

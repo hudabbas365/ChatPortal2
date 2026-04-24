@@ -19,8 +19,10 @@ public class ChatController : Controller
     private readonly IQueryExecutionService _queryService;
     private readonly ITokenBudgetService _tokenBudget;
     private readonly IWorkspacePermissionService _permissions;
+    private readonly IRelationshipService _relationships;
+    private readonly IQueryCacheInvalidator _cacheInvalidator;
 
-    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService, ITokenBudgetService tokenBudget, IWorkspacePermissionService permissions)
+    public ChatController(AppDbContext db, CohereService cohereService, JwtService jwtService, IQueryExecutionService queryService, ITokenBudgetService tokenBudget, IWorkspacePermissionService permissions, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator)
     {
         _db = db;
         _cohereService = cohereService;
@@ -28,6 +30,8 @@ public class ChatController : Controller
         _queryService = queryService;
         _tokenBudget = tokenBudget;
         _permissions = permissions;
+        _relationships = relationships;
+        _cacheInvalidator = cacheInvalidator;
     }
 
     [HttpGet("/chat")]
@@ -113,6 +117,7 @@ public class ChatController : Controller
         string datasourceIdentity = "";
         bool connectedToPowerBi = false;
         bool isRestApi = false;
+        Datasource? activeDatasource = null;
         if (!string.IsNullOrEmpty(req.AgentId))
         {
             Agent? agent = null;
@@ -122,6 +127,7 @@ public class ChatController : Controller
 
             if (agent?.Datasource != null)
             {
+                activeDatasource = agent.Datasource;
                 schemaContext = await BuildSchemaPromptAsync(agent.Datasource);
                 connectedToPowerBi = IsPowerBi(agent.Datasource.Type);
                 isRestApi = IsRestApi(agent.Datasource.Type);
@@ -151,6 +157,7 @@ public class ChatController : Controller
                     var ds = report.Agent?.Datasource ?? report.Datasource;
                     if (ds != null)
                     {
+                        activeDatasource = ds;
                         schemaContext = await BuildSchemaPromptAsync(ds);
                         connectedToPowerBi = IsPowerBi(ds.Type);
                         isRestApi = IsRestApi(ds.Type);
@@ -169,6 +176,7 @@ public class ChatController : Controller
             var ds = await _db.Datasources.FindAsync(req.DatasourceId.Value);
             if (ds != null)
             {
+                activeDatasource = ds;
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
                 isRestApi = IsRestApi(ds.Type);
@@ -185,6 +193,7 @@ public class ChatController : Controller
             var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.WorkspaceId == wsId);
             if (ds != null)
             {
+                activeDatasource = ds;
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
                 isRestApi = IsRestApi(ds.Type);
@@ -197,25 +206,33 @@ public class ChatController : Controller
 
         // Inject workspace memories into system prompt
         var defaultPrompt = isRestApi
-            ? @"You are AI Insight's AI data assistant connected to a **REST API** datasource. The data has already been fetched from the API. When a user asks a data question:
+            ? @"You are AI Insight's friendly data assistant. You speak to business end-users, not developers. The data already comes from a connected source — the user doesn't need to know it's an API.
 
-1. **Understand Intent**: Determine what data the user wants.
-2. **Analyze Data**: The API data is already available. Analyze the fields and sample data provided in the schema below.
-3. **Provide Insights**: Give clear, actionable insights based on the data.
-4. **Return Structure**: Always respond in this JSON format when a data query is involved:
+When the user asks a data question, respond in this JSON format:
 
 {
   ""type"": ""data_response"",
   ""prompt"": ""The original user question rephrased as a clear intent"",
   ""query"": ""REST_API"",
-  ""description"": ""Description of the data analysis performed."",
+  ""description"": ""Here's a quick look at your top customers so you can see who drives the most revenue."",
   ""suggestedChart"": ""bar"",
-  ""suggestedFields"": { ""label"": ""fieldName"", ""value"": ""fieldName"" }
+  ""suggestedFields"": { ""label"": ""fieldName"", ""value"": ""fieldName"" },
+  ""followUpSuggestions"": [
+    ""Who are the top 5 customers?"",
+    ""How has this changed over time?"",
+    ""Break it down by region""
+  ]
 }
 
-IMPORTANT: For REST API datasources, always set query to ""REST_API"" — the system will fetch the data automatically.
-Use the field names from the schema provided. Suggest charts and fields based on the available data.
-For non-data questions, respond normally in plain text."
+IMPORTANT RULES:
+- Always set ""query"" to ""REST_API"" — the system fetches the data automatically.
+- Return ONE unified answer per response — never multiple queries, never describe separate datasets.
+- The ""description"" must sound like a helpful colleague summarizing the insight. NEVER mention queries, records, rows, columns, tables, schema, SQL, DAX, databases, API, joins, or that data was fetched.
+- BAD example (do NOT write like this): ""This query retrieves all records from dbo.BuildVersion and SalesLT.Address separately. Since these tables are unrelated, they are queried independently.""
+- GOOD example: ""Here's a quick look at your version info alongside customer addresses.""
+- Always include ""followUpSuggestions"": exactly 3 short, business-friendly next questions phrased the way a real user would ask them.
+- For non-data follow-ups (e.g. ""explain more"", ""why"", ""tell me more""): reply in plain friendly language for an end user. NEVER show code blocks, SQL, DAX, table names, dbo./schema prefixes, column types, or markdown headers like ""Query"" / ""Type"" / ""Description"". Describe the INSIGHT in 2–4 short sentences. Never expose internal details or error codes.
+- EVERY response (data or plain text) MUST end with a single line containing 3 follow-up questions in this exact machine-readable tag: <followups>[""question 1"",""question 2"",""question 3""]</followups>. No other text after that tag."
             : connectedToPowerBi
             ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
 
@@ -228,42 +245,86 @@ For non-data questions, respond normally in plain text."
   ""type"": ""data_response"",
   ""prompt"": ""The original user question rephrased as a clear intent"",
   ""query"": ""EVALUATE TOPN(10, SUMMARIZECOLUMNS('Sales'[Region], \""TotalRevenue\"", SUM('Sales'[Amount])))"",
-  ""description"": ""This DAX query retrieves total revenue grouped by region from the semantic model."",
+  ""description"": ""Shows the top regions by total revenue so you can see where sales are strongest."",
   ""suggestedChart"": ""bar"",
-  ""suggestedFields"": { ""label"": ""Region"", ""value"": ""TotalRevenue"" }
+  ""suggestedFields"": { ""label"": ""Region"", ""value"": ""TotalRevenue"" },
+  ""followUpSuggestions"": [
+    ""Which region grew the most this quarter?"",
+    ""Break this down by product category"",
+    ""Show the lowest performing regions""
+  ]
 }
 
-IMPORTANT: Always generate DAX — never SQL. Use EVALUATE, SUMMARIZECOLUMNS, TOPN, FILTER, CALCULATETABLE, ADDCOLUMNS, VALUES.
-Use single-quoted table names: 'TableName'. Use bracketed column names: [ColumnName].
-For non-data questions, respond normally in plain text.
-When the user asks to visualize or chart data, suggest appropriate chart types.
-Always be concise and actionable."
-            : @"You are AI Insight's AI data assistant. When a user asks a data question:
+IMPORTANT RULES:
+- Always generate DAX — never SQL. Use EVALUATE, SUMMARIZECOLUMNS, TOPN, FILTER, CALCULATETABLE, ADDCOLUMNS, VALUES.
+- Use single-quoted table names: 'TableName'. Use bracketed column names: [ColumnName].
+- Return ONLY a single query — never multiple statements or multiple ""query"" fields. One unified query per response.
+- The ""description"" must be written for a non-technical business user. Do NOT mention DAX, tables, columns, schema, or any technical terms. Describe the INSIGHT, not the mechanics.
+- Always include ""followUpSuggestions"": an array of exactly 3 short, business-friendly next questions the user might naturally ask, phrased as the user would speak them (no jargon).
+- BAD description example (do NOT write like this): ""This query retrieves all records from 'BuildVersion' and 'Address' separately. Since these tables are unrelated, they are queried independently.""
+- GOOD description example: ""Here's a quick look at your version info alongside customer addresses.""
+- For non-data follow-ups (e.g. ""explain more"", ""why this?"", ""tell me more""): reply in plain friendly language for an end user. NEVER show DAX/SQL code blocks, EVALUATE/SUMMARIZECOLUMNS snippets, table names, column names, or markdown headers like ""Query"" / ""Type"" / ""Description"". Describe the INSIGHT in 2–4 short sentences.
+- EVERY response (data or plain text) MUST end with a single line containing 3 follow-up questions in this exact machine-readable tag: <followups>[""question 1"",""question 2"",""question 3""]</followups>. No other text after that tag.
+- Never expose internal details, query syntax, table names, or error codes."
+            : @"You are AI Insight's friendly data assistant. You speak to business end-users, not developers.
 
-1. **Understand Intent**: Determine what data the user wants.
-2. **Generate Query**: Based on the connected datasource, generate the appropriate query (SQL for relational databases, DAX for Power BI).
-3. **Provide Description**: Explain what the query does in plain English.
-4. **Return Structure**: Always respond in this JSON format when a data query is involved:
+When the user asks a data question:
+
+1. Understand what they want to see.
+2. Build a single query for the connected datasource (SQL for relational, DAX for Power BI).
+3. Explain the INSIGHT in plain business language — never mention SQL, tables, columns, joins, schema, or any technical terms.
+4. Respond in this JSON format whenever a data query is involved:
 
 {
   ""type"": ""data_response"",
   ""prompt"": ""The original user question rephrased as a clear intent"",
   ""query"": ""SELECT region, SUM(revenue) as total_revenue FROM sales GROUP BY region ORDER BY total_revenue DESC"",
-  ""description"": ""This query retrieves total revenue grouped by region, sorted from highest to lowest."",
+  ""description"": ""See which regions bring in the most revenue so you can focus on top performers."",
   ""suggestedChart"": ""bar"",
-  ""suggestedFields"": { ""label"": ""region"", ""value"": ""total_revenue"" }
+  ""suggestedFields"": { ""label"": ""region"", ""value"": ""total_revenue"" },
+  ""followUpSuggestions"": [
+    ""How did the top region change over time?"",
+    ""Compare revenue by product line"",
+    ""Show me the regions that are underperforming""
+  ]
 }
 
-For non-data questions, respond normally in plain text.
-When the user asks to visualize or chart data, suggest appropriate chart types.
-Always be concise and actionable.
-IMPORTANT: Return ONLY a single query — never multiple statements. Do NOT include SQL comments (-- or /* */).";
+IMPORTANT RULES:
+- Return ONLY a single query — never multiple SQL statements, never multiple ""query"" fields, never UNION of unrelated queries. One unified query per response.
+- Do NOT include SQL comments (-- or /* */).
+- The ""description"" must sound like a helpful colleague summarizing the insight — no technical jargon, no query explanations, no mention of tables/columns/DAX/SQL.
+- Always include ""followUpSuggestions"": an array of exactly 3 short, business-friendly next questions phrased the way a real user would ask them.
+- BAD description example (do NOT write like this): ""This query retrieves all records from dbo.BuildVersion and SalesLT.Address separately. Since these tables are unrelated, they are queried independently.""
+- GOOD description example: ""Here's a quick look at your version info alongside customer addresses.""
+- For non-data follow-ups (e.g. ""explain more"", ""why"", ""tell me more""): reply in plain friendly language for an end user. NEVER show SQL/DAX code blocks (no ```sql or ```dax fences), no SELECT/FROM/WHERE snippets, no table names, no dbo./schema prefixes, no column types, no markdown headers like ""Query"" / ""Type"" / ""Description"". Describe the INSIGHT in 2–4 short sentences.
+- EVERY response (data or plain text) MUST end with a single line containing 3 follow-up questions in this exact machine-readable tag: <followups>[""question 1"",""question 2"",""question 3""]</followups>. No other text after that tag.
+- For non-data questions, reply in plain friendly language. Never expose internal details, query syntax, error codes, or stack traces.
+- If something goes wrong or the request is unclear, apologize briefly and suggest what the user could try next — never show technical error text.";
 
         var effectiveSystemPrompt = req.SystemPrompt ?? defaultPrompt;
         if (!string.IsNullOrEmpty(reportContext))
             effectiveSystemPrompt += "\n\n" + reportContext;
         if (!string.IsNullOrEmpty(datasourceIdentity))
             effectiveSystemPrompt += datasourceIdentity;
+
+        // Inject discovered foreign-key relationships so the AI emits correct JOINs.
+        if (activeDatasource != null)
+        {
+            try
+            {
+                var rels = await _relationships.GetRelationshipsAsync(activeDatasource);
+                if (rels != null && rels.Count > 0)
+                {
+                    var sb = new StringBuilder();
+                    sb.AppendLine("\n\n## Known Table Relationships (use these for JOINs)");
+                    sb.AppendLine("The left-hand column is a foreign key referencing the right-hand column. Prefer these when joining tables — do NOT invent joins that are not listed here.");
+                    foreach (var r in rels.Take(40))
+                        sb.AppendLine($"- {r.FromTable}.{r.FromColumn} -> {r.ToTable}.{r.ToColumn}");
+                    effectiveSystemPrompt += sb.ToString();
+                }
+            }
+            catch { /* best-effort */ }
+        }
         // When the user is viewing a specific report, keep schema brief to focus on report context
         if (!string.IsNullOrEmpty(schemaContext))
         {
@@ -413,6 +474,13 @@ IMPORTANT: Return ONLY a single query — never multiple statements. Do NOT incl
 
             if (ds != null)
             {
+                // Honour an explicit refresh request from the client (NoCache body flag or
+                // ?nocache=true query string) by flushing every cached result for this
+                // datasource before executing, guaranteeing a live round-trip.
+                var noCacheQuery = string.Equals(Request.Query["nocache"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
+                if (req.NoCache || noCacheQuery)
+                    _cacheInvalidator.InvalidateDatasource(ds.Id);
+
                 // Power BI uses XmlaEndpoint instead of ConnectionString for connectivity
                 var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
                 var hasConnection = isPbi
@@ -644,6 +712,14 @@ IMPORTANT: Return ONLY a single query — never multiple statements. Do NOT incl
                 sb.AppendLine("- ALWAYS use fully schema-qualified table names exactly as listed below (e.g., [SalesLT].[Product], [dbo].[BuildVersion]).");
                 sb.AppendLine("- NEVER omit the schema prefix. Every table reference in FROM, JOIN, and subqueries MUST include the schema.");
                 sb.AppendLine("- ALWAYS wrap every column name in square brackets (e.g., [Database Version], [ModifiedDate]). This is required because column names may contain spaces or reserved words.");
+                sb.AppendLine("### Aggregation / GROUP BY Rules (CRITICAL — violating these causes 'column is invalid in the select list' errors):");
+                sb.AppendLine("- If the SELECT list contains ANY aggregate function (COUNT, SUM, AVG, MIN, MAX), then EVERY other non-aggregated column in the SELECT list MUST appear in the GROUP BY clause.");
+                sb.AppendLine("- To return a standalone total/count from an UNRELATED table alongside row data, use a scalar subquery — NOT a CROSS JOIN with a single-row aggregate. ");
+                sb.AppendLine("  CORRECT:   SELECT bv.[Database Version], bv.[VersionDate], (SELECT COUNT(*) FROM [SalesLT].[Address]) AS [TotalAddresses] FROM [dbo].[BuildVersion] bv");
+                sb.AppendLine("  INCORRECT: SELECT bv.[Database Version], bv.[VersionDate], COUNT(a.AddressID) FROM [dbo].[BuildVersion] bv CROSS JOIN (SELECT COUNT(*) AS AddressID FROM [SalesLT].[Address]) a");
+                sb.AppendLine("- Only join tables that have a meaningful relationship (foreign key or shared key). Do NOT CROSS JOIN unrelated tables just to combine metrics.");
+                sb.AppendLine("- If uncertain whether to aggregate, prefer a plain SELECT without aggregates rather than mixing aggregated and non-aggregated columns.");
+                sb.AppendLine("- When using GROUP BY, repeat the FULL bracketed expression (e.g., GROUP BY [SalesLT].[Product].[ProductCategoryID]) — do not reference SELECT aliases.");
             }
         }
 
@@ -926,6 +1002,9 @@ public class ExecuteQueryRequest
     public string? Query { get; set; }
     public int? DatasourceId { get; set; }
     public string? UserId { get; set; }
+    // When true, flush the cached results for this datasource before executing so the
+    // query hits the live database. Used by the “Refresh Cache” UI affordance.
+    public bool NoCache { get; set; }
 }
 
 public class AnalyzeImageRequest

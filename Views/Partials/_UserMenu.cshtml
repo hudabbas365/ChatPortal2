@@ -1,0 +1,23 @@
+<div class="cp-user-menu" id="navUserMenu" style="display:none;">
+    <button type="button" class="cp-user-menu-btn" id="navUserMenuBtn" aria-haspopup="true" aria-expanded="false">
+        <i class="bi bi-person-circle"></i>
+        <span class="cp-user-menu-welcome">Welcome, <strong id="navUserName">User</strong></span>
+        <i class="bi bi-chevron-down cp-user-menu-caret"></i>
+    </button>
+    <div class="cp-user-menu-dropdown" id="navUserMenuDropdown" hidden>
+        <div class="cp-user-menu-header">
+            <span class="cp-user-menu-label">License</span>
+            <span id="navLicenseBadge" class="cp-license-badge">—</span>
+        </div>
+        <a href="/org/settings" class="cp-user-menu-item" id="navUserMenuSettings" style="display:none;">
+            <i class="bi bi-gear"></i><span>Settings</span>
+        </a>
+        <a href="/org/settings?tab=activity" class="cp-user-menu-item" id="navUserMenuActivity" style="display:none;">
+            <i class="bi bi-activity"></i><span>Activity</span>
+        </a>
+        <div class="cp-user-menu-divider"></div>
+        <button type="button" class="cp-user-menu-item cp-user-menu-item-danger" id="navLogoutBtn">
+            <i class="bi bi-box-arrow-right"></i><span>Sign Out</span>
+        </button>
+    </div>
+</div>

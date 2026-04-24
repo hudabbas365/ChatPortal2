@@ -4,4 +4,4 @@ Disallow: /api/
 Disallow: /admin/
 Disallow: /chat/embed
 
-Sitemap: https://localhost:5001/sitemap.xml
+Sitemap: https://aiinsights365.net/sitemap.xml

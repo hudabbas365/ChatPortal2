@@ -18,12 +18,11 @@
                 <a href="/chat" class="btn btn-sm btn-outline-cp me-2">
                     <i class="bi bi-chat-dots me-1"></i>Chat
                 </a>
+                <partial name="~/Views/Partials/_NotificationBell.cshtml" />
                 <a href="/auth/login" class="btn btn-sm cp-btn-gradient" id="navAuthBtn">
                     <i class="bi bi-person me-1"></i>Sign In
                 </a>
-                <button class="btn btn-sm btn-outline-danger ms-2 text-nowrap" id="navLogoutBtn" style="display:none">
-                    <i class="bi bi-box-arrow-right me-1"></i><span class="d-none d-sm-inline">Logout</span>
-                </button>
+                <partial name="~/Views/Partials/_UserMenu.cshtml" />
             </div>
         </div>
     </div>

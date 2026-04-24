@@ -19,7 +19,7 @@ public class ChartDefinition
     public string? DatasourceId { get; set; }
     public string? DataQuery { get; set; }
     public string CustomJsonData { get; set; } = "";
-    public int RowLimit { get; set; } = 100;
+    public int RowLimit { get; set; } = 15;
     public string FilterWhere { get; set; } = "";
     public ShapeProperties? ShapeProps { get; set; }
     public string? GroupId { get; set; }
