@@ -118,12 +118,14 @@ builder.Services.AddSingleton<IEncryptionService, AesEncryptionService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();
 builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 builder.Services.AddScoped<IContentSeeder, ContentSeeder>();
 builder.Services.AddScoped<ITrialEnforcementService, TrialEnforcementService>();
 builder.Services.AddHostedService<NotificationSeedingService>();
 builder.Services.AddHttpClient("PayPal");
 builder.Services.AddScoped<IPayPalService, PayPalService>();
+builder.Services.AddHostedService<SubscriptionExpiryJob>();
 
 // Session support
 builder.Services.AddDistributedMemoryCache();
@@ -184,7 +186,18 @@ app.UseRouting();
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    // Allow public/embed report views to be iframed by external sites.
+    // Everything else still defaults to DENY to prevent clickjacking.
+    var path = context.Request.Path.Value ?? "";
+    var isEmbeddableReport = path.StartsWith("/report/view/", StringComparison.OrdinalIgnoreCase);
+    if (!isEmbeddableReport)
+    {
+        context.Response.Headers.Append("X-Frame-Options", "DENY");
+    }
+    else
+    {
+        context.Response.Headers.Append("Content-Security-Policy", "frame-ancestors *");
+    }
     context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
     context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
     await next();

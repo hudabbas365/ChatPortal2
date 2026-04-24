@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
 
 namespace AIInsights.Services;
 
@@ -14,6 +16,13 @@ public interface IPayPalService
     Task<PayPalSubscriptionResult> CreateSubscriptionAsync(string planId, string returnUrl, string cancelUrl);
     Task<PayPalSubscriptionDetails?> GetSubscriptionDetailsAsync(string subscriptionId);
     Task<bool> CancelSubscriptionAsync(string subscriptionId, string reason);
+
+    // Webhook signature verification (PayPal v1/notifications/verify-webhook-signature)
+    Task<bool> VerifyWebhookSignatureAsync(IHeaderDictionary headers, string rawBody);
+
+    // Reuses or lazily creates the catalog Product + Plan IDs so we don't spam
+    // PayPal with duplicate product/plan objects on every checkout.
+    Task<PayPalPlanResult> EnsureSubscriptionPlanAsync(string planKey, decimal monthlyPrice);
 }
 
 public class PayPalService : IPayPalService
@@ -286,6 +295,115 @@ public class PayPalService : IPayPalService
 
         var response = await _http.SendAsync(request);
         return response.IsSuccessStatusCode || (int)response.StatusCode == 204;
+    }
+
+    // ── Webhook signature verification ─────────────────────────────
+    // POSTs to /v1/notifications/verify-webhook-signature with the 5 PayPal
+    // transmission headers + the configured WebhookId + the parsed event body.
+    // Returns true only when PayPal responds with verification_status=="SUCCESS".
+    public async Task<bool> VerifyWebhookSignatureAsync(IHeaderDictionary headers, string rawBody)
+    {
+        var webhookId = _config["PayPal:WebhookId"];
+        if (string.IsNullOrWhiteSpace(webhookId)) return false;
+        if (string.IsNullOrWhiteSpace(rawBody)) return false;
+
+        string H(string k) => headers.TryGetValue(k, out var v) ? v.ToString() : "";
+        var authAlgo = H("PAYPAL-AUTH-ALGO");
+        var certUrl = H("PAYPAL-CERT-URL");
+        var transmissionId = H("PAYPAL-TRANSMISSION-ID");
+        var transmissionSig = H("PAYPAL-TRANSMISSION-SIG");
+        var transmissionTime = H("PAYPAL-TRANSMISSION-TIME");
+
+        if (string.IsNullOrEmpty(authAlgo) || string.IsNullOrEmpty(certUrl) ||
+            string.IsNullOrEmpty(transmissionId) || string.IsNullOrEmpty(transmissionSig) ||
+            string.IsNullOrEmpty(transmissionTime))
+            return false;
+
+        try
+        {
+            var token = await GetAccessTokenAsync();
+            using var eventDoc = JsonDocument.Parse(rawBody);
+            var verifyBody = new
+            {
+                auth_algo = authAlgo,
+                cert_url = certUrl,
+                transmission_id = transmissionId,
+                transmission_sig = transmissionSig,
+                transmission_time = transmissionTime,
+                webhook_id = webhookId,
+                webhook_event = eventDoc.RootElement
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/v1/notifications/verify-webhook-signature");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Content = new StringContent(JsonSerializer.Serialize(verifyBody), Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(request);
+            var json = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode) return false;
+
+            using var doc = JsonDocument.Parse(json);
+            var status = doc.RootElement.TryGetProperty("verification_status", out var s) ? s.GetString() : null;
+            return string.Equals(status, "SUCCESS", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ── Catalog Product + Plan caching ─────────────────────────────
+    // PayPal lets us reuse a single Product + Plan combo across every
+    // subscription checkout, instead of creating fresh ones each click.
+    // Strategy:
+    //  1. Honour static IDs from configuration (PayPal:ProductId,
+    //     PayPal:ProPlanId, PayPal:EnterprisePlanId) when present.
+    //  2. Otherwise lazily create-once and cache in-memory for the
+    //     lifetime of the process.
+    private static string? _cachedProductId;
+    private static readonly ConcurrentDictionary<string, string> _planCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SemaphoreSlim _catalogLock = new(1, 1);
+
+    public async Task<PayPalPlanResult> EnsureSubscriptionPlanAsync(string planKey, decimal monthlyPrice)
+    {
+        // 1. Configured plan id wins.
+        var configKey = $"PayPal:{planKey}PlanId";
+        var configured = _config[configKey];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return new PayPalPlanResult { Success = true, PlanId = configured };
+
+        // 2. In-memory cache.
+        var cacheKey = $"{planKey}|{monthlyPrice:F2}";
+        if (_planCache.TryGetValue(cacheKey, out var cachedPlanId))
+            return new PayPalPlanResult { Success = true, PlanId = cachedPlanId };
+
+        await _catalogLock.WaitAsync();
+        try
+        {
+            if (_planCache.TryGetValue(cacheKey, out cachedPlanId))
+                return new PayPalPlanResult { Success = true, PlanId = cachedPlanId };
+
+            // Resolve product id (config → cache → create).
+            var productId = _config["PayPal:ProductId"];
+            if (string.IsNullOrWhiteSpace(productId)) productId = _cachedProductId;
+            if (string.IsNullOrWhiteSpace(productId))
+            {
+                var product = await CreateProductAsync("AIInsights Subscription", "AIInsights monthly plan subscription");
+                if (!product.Success) return new PayPalPlanResult { Success = false, Error = product.Error };
+                productId = product.ProductId;
+                _cachedProductId = productId;
+            }
+
+            var plan = await CreatePlanAsync(productId!, $"AIInsights {planKey} Monthly", monthlyPrice);
+            if (!plan.Success) return plan;
+
+            _planCache[cacheKey] = plan.PlanId;
+            return plan;
+        }
+        finally
+        {
+            _catalogLock.Release();
+        }
     }
 }
 

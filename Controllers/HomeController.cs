@@ -134,6 +134,22 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/home/sla")]
+    [Route("/sla")]
+    public async Task<IActionResult> Sla()
+    {
+        await SetSeoAsync("/sla");
+        return View();
+    }
+
+    [Route("/home/support")]
+    [Route("/support")]
+    public async Task<IActionResult> Support()
+    {
+        await SetSeoAsync("/support");
+        return View();
+    }
+
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error() => View();
 

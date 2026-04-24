@@ -1,0 +1,270 @@
+@model AIInsights.Models.PaymentRecord
+@{
+    Layout = null;
+    ViewData["Title"] = $"Invoice {Model.InvoiceNumber ?? ("#" + Model.Id)}";
+
+    // Parse line items from JSON (fallback to single line from Description/Amount).
+    var lineItems = new List<(string desc, int qty, decimal unit, decimal amount)>();
+    if (!string.IsNullOrWhiteSpace(Model.LineItemsJson))
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(Model.LineItemsJson);
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                string desc = el.TryGetProperty("description", out var d) ? (d.GetString() ?? "") : "";
+                int qty = el.TryGetProperty("quantity", out var q) && q.TryGetInt32(out var qi) ? qi : 1;
+                decimal unit = el.TryGetProperty("unitPrice", out var u) && u.TryGetDecimal(out var ud) ? ud : 0m;
+                decimal amt = el.TryGetProperty("amount", out var a) && a.TryGetDecimal(out var ad) ? ad : (unit * qty);
+                lineItems.Add((desc, qty, unit, amt));
+            }
+        }
+        catch { }
+    }
+    if (lineItems.Count == 0)
+    {
+        lineItems.Add((Model.Description ?? Model.PaymentType, Model.Quantity ?? 1, Model.UnitPrice ?? Model.Amount, Model.Amount));
+    }
+
+    var subtotal = Model.Subtotal ?? lineItems.Sum(li => li.amount);
+    var tax = Model.TaxAmount ?? 0m;
+    var total = Model.Amount;
+    var invoiceDate = (Model.PaidAt ?? Model.CreatedAt).ToLocalTime();
+    var statusClass = Model.Status switch
+    {
+        "succeeded" => "status-paid",
+        "pending" => "status-pending",
+        "failed" => "status-failed",
+        "refunded" => "status-refunded",
+        _ => "status-other"
+    };
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"]</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #222;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 32px 16px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .invoice-wrap { max-width: 860px; margin: 0 auto; }
+        .invoice-toolbar {
+            display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px;
+        }
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #4f46e5; color: #fff; border: none; border-radius: 8px;
+            padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+            text-decoration: none;
+        }
+        .btn.secondary { background: #e5e7eb; color: #111827; }
+        .btn:hover { opacity: .92; }
+        .invoice {
+            background: #fff; padding: 48px 56px; border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,.05);
+        }
+        .inv-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #e5e7eb; padding-bottom: 24px; margin-bottom: 24px; }
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand-mark {
+            width: 42px; height: 42px; border-radius: 10px;
+            background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+            color: #fff; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 18px;
+        }
+        .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -.2px; }
+        .brand-tag { font-size: 12px; color: #6b7280; }
+        .inv-title { text-align: right; }
+        .inv-title h1 { margin: 0; font-size: 28px; letter-spacing: .5px; color: #111827; }
+        .inv-meta { margin-top: 8px; font-size: 13px; color: #4b5563; }
+        .inv-meta div { margin: 2px 0; }
+        .inv-meta strong { color: #111827; }
+        .badge {
+            display: inline-block; padding: 4px 10px; border-radius: 999px;
+            font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+        }
+        .status-paid      { background: #dcfce7; color: #166534; }
+        .status-pending   { background: #fef9c3; color: #854d0e; }
+        .status-failed    { background: #fee2e2; color: #991b1b; }
+        .status-refunded  { background: #e0e7ff; color: #3730a3; }
+        .status-other     { background: #e5e7eb; color: #374151; }
+
+        .addr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+        .addr-card { }
+        .addr-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; font-weight: 600; }
+        .addr-body { font-size: 14px; line-height: 1.55; color: #111827; }
+        .addr-body strong { display: block; margin-bottom: 2px; }
+
+        table.items { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        table.items thead th {
+            background: #f9fafb; font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+            color: #374151; text-align: left; padding: 12px 14px; border-bottom: 2px solid #e5e7eb;
+        }
+        table.items tbody td { padding: 14px; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+        table.items .num { text-align: right; white-space: nowrap; }
+
+        .totals { display: flex; justify-content: flex-end; margin-top: 8px; }
+        .totals-box { min-width: 280px; }
+        .totals-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; color: #374151; }
+        .totals-row.total {
+            border-top: 2px solid #111827; margin-top: 6px; padding-top: 12px;
+            font-size: 18px; font-weight: 700; color: #111827;
+        }
+
+        .footer-note {
+            margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;
+            font-size: 12px; color: #6b7280; line-height: 1.6;
+        }
+        .footer-note strong { color: #374151; }
+
+        @@media print {
+            body { background: #fff; padding: 0; }
+            .invoice-toolbar { display: none !important; }
+            .invoice { box-shadow: none; padding: 24px; }
+        }
+        @@media (max-width: 640px) {
+            .invoice { padding: 24px; }
+            .inv-header { flex-direction: column; gap: 12px; }
+            .inv-title { text-align: left; }
+            .addr-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-wrap">
+        <div class="invoice-toolbar">
+            <button type="button" class="btn secondary" onclick="window.close()">Close</button>
+            <button type="button" class="btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+        </div>
+        <div class="invoice">
+            <div class="inv-header">
+                <div class="brand">
+                    <div class="brand-mark">AI</div>
+                    <div>
+                        <div class="brand-name">AI Insights 365</div>
+                        <div class="brand-tag">Your intelligent analytics platform</div>
+                    </div>
+                </div>
+                <div class="inv-title">
+                    <h1>INVOICE</h1>
+                    <div class="inv-meta">
+                        <div><strong>@(Model.InvoiceNumber ?? ("#" + Model.Id))</strong></div>
+                        <div>Issued: @invoiceDate.ToString("MMMM d, yyyy")</div>
+                        <div>Status: <span class="badge @statusClass">@Model.Status</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="addr-grid">
+                <div class="addr-card">
+                    <div class="addr-label">Billed To</div>
+                    <div class="addr-body">
+                        <strong>@(Model.BillingCompany ?? Model.Organization?.Name ?? "-")</strong>
+                        @if (!string.IsNullOrWhiteSpace(Model.BillingName)) { <div>@Model.BillingName</div> }
+                        @if (!string.IsNullOrWhiteSpace(Model.BillingEmail)) { <div>@Model.BillingEmail</div> }
+                        @if (!string.IsNullOrWhiteSpace(Model.BillingAddressLine1)) { <div>@Model.BillingAddressLine1</div> }
+                        @if (!string.IsNullOrWhiteSpace(Model.BillingAddressLine2)) { <div>@Model.BillingAddressLine2</div> }
+                        @{
+                            var cityLine = string.Join(", ", new[] { Model.BillingCity, Model.BillingState, Model.BillingPostalCode }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                        }
+                        @if (!string.IsNullOrEmpty(cityLine)) { <div>@cityLine</div> }
+                        @if (!string.IsNullOrWhiteSpace(Model.BillingCountry)) { <div>@Model.BillingCountry</div> }
+                    </div>
+                </div>
+                <div class="addr-card">
+                    <div class="addr-label">From</div>
+                    <div class="addr-body">
+                        <strong>AI Insights 365</strong>
+                        <div>support@AIInsights365.net</div>
+                        <div>https://aiinsights365.net</div>
+                    </div>
+                </div>
+            </div>
+
+            <table class="items">
+                <thead>
+                    <tr>
+                        <th style="width: 55%;">Description</th>
+                        <th class="num" style="width: 10%;">Qty</th>
+                        <th class="num" style="width: 17%;">Unit Price</th>
+                        <th class="num" style="width: 18%;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var li in lineItems)
+                    {
+                        <tr>
+                            <td>
+                                @li.desc
+                                @if (Model.TokensAdded.HasValue && Model.TokensAdded.Value > 0)
+                                {
+                                    <div style="font-size:12px;color:#6b7280;margin-top:2px;">+@Model.TokensAdded.Value.ToString("N0") tokens added</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(Model.PlanKey))
+                                {
+                                    <div style="font-size:12px;color:#6b7280;margin-top:2px;">Plan: @Model.PlanKey</div>
+                                }
+                            </td>
+                            <td class="num">@li.qty</td>
+                            <td class="num">@li.unit.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td>
+                            <td class="num">@li.amount.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="totals">
+                <div class="totals-box">
+                    <div class="totals-row">
+                        <span>Subtotal</span>
+                        <span>@subtotal.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</span>
+                    </div>
+                    @if (tax > 0)
+                    {
+                        <div class="totals-row">
+                            <span>Tax@(string.IsNullOrEmpty(Model.TaxRegion) ? "" : $" ({Model.TaxRegion})")@(Model.TaxRatePercent.HasValue ? $" {Model.TaxRatePercent.Value}%" : "")</span>
+                            <span>@tax.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</span>
+                        </div>
+                    }
+                    <div class="totals-row total">
+                        <span>Total (@Model.Currency)</span>
+                        <span>@total.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-note">
+                <div><strong>Payment method:</strong> @Model.PaymentMethod</div>
+                @if (!string.IsNullOrWhiteSpace(Model.PayPalOrderId))
+                {
+                    <div><strong>PayPal Order ID:</strong> @Model.PayPalOrderId</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.PayPalSubscriptionId))
+                {
+                    <div><strong>PayPal Subscription ID:</strong> @Model.PayPalSubscriptionId</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.CaptureId))
+                {
+                    <div><strong>Capture ID:</strong> @Model.CaptureId</div>
+                }
+                @if (Model.PaidAt.HasValue)
+                {
+                    <div><strong>Paid at:</strong> @Model.PaidAt.Value.ToLocalTime().ToString("MMM d, yyyy HH:mm")</div>
+                }
+                <div style="margin-top:10px;">
+                    Thank you for your business. For any questions regarding this invoice, please contact
+                    <a href="mailto:support@AIInsights365.net">support@AIInsights365.net</a>.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

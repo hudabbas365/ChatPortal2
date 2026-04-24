@@ -155,16 +155,21 @@ public class BillingController : Controller
         if (!Enum.TryParse<PlanType>(req.Plan, true, out var planType))
             return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
 
-        // Check available licenses (Free assignments don't consume a license)
+        // Check available licenses per type (Free assignments don't consume a license)
         if (planType != PlanType.Free)
         {
-            var assignedCount = await _db.SubscriptionPlans
-                .CountAsync(s => s.User != null && s.User.OrganizationId == req.OrganizationId && s.Plan != PlanType.Free);
-            // Check if this user already has a paid license (re-assignment doesn't consume extra)
+            var assignedOfType = await _db.SubscriptionPlans
+                .CountAsync(s => s.User != null && s.User.OrganizationId == req.OrganizationId && s.Plan == planType);
+            var purchasedOfType = planType == PlanType.Enterprise
+                ? org.PurchasedEnterpriseLicenses
+                : planType == PlanType.Professional
+                    ? org.PurchasedProfessionalLicenses
+                    : 0;
+            // Check if this user already has this exact plan (re-assignment doesn't consume extra)
             var existingSub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == req.UserId);
-            var isReassignment = existingSub != null && existingSub.Plan != PlanType.Free;
-            if (!isReassignment && assignedCount >= org.PurchasedLicenses)
-                return BadRequest(new { error = $"No licenses available. You have {org.PurchasedLicenses} license(s) and {assignedCount} already assigned. Buy more licenses first." });
+            var isReassignment = existingSub != null && existingSub.Plan == planType;
+            if (!isReassignment && assignedOfType >= purchasedOfType)
+                return BadRequest(new { error = $"No {planType} licenses available. You have {purchasedOfType} {planType} license(s) and {assignedOfType} already assigned. Buy more {planType} licenses first." });
         }
 
         var sub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == user.Id);
@@ -201,15 +206,28 @@ public class BillingController : Controller
         var org = await _db.Organizations.FindAsync(organizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
 
-        var assignedCount = await _db.SubscriptionPlans
-            .CountAsync(s => s.User != null && s.User.OrganizationId == organizationId && s.Plan != PlanType.Free);
+        var assignedProfessional = await _db.SubscriptionPlans
+            .CountAsync(s => s.User != null && s.User.OrganizationId == organizationId && s.Plan == PlanType.Professional);
+        var assignedEnterprise = await _db.SubscriptionPlans
+            .CountAsync(s => s.User != null && s.User.OrganizationId == organizationId && s.Plan == PlanType.Enterprise);
+        var assignedCount = assignedProfessional + assignedEnterprise;
+
+        var purchasedTotal = org.PurchasedProfessionalLicenses + org.PurchasedEnterpriseLicenses;
 
         return Ok(new
         {
-            purchased = org.PurchasedLicenses,
+            // Combined totals (backwards compatible)
+            purchased = purchasedTotal,
             assigned = assignedCount,
-            available = Math.Max(0, org.PurchasedLicenses - assignedCount),
-            plan = org.Plan.ToString()
+            available = Math.Max(0, purchasedTotal - assignedCount),
+            plan = org.Plan.ToString(),
+            // Per-type breakdown
+            proPurchased = org.PurchasedProfessionalLicenses,
+            proAssigned = assignedProfessional,
+            proAvailable = Math.Max(0, org.PurchasedProfessionalLicenses - assignedProfessional),
+            enterprisePurchased = org.PurchasedEnterpriseLicenses,
+            enterpriseAssigned = assignedEnterprise,
+            enterpriseAvailable = Math.Max(0, org.PurchasedEnterpriseLicenses - assignedEnterprise)
         });
     }
 
@@ -225,12 +243,15 @@ public class BillingController : Controller
         if (org == null) return NotFound(new { error = "Organization not found." });
 
         var count = Math.Max(1, req.Count);
-        org.PurchasedLicenses += count;
+        var isEnterprise = string.Equals(req.Plan, "Enterprise", StringComparison.OrdinalIgnoreCase);
+        if (isEnterprise) org.PurchasedEnterpriseLicenses += count;
+        else org.PurchasedProfessionalLicenses += count;
+        org.PurchasedLicenses += count; // keep legacy total in sync
 
         _db.ActivityLogs.Add(new ActivityLog
         {
             Action = "licenses_purchased",
-            Description = $"{count} license(s) purchased. Total: {org.PurchasedLicenses}.",
+            Description = $"{count} {(isEnterprise ? "Enterprise" : "Professional")} license(s) purchased. Total: {org.PurchasedLicenses} (Pro: {org.PurchasedProfessionalLicenses}, Ent: {org.PurchasedEnterpriseLicenses}).",
             UserId = caller.Id,
             OrganizationId = req.OrganizationId
         });
@@ -244,7 +265,9 @@ public class BillingController : Controller
             success = true,
             purchased = org.PurchasedLicenses,
             assigned = assignedCount,
-            available = Math.Max(0, org.PurchasedLicenses - assignedCount)
+            available = Math.Max(0, org.PurchasedLicenses - assignedCount),
+            proPurchased = org.PurchasedProfessionalLicenses,
+            enterprisePurchased = org.PurchasedEnterpriseLicenses
         });
     }
 
@@ -256,8 +279,10 @@ public class BillingController : Controller
         if (caller == null) return Unauthorized();
 
         var baseUrl = (_config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
-        var returnUrl = $"{baseUrl}/org/settings?tab=users&paypal=success";
-        var cancelUrl = $"{baseUrl}/org/settings?tab=users&paypal=cancel";
+        // Return to a tiny anonymous page that just closes the popup — the
+        // parent window detects the close and runs the capture step.
+        var returnUrl = $"{baseUrl}/billing/paypal-return?result=success";
+        var cancelUrl = $"{baseUrl}/billing/paypal-return?result=cancel";
 
         try
         {
@@ -333,9 +358,12 @@ public class BillingController : Controller
         {
             case "license":
                 var count = Math.Max(1, req.Quantity);
-                org.PurchasedLicenses += count;
-                amount = count * (req.PlanKey?.ToLower() == "enterprise" ? 45m : 25m);
-                description = $"{count} license(s) purchased via PayPal (Order: {req.OrderId}).";
+                var isEntLicense = string.Equals(req.PlanKey, "Enterprise", StringComparison.OrdinalIgnoreCase);
+                if (isEntLicense) org.PurchasedEnterpriseLicenses += count;
+                else org.PurchasedProfessionalLicenses += count;
+                org.PurchasedLicenses += count; // keep legacy total in sync
+                amount = count * (isEntLicense ? 45m : 25m);
+                description = $"{count} {(isEntLicense ? "Enterprise" : "Professional")} license(s) purchased via PayPal (Order: {req.OrderId}).";
                 break;
 
             case "token_pack":
@@ -359,7 +387,15 @@ public class BillingController : Controller
         }
 
         // Log successful payment
-        _db.PaymentRecords.Add(new PaymentRecord
+        var invoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{System.Security.Cryptography.RandomNumberGenerator.GetInt32(10000, 99999)}";
+        int? qty = req.PurchaseType == "license" ? Math.Max(1, req.Quantity) : (req.PurchaseType == "token_pack" ? 1 : (int?)null);
+        decimal? unitPrice = (qty.HasValue && qty.Value > 0) ? amount / qty.Value : (decimal?)null;
+        long? tokensAdded = req.PurchaseType == "token_pack" ? (long?)(req.TokenAmount > 0 ? req.TokenAmount : 1_000_000) : null;
+        var lineItems = new[]
+        {
+            new { description, quantity = qty ?? 1, unitPrice = unitPrice ?? amount, amount }
+        };
+        var paymentRecord = new PaymentRecord
         {
             OrganizationId = req.OrganizationId,
             UserId = caller.Id,
@@ -368,8 +404,19 @@ public class BillingController : Controller
             Status = "succeeded",
             PayPalOrderId = req.OrderId,
             Description = description,
-            PlanKey = req.PlanKey
-        });
+            PlanKey = req.PlanKey,
+            InvoiceNumber = invoiceNumber,
+            Quantity = qty,
+            UnitPrice = unitPrice,
+            Subtotal = amount,
+            TokensAdded = tokensAdded,
+            BillingName = caller.FullName,
+            BillingEmail = caller.Email,
+            BillingCompany = org.Name,
+            LineItemsJson = System.Text.Json.JsonSerializer.Serialize(lineItems),
+            PaidAt = DateTime.UtcNow
+        };
+        _db.PaymentRecords.Add(paymentRecord);
         _db.ActivityLogs.Add(new ActivityLog
         {
             Action = "paypal_payment_completed",
@@ -385,7 +432,88 @@ public class BillingController : Controller
             description, amount, "USD",
             req.OrderId, DateTime.UtcNow);
 
-        return Ok(new { success = true, message = description });
+        return Ok(new { success = true, message = description, invoiceNumber });
+    }
+
+    // ── Invoices: list all payment records for an organization ────
+    [HttpGet("/api/billing/invoices")]
+    public async Task<IActionResult> GetInvoices([FromQuery] int organizationId)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (caller.Role != "SuperAdmin" && caller.OrganizationId != organizationId)
+            return StatusCode(403, new { error = "You do not have access to this organization's invoices." });
+
+        var items = await _db.PaymentRecords
+            .Where(p => p.OrganizationId == organizationId)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                id = p.Id,
+                invoiceNumber = p.InvoiceNumber ?? $"#{p.Id}",
+                paymentType = p.PaymentType,
+                description = p.Description,
+                amount = p.Amount,
+                currency = p.Currency,
+                status = p.Status,
+                quantity = p.Quantity,
+                tokensAdded = p.TokensAdded,
+                planKey = p.PlanKey,
+                payPalOrderId = p.PayPalOrderId,
+                createdAt = p.CreatedAt,
+                paidAt = p.PaidAt
+            })
+            .ToListAsync();
+        return Ok(items);
+    }
+
+    // ── Invoice detail (JSON) ─────────────────────────────────────
+    [HttpGet("/api/billing/invoices/{id:int}")]
+    public async Task<IActionResult> GetInvoice(int id)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        var p = await _db.PaymentRecords
+            .Include(x => x.Organization)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (p == null) return NotFound(new { error = "Invoice not found." });
+        if (caller.Role != "SuperAdmin" && caller.OrganizationId != p.OrganizationId)
+            return StatusCode(403, new { error = "You do not have access to this invoice." });
+
+        return Ok(new
+        {
+            id = p.Id,
+            invoiceNumber = p.InvoiceNumber ?? $"#{p.Id}",
+            organizationName = p.Organization?.Name,
+            paymentType = p.PaymentType,
+            paymentMethod = p.PaymentMethod,
+            description = p.Description,
+            amount = p.Amount,
+            currency = p.Currency,
+            status = p.Status,
+            quantity = p.Quantity,
+            unitPrice = p.UnitPrice,
+            subtotal = p.Subtotal,
+            taxAmount = p.TaxAmount,
+            taxRegion = p.TaxRegion,
+            taxRatePercent = p.TaxRatePercent,
+            tokensAdded = p.TokensAdded,
+            planKey = p.PlanKey,
+            payPalOrderId = p.PayPalOrderId,
+            payPalSubscriptionId = p.PayPalSubscriptionId,
+            billingName = p.BillingName,
+            billingEmail = p.BillingEmail,
+            billingCompany = p.BillingCompany,
+            billingAddressLine1 = p.BillingAddressLine1,
+            billingAddressLine2 = p.BillingAddressLine2,
+            billingCity = p.BillingCity,
+            billingState = p.BillingState,
+            billingPostalCode = p.BillingPostalCode,
+            billingCountry = p.BillingCountry,
+            lineItemsJson = p.LineItemsJson,
+            createdAt = p.CreatedAt,
+            paidAt = p.PaidAt
+        });
     }
 
     // ── Token Packages Info ───────────────────────────────────────
@@ -425,25 +553,36 @@ public class BillingController : Controller
             return BadRequest(new { error = "Invalid plan. Choose Professional or Enterprise." });
 
         var baseUrl = (_config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
-        var returnUrl = $"{baseUrl}/org/settings?tab=users&subscription=success&orgId={req.OrganizationId}&planKey={req.PlanKey}";
-        var cancelUrl = $"{baseUrl}/org/settings?tab=users&subscription=cancel";
+        // Return to a tiny anonymous page that just closes the popup — the
+        // parent window detects the close and runs the activate step.
+        var returnUrl = $"{baseUrl}/billing/paypal-return?result=success&kind=subscription";
+        var cancelUrl = $"{baseUrl}/billing/paypal-return?result=cancel&kind=subscription";
 
         try
         {
-            // 1. Create a PayPal product (or reuse — for simplicity create each time; PayPal deduplicates by name)
-            var product = await _payPal.CreateProductAsync("AIInsights Subscription", "AIInsights monthly plan subscription");
-            if (!product.Success)
-                return BadRequest(new { error = product.Error });
-
-            // 2. Create a billing plan
-            var plan = await _payPal.CreatePlanAsync(product.ProductId, $"AIInsights {req.PlanKey} Monthly", monthlyPrice);
+            // Reuse a single PayPal Product + Plan per tier (cached in PayPalService)
+            // so we don't create new catalog objects on every checkout click.
+            var plan = await _payPal.EnsureSubscriptionPlanAsync(req.PlanKey, monthlyPrice);
             if (!plan.Success)
                 return BadRequest(new { error = plan.Error });
 
-            // 3. Create the subscription
+            // Create the subscription against the cached plan id
             var sub = await _payPal.CreateSubscriptionAsync(plan.PlanId, returnUrl, cancelUrl);
             if (!sub.Success)
                 return BadRequest(new { error = sub.Error });
+
+            // If the org already had a subscription on file, log the replacement
+            // for audit (reactivation / plan change).
+            if (!string.IsNullOrEmpty(org.PayPalSubscriptionId) && org.PayPalSubscriptionId != sub.SubscriptionId)
+            {
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = "subscription_replaced",
+                    Description = $"Previous PayPal subscription {org.PayPalSubscriptionId} replaced with {sub.SubscriptionId} ({req.PlanKey}).",
+                    UserId = caller.Id,
+                    OrganizationId = req.OrganizationId
+                });
+            }
 
             // Store pending subscription info
             org.PayPalSubscriptionId = sub.SubscriptionId;
@@ -591,13 +730,26 @@ public class BillingController : Controller
     }
 
     // ── PayPal Webhook (recurring payment notifications) ─────────
+    // PayPal POSTs subscription/payment events here. Anonymous because PayPal
+    // doesn't authenticate via cookie/JWT — instead we cryptographically verify
+    // the request via the standard PayPal webhook signature endpoint.
     [HttpPost("/api/paypal/webhook")]
     [AllowAnonymous]
-    public async Task<IActionResult> PayPalWebhook()
+    public async Task<IActionResult> PayPalWebhook([FromServices] IWebHostEnvironment env)
     {
+        // Read raw body once — required so we can hand the exact bytes to
+        // PayPal's signature-verification endpoint.
         string body;
         using (var reader = new StreamReader(Request.Body))
             body = await reader.ReadToEndAsync();
+
+        // Verify signature. In Development we tolerate failures (so local
+        // ngrok testing works without a real WebhookId), but in any other
+        // environment a failed verification is a hard 401 — this is what
+        // closes the "anyone can POST" hole.
+        var verified = await _payPal.VerifyWebhookSignatureAsync(Request.Headers, body);
+        if (!verified && !env.IsDevelopment())
+            return Unauthorized();
 
         try
         {
@@ -617,6 +769,10 @@ public class BillingController : Controller
                         var amount = resource.TryGetProperty("amount", out var amt) && amt.TryGetProperty("total", out var tot)
                             ? decimal.TryParse(tot.GetString(), out var d) ? d : 0 : 0;
                         org.SubscriptionNextBillingDate = DateTime.UtcNow.AddMonths(1);
+                        // Successful recurring charge → clear any past-due state.
+                        org.FailedPaymentCount = 0;
+                        org.GraceUntil = null;
+                        if (org.SubscriptionStatus == "PAST_DUE") org.SubscriptionStatus = "ACTIVE";
                         _db.PaymentRecords.Add(new PaymentRecord
                         {
                             OrganizationId = org.Id,
@@ -625,7 +781,8 @@ public class BillingController : Controller
                             Status = "succeeded",
                             PayPalSubscriptionId = billingAgreementId,
                             Description = $"Recurring monthly payment received",
-                            PlanKey = org.Plan.ToString()
+                            PlanKey = org.Plan.ToString(),
+                            PaidAt = DateTime.UtcNow
                         });
                         _db.ActivityLogs.Add(new ActivityLog
                         {
@@ -635,15 +792,14 @@ public class BillingController : Controller
                         });
                         await _db.SaveChangesAsync();
 
-                        // Email invoice to the org admin (first OrgAdmin found for the org)
-                        var orgAdmin = await _db.Users
+                        // Email invoice to ALL OrgAdmins of the org (not just the first one).
+                        var orgAdmins = await _db.Users
                             .Where(u => u.OrganizationId == org.Id && u.Role == "OrgAdmin" && !string.IsNullOrEmpty(u.Email))
-                            .OrderBy(u => u.CreatedAt)
-                            .FirstOrDefaultAsync();
-                        if (orgAdmin != null && !string.IsNullOrEmpty(orgAdmin.Email))
+                            .ToListAsync();
+                        foreach (var orgAdmin in orgAdmins)
                         {
                             _ = _emailService.SendInvoiceEmailAsync(
-                                orgAdmin.Email, orgAdmin.FullName ?? orgAdmin.Email, org.Name,
+                                orgAdmin.Email!, orgAdmin.FullName ?? orgAdmin.Email!, org.Name,
                                 $"Monthly {org.Plan} subscription — recurring payment",
                                 amount, "USD",
                                 billingAgreementId, DateTime.UtcNow);
@@ -678,6 +834,15 @@ public class BillingController : Controller
                     var org = await _db.Organizations.FirstOrDefaultAsync(o => o.PayPalSubscriptionId == subId);
                     if (org != null)
                     {
+                        // Track consecutive failures + open a 5-day grace window.
+                        // SubscriptionExpiryJob will downgrade Plan→Free when the
+                        // window elapses; PlanFeatures gates can also short-circuit
+                        // on SubscriptionStatus == "PAST_DUE" if desired.
+                        org.FailedPaymentCount += 1;
+                        org.SubscriptionStatus = "PAST_DUE";
+                        if (org.GraceUntil == null || org.GraceUntil < DateTime.UtcNow)
+                            org.GraceUntil = DateTime.UtcNow.AddDays(5);
+
                         _db.PaymentRecords.Add(new PaymentRecord
                         {
                             OrganizationId = org.Id,
@@ -685,27 +850,97 @@ public class BillingController : Controller
                             Amount = 0,
                             Status = "failed",
                             PayPalSubscriptionId = subId,
-                            Description = "Recurring payment failed",
-                            ErrorMessage = "PayPal billing subscription payment failed — org notified to fix payment within 5 days.",
+                            Description = $"Recurring payment failed (attempt {org.FailedPaymentCount})",
+                            ErrorMessage = $"PayPal recurring payment failed. Grace period until {org.GraceUntil:yyyy-MM-dd}.",
                             PlanKey = org.Plan.ToString()
                         });
                         _db.ActivityLogs.Add(new ActivityLog
                         {
                             Action = "recurring_payment_failed",
-                            Description = $"Recurring payment FAILED for org '{org.Name}' (PayPal: {subId}). Must fix payment within 5 days.",
+                            Description = $"Recurring payment FAILED (attempt {org.FailedPaymentCount}) for org '{org.Name}' (PayPal: {subId}). Grace until {org.GraceUntil:yyyy-MM-dd}.",
                             OrganizationId = org.Id
                         });
                         await _db.SaveChangesAsync();
+
+                        // Notify ALL OrgAdmins so payment can be fixed in time.
+                        var orgAdmins = await _db.Users
+                            .Where(u => u.OrganizationId == org.Id && u.Role == "OrgAdmin" && !string.IsNullOrEmpty(u.Email))
+                            .ToListAsync();
+                        foreach (var orgAdmin in orgAdmins)
+                        {
+                            _ = _emailService.SendInvoiceEmailAsync(
+                                orgAdmin.Email!, orgAdmin.FullName ?? orgAdmin.Email!, org.Name,
+                                $"Action required: payment failed for {org.Plan} subscription",
+                                0, "USD",
+                                subId, DateTime.UtcNow);
+                        }
                     }
                 }
             }
         }
         catch
         {
-            // Log but always return 200 to PayPal
+            // Log but always return 200 to PayPal so it doesn't keep retrying a poison message.
         }
 
         return Ok();
+    }
+
+    // ── PayPal popup return page ──────────────────────────────────
+    // PayPal redirects the approval popup back to this URL. It requires no
+    // authentication and simply closes the popup window so the parent tab
+    // can run the capture / activate step. Anonymous because popup cookies
+    // aren't always available after the cross-site PayPal redirect.
+    [AllowAnonymous]
+    [HttpGet("/billing/paypal-return")]
+    public IActionResult PayPalReturn([FromQuery] string? result, [FromQuery] string? kind)
+    {
+        var safeResult = (result == "cancel") ? "cancel" : "success";
+        var safeKind = (kind == "subscription") ? "subscription" : "payment";
+        var html = $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""utf-8"" />
+    <title>PayPal — Returning to AI Insights 365</title>
+    <style>
+        body {{ font-family: 'Inter', system-ui, sans-serif; background: #f8f9fa; color: #333; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+        .card {{ background: #fff; padding: 2rem 2.5rem; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); text-align: center; max-width: 420px; }}
+        .icon {{ font-size: 48px; color: #2e7d32; margin-bottom: .5rem; }}
+        .icon.cancel {{ color: #c62828; }}
+        h1 {{ font-size: 1.1rem; margin: .25rem 0 .75rem; }}
+        p {{ color: #666; font-size: .9rem; margin: 0; }}
+    </style>
+</head>
+<body>
+    <div class=""card"">
+        <div class=""icon {(safeResult == "cancel" ? "cancel" : "")}"">{(safeResult == "cancel" ? "✕" : "✓")}</div>
+        <h1>{(safeResult == "cancel" ? "Payment cancelled" : "Thank you!")}</h1>
+        <p>{(safeResult == "cancel" ? "This window will close automatically." : "Finalizing your " + safeKind + "… this window will close automatically.")}</p>
+    </div>
+    <script>
+        // Notify parent (best-effort) then close.
+        try {{ if (window.opener && !window.opener.closed) {{ window.opener.postMessage({{ source: 'paypal-popup', result: '{safeResult}', kind: '{safeKind}' }}, '*'); }} }} catch (e) {{}}
+        setTimeout(function() {{ try {{ window.close(); }} catch (e) {{}} }}, 600);
+    </script>
+</body>
+</html>";
+        return Content(html, "text/html");
+    }
+
+    // ── Printable invoice page ────────────────────────────────────
+    [Authorize]
+    [HttpGet("/billing/invoice/{id:int}")]
+    public async Task<IActionResult> InvoiceView(int id)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        var p = await _db.PaymentRecords
+            .Include(x => x.Organization)
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (p == null) return NotFound();
+        if (caller.Role != "SuperAdmin" && caller.OrganizationId != p.OrganizationId)
+            return StatusCode(403);
+        return View("~/Views/Billing/Invoice.cshtml", p);
     }
 }
 
@@ -735,6 +970,7 @@ public class BuyLicensesRequest
 {
     public int OrganizationId { get; set; }
     public int Count { get; set; } = 1;
+    public string Plan { get; set; } = "Professional"; // "Professional" or "Enterprise"
 }
 
 public class PayPalCreateOrderRequest

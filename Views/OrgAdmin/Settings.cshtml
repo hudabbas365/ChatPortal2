@@ -23,8 +23,14 @@
             <button class="org-settings-nav-item" data-tab="compliance">
                 <i class="bi bi-shield-check"></i><span>Compliance</span>
             </button>
+            <button class="org-settings-nav-item" data-tab="embeds">
+                <i class="bi bi-code-square"></i><span>Embedded Reports</span>
+            </button>
             <button class="org-settings-nav-item" data-tab="activity">
                 <i class="bi bi-activity"></i><span>Activity</span>
+            </button>
+            <button class="org-settings-nav-item" data-tab="support">
+                <i class="bi bi-life-preserver"></i><span>Contact Support</span>
             </button>
             <a class="org-settings-nav-item" href="/org/notifications">
                 <i class="bi bi-bell"></i><span>Manage Notifications</span>
@@ -92,12 +98,12 @@
                         </div>
                         <div class="d-flex gap-3 flex-wrap mb-2">
                             <div class="license-stat">
-                                <span class="license-stat-label">Purchased</span>
-                                <span class="badge bg-primary" id="licensePurchased">0</span>
+                                <span class="license-stat-label">Professional</span>
+                                <span class="badge bg-primary" id="licenseProStats" title="Assigned / Purchased">0 / 0</span>
                             </div>
                             <div class="license-stat">
-                                <span class="license-stat-label">Assigned</span>
-                                <span class="badge bg-warning text-dark" id="licenseAssigned">0</span>
+                                <span class="license-stat-label">Enterprise</span>
+                                <span class="badge bg-dark" id="licenseEntStats" title="Assigned / Purchased">0 / 0</span>
                             </div>
                             <div class="license-stat">
                                 <span class="license-stat-label">Available</span>
@@ -171,6 +177,29 @@
                 </div>
             </div>
 
+            <!-- Embedded Reports Tab -->
+            <div class="org-settings-panel" data-panel="embeds">
+                <div class="org-panel-header">
+                    <h2>Embedded Reports</h2>
+                    <p>Reports currently exposed via a public URL or iframe embed. Revoking removes anonymous access immediately.</p>
+                </div>
+                <div class="org-form-card">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <strong><i class="bi bi-code-square me-2"></i>Published / Embeddable Reports</strong>
+                        <button class="btn btn-sm btn-outline-secondary" id="reloadEmbedsBtn">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <div id="embeddedReportsList">
+                        <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div>
+                    </div>
+                    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#92400e;margin-top:14px;">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Revoking sets the report back to <strong>Draft</strong> and clears its share token. Existing iframes embedded on external sites will stop rendering.
+                    </div>
+                </div>
+            </div>
+
             <!-- Activity Tab -->
             <div class="org-settings-panel" data-panel="activity">
                 <div class="org-panel-header">
@@ -190,6 +219,65 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Contact Support Tab -->
+            <div class="org-settings-panel" data-panel="support">
+                <div class="org-panel-header">
+                    <h2>Contact Support</h2>
+                    <p>Open a ticket and our team will respond by email according to your plan's SLA.</p>
+                </div>
+                <div class="org-form-card" style="max-width:820px;">
+                    <div id="supportAlert" class="alert d-none"></div>
+                    <form id="settingsSupportForm" autocomplete="off">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label-cp">Your Name</label>
+                                <input type="text" class="form-control cp-input" id="supportName" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label-cp">Email <span class="text-danger">*</span></label>
+                                <input type="email" class="form-control cp-input" id="supportEmail" required />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label-cp">Category</label>
+                                <select class="form-select cp-input" id="supportCategory">
+                                    <option>Question</option>
+                                    <option>Billing</option>
+                                    <option>Technical Issue</option>
+                                    <option>Feature Request</option>
+                                    <option>Account</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label-cp">Priority</label>
+                                <select class="form-select cp-input" id="supportPriority">
+                                    <option>Low</option>
+                                    <option selected>Normal</option>
+                                    <option>High</option>
+                                    <option>Urgent</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label-cp">Subject <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control cp-input" id="supportSubject" maxlength="250" required />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label-cp">Message <span class="text-danger">*</span></label>
+                                <textarea class="form-control cp-input" id="supportMessage" rows="6" required></textarea>
+                            </div>
+                            <div class="col-12 d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-send me-1"></i>Submit Ticket
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                    <p class="small text-muted mt-3 mb-0">
+                        Tickets are sent to <a href="mailto:support@AIInsights365.net">support@AIInsights365.net</a>.
+                        You'll receive a confirmation email with your ticket number.
+                    </p>
                 </div>
             </div>
         </div>
@@ -507,25 +595,7 @@
     // ---- Billing Tab ----
     function renderBilling(plan) {
         const isFreeTrial = plan?.plan === 'FreeTrial' || plan?.isTrialActive;
-        const isPro = plan?.plan === 'Professional';
-        const isEnterprise = plan?.plan === 'Enterprise';
         const trialDays = plan?.daysRemaining || 0;
-
-        function planCard(title, price, features, isCurrent, planKey, badgeClass) {
-            return `<div class="col-md-4">
-                <div class="card h-100 ${isCurrent ? 'border-primary shadow' : 'border-0 glass-card'}">
-                    <div class="card-body text-center p-4">
-                        ${isCurrent ? '<span class="badge bg-primary mb-2">Current Plan</span><br>' : ''}
-                        <h5 class="card-title">${title}</h5>
-                        <div class="display-6 fw-bold my-3">${price}</div>
-                        <ul class="list-unstyled text-start mb-4">${features.map(f => '<li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>' + f + '</li>').join('')}</ul>
-                        ${isCurrent
-                            ? '<button class="btn btn-outline-primary w-100" disabled>Active</button>'
-                            : `<button class="btn cp-btn-gradient w-100" onclick="upgradeplan('${planKey}')">${planKey === 'FreeTrial' ? 'Start Free Trial' : 'Subscribe Monthly'}</button>`}
-                    </div>
-                </div>
-            </div>`;
-        }
 
         const trialBadge = isFreeTrial ? `<div class="alert alert-info mb-3"><i class="bi bi-clock me-2"></i><strong>${trialDays} days remaining</strong> on your Free Trial.</div>` : '';
 
@@ -536,36 +606,72 @@
             .then(sub => {
                 const el = document.getElementById('subscriptionStatusCard');
                 if (!el) return;
-                if (sub.status === 'ACTIVE') {
-                    const nextDate = sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A';
-                    el.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <span class="badge bg-success mb-1">Active Subscription</span>
-                                <div class="small text-muted">Next billing: <strong>${nextDate}</strong></div>
-                            </div>
-                            <button class="btn btn-outline-danger btn-sm" onclick="cancelSubscription()">
-                                <i class="bi bi-x-circle me-1"></i>Cancel Subscription
-                            </button>
-                        </div>`;
-                } else if (sub.status === 'CANCELLED') {
-                    const endDate = sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A';
-                    el.innerHTML = `
-                        <div class="alert alert-warning mb-0 py-2">
-                            <i class="bi bi-exclamation-triangle me-1"></i>
-                            Subscription cancelled. Plan active until <strong>${endDate}</strong>.
-                        </div>`;
+                const nextDate = sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A';
+                switch (sub.status) {
+                    case 'ACTIVE':
+                        el.innerHTML = `
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-success mb-1">Active Subscription</span>
+                                    <div class="small text-muted">Next billing: <strong>${nextDate}</strong></div>
+                                </div>
+                                <button class="btn btn-outline-danger btn-sm" onclick="cancelSubscription()">
+                                    <i class="bi bi-x-circle me-1"></i>Cancel Subscription
+                                </button>
+                            </div>`;
+                        break;
+                    case 'CANCELLED':
+                        el.innerHTML = `
+                            <div class="alert alert-warning mb-0 py-2">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Subscription cancelled. Plan active until <strong>${nextDate}</strong>.
+                            </div>`;
+                        break;
+                    case 'APPROVAL_PENDING':
+                        el.innerHTML = `
+                            <div class="alert alert-info mb-0 py-2">
+                                <i class="bi bi-hourglass-split me-1"></i>
+                                Awaiting PayPal approval. Complete the checkout window to activate your plan.
+                            </div>`;
+                        break;
+                    case 'SUSPENDED':
+                        el.innerHTML = `
+                            <div class="alert alert-warning mb-0 py-2">
+                                <i class="bi bi-pause-circle me-1"></i>
+                                Subscription suspended by PayPal. Contact support or update your payment method to resume billing.
+                            </div>`;
+                        break;
+                    case 'PAST_DUE':
+                        el.innerHTML = `
+                            <div class="alert alert-danger mb-0 py-2 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-exclamation-octagon me-1"></i>
+                                    <strong>Payment failed.</strong> Please update your payment method — access will be revoked if not resolved within 5 days.
+                                </div>
+                                <button class="btn btn-sm btn-light" onclick="window.upgradeplan && window.upgradeplan(plan?.plan)">
+                                    <i class="bi bi-credit-card me-1"></i>Update Payment
+                                </button>
+                            </div>`;
+                        break;
+                    case 'EXPIRED':
+                        el.innerHTML = `
+                            <div class="alert alert-secondary mb-0 py-2">
+                                <i class="bi bi-clock-history me-1"></i>
+                                Subscription expired. Choose a plan below to reactivate.
+                            </div>`;
+                        break;
+                    case 'NONE':
+                    default:
+                        // No banner when there's nothing meaningful to show.
+                        el.innerHTML = '';
+                        el.classList.add('d-none');
+                        break;
                 }
             }).catch(() => {});
 
         document.getElementById('billingInfo').innerHTML = `
             ${trialBadge}
             <div id="subscriptionStatusCard" class="glass-card p-3 mb-3"></div>
-            <div class="row g-3 mb-4">
-                ${planCard('Free Trial', '30 days', ['1 Workspace', '2M AI tokens / month', 'Basic charts', 'Community support'], isFreeTrial, 'FreeTrial', 'bg-info')}
-                ${planCard('Professional', '$25<span class="fs-6 fw-normal">/user/mo</span>', ['Up to 10 Workspaces', '5M AI tokens / org / month', 'Top-up token packs', 'All chart types', 'Priority support'], isPro, 'Professional', 'bg-primary')}
-                ${planCard('Enterprise', '$45<span class="fs-6 fw-normal">/user/mo</span>', ['Unlimited Workspaces', '10M AI tokens / org / month', 'Top-up token packs', 'Custom branding', 'SSO / SAML', 'Dedicated support'], isEnterprise, 'Enterprise', 'bg-dark')}
-            </div>
             <div class="glass-card p-4 mb-3">
                 <h5>Token Add-ons</h5>
                 <p class="text-muted small mb-2">Purchase additional AI tokens for your organization.</p>
@@ -578,12 +684,87 @@
                 </button>
             </div>
             <div class="glass-card p-4">
-                <h5>Billing History</h5>
-                <p class="text-muted small">No invoices yet. Invoices will appear here once you have an active paid plan.</p>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0">Billing History</h5>
+                    <button class="btn btn-sm btn-outline-secondary" id="refreshInvoicesBtn" title="Refresh">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+                <p class="text-muted small mb-2">Click an invoice to view a printable copy or save it as PDF.</p>
+                <div id="billingHistoryList">
+                    <div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading invoices...</div>
+                </div>
             </div>`;
         document.getElementById('buyTokenPackBtn')?.addEventListener('click', function() {
             new bootstrap.Modal(document.getElementById('buyTokenModal')).show();
         });
+        document.getElementById('refreshInvoicesBtn')?.addEventListener('click', loadBillingHistory);
+        loadBillingHistory();
+    }
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function loadBillingHistory() {
+        const el = document.getElementById('billingHistoryList');
+        if (!el || !orgId) return;
+        el.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading invoices...</div>';
+        fetch(`/api/billing/invoices?organizationId=${orgId}`)
+            .then(r => r.ok ? r.json() : [])
+            .then(items => {
+                if (!Array.isArray(items) || items.length === 0) {
+                    el.innerHTML = '<p class="text-muted small mb-0">No invoices yet. Invoices will appear here once you complete a purchase.</p>';
+                    return;
+                }
+                const rows = items.map(it => {
+                    const dt = it.paidAt || it.createdAt;
+                    const dtStr = dt ? new Date(dt).toLocaleDateString() : '-';
+                    const amt = `$${Number(it.amount || 0).toFixed(2)} ${it.currency || 'USD'}`;
+                    const statusBadge = it.status === 'succeeded'
+                        ? '<span class="badge bg-success">Paid</span>'
+                        : it.status === 'failed'
+                            ? '<span class="badge bg-danger">Failed</span>'
+                            : it.status === 'refunded'
+                                ? '<span class="badge bg-info">Refunded</span>'
+                                : `<span class="badge bg-secondary">${escapeHtml(it.status || '-')}</span>`;
+                    const typeLabel = ({ license: 'License', token_pack: 'Token Pack', subscription: 'Subscription', plan_upgrade: 'Plan Upgrade' })[it.paymentType] || (it.paymentType || '-');
+                    return `<tr>
+                        <td class="small">${dtStr}</td>
+                        <td class="small"><code>${escapeHtml(it.invoiceNumber || ('#' + it.id))}</code></td>
+                        <td class="small">${escapeHtml(typeLabel)}</td>
+                        <td class="small">${escapeHtml(it.description || '-')}</td>
+                        <td class="small text-end">${amt}</td>
+                        <td>${statusBadge}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="/billing/invoice/${it.id}" target="_blank" rel="noopener" title="View invoice">
+                                <i class="bi bi-file-earmark-text"></i> View
+                            </a>
+                        </td>
+                    </tr>`;
+                }).join('');
+                el.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table cp-table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Invoice #</th>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+            })
+            .catch(() => {
+                el.innerHTML = '<p class="text-danger small mb-0">Failed to load invoices.</p>';
+            });
     }
 
     // ── Pending PayPal payment context ──
@@ -645,9 +826,26 @@
 
                 if (activateResp.ok && activateData.success) {
                     processing.classList.add('d-none');
-                    document.getElementById('paymentSuccessMsg').textContent =
-                        `${_pendingPayment.planKey} subscription activated! You will be billed $${_pendingPayment.amount.toFixed(2)}/month automatically.`;
-                    document.getElementById('paymentSuccess').classList.remove('d-none');
+                    // Close the payment modal and show an animated success dialog
+                    bootstrap.Modal.getInstance(document.getElementById('paymentModal'))?.hide();
+                    const nextDate = activateData.nextBilling
+                        ? new Date(activateData.nextBilling).toLocaleDateString()
+                        : '—';
+                    if (typeof window.cpSuccessModal === 'function') {
+                        cpSuccessModal({
+                            title: 'Subscription activated',
+                            message: `Your ${_pendingPayment.planKey} plan is now active.`,
+                            details: [
+                                ['Plan',          _pendingPayment.planKey],
+                                ['Amount',        `$${_pendingPayment.amount.toFixed(2)} / month`],
+                                ['Auto-renews',   'Yes'],
+                                ['Next billing',  nextDate]
+                            ],
+                            primaryText: 'Great'
+                        });
+                    } else if (typeof window.cpToast === 'function') {
+                        cpToast({ title: 'Subscription activated', message: `${_pendingPayment.planKey} plan is active.`, variant: 'success' });
+                    }
                     loadBilling();
                     loadLicenseInfo();
                     loadTokenUsage();
@@ -692,8 +890,33 @@
 
                 if (captureResp.ok && captureData.success) {
                     processing.classList.add('d-none');
-                    document.getElementById('paymentSuccessMsg').textContent = captureData.message || 'Purchase applied successfully!';
-                    document.getElementById('paymentSuccess').classList.remove('d-none');
+                    bootstrap.Modal.getInstance(document.getElementById('paymentModal'))?.hide();
+                    // Build a nice details table depending on purchase type
+                    const details = [];
+                    if (_pendingPayment.type === 'license') {
+                        details.push(['Quantity',  `${_pendingPayment.quantity} license(s)`]);
+                        if (_pendingPayment.planKey) details.push(['Tier', _pendingPayment.planKey]);
+                    } else if (_pendingPayment.type === 'token_pack') {
+                        details.push(['Tokens added', Number(_pendingPayment.tokenAmount || 0).toLocaleString()]);
+                    } else if (_pendingPayment.planKey) {
+                        details.push(['Plan', _pendingPayment.planKey]);
+                    }
+                    details.push(['Amount charged', `$${Number(_pendingPayment.amount || 0).toFixed(2)}`]);
+                    const titleMap = {
+                        'license':      'Licenses added',
+                        'token_pack':   'Tokens added',
+                        'plan_upgrade': 'Plan upgraded'
+                    };
+                    if (typeof window.cpSuccessModal === 'function') {
+                        cpSuccessModal({
+                            title: titleMap[_pendingPayment.type] || 'Payment successful',
+                            message: captureData.message || 'Your purchase has been applied to your organization.',
+                            details,
+                            primaryText: 'Done'
+                        });
+                    } else if (typeof window.cpToast === 'function') {
+                        cpToast({ title: titleMap[_pendingPayment.type] || 'Payment successful', message: captureData.message || 'Purchase applied.', variant: 'success' });
+                    }
                     loadBilling();
                     loadLicenseInfo();
                     loadTokenUsage();
@@ -745,7 +968,17 @@
 
     window.cancelSubscription = async function() {
         if (!orgId) return;
-        if (!confirm('Are you sure you want to cancel your monthly subscription? Your plan will remain active until the end of the current billing period.')) return;
+        const ok = typeof window.cpConfirm === 'function'
+            ? await cpConfirm({
+                title: 'Cancel Subscription',
+                message: 'Cancel your monthly subscription? Your plan will remain active until the end of the current billing period.',
+                icon: 'bi-x-circle',
+                variant: 'danger',
+                confirmText: 'Cancel Subscription',
+                cancelText: 'Keep Subscription'
+              })
+            : confirm('Are you sure you want to cancel your monthly subscription? Your plan will remain active until the end of the current billing period.');
+        if (!ok) return;
         try {
             const resp = await fetch('/api/paypal/cancel-subscription', {
                 method: 'POST',
@@ -754,13 +987,16 @@
             });
             const data = await resp.json();
             if (resp.ok && data.success) {
-                alert(data.message);
+                if (typeof window.cpToast === 'function') cpToast({ title: 'Subscription cancelled', message: data.message, variant: 'success' });
+                else alert(data.message);
                 loadBilling();
             } else {
-                alert(data.error || 'Failed to cancel subscription.');
+                if (typeof window.cpToast === 'function') cpToast({ title: 'Cancel failed', message: data.error || 'Failed to cancel subscription.', variant: 'danger' });
+                else alert(data.error || 'Failed to cancel subscription.');
             }
         } catch (err) {
-            alert('Error cancelling subscription: ' + err.message);
+            if (typeof window.cpToast === 'function') cpToast({ title: 'Cancel failed', message: err.message, variant: 'danger' });
+            else alert('Error cancelling subscription: ' + err.message);
         }
     };
 
@@ -940,13 +1176,38 @@
     window.assignLicense = function(uid) {
         const selected = document.getElementById('license_' + uid)?.value || 'FreeTrial';
         const plan = selected === 'FreeTrial' ? 'FreeTrial' : selected;
+        // Capture user email from the row for a nicer confirmation dialog.
+        const row = document.querySelector(`tr[data-user-id="${uid}"]`);
+        const userEmail = row?.querySelector('[data-user-email]')?.dataset?.userEmail
+            || row?.children?.[1]?.textContent?.trim() || uid;
         fetch('/api/billing/assign-license', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ organizationId: orgId, userId: uid, plan })
         }).then(r => r.json()).then(d => {
-            if (d.error) { alert(d.error); return; }
-            alert('License assigned successfully.');
+            if (d.error) {
+                if (typeof window.cpToast === 'function') {
+                    cpToast({ title: 'Could not assign license', message: d.error, variant: 'error', duration: 6000 });
+                } else { alert(d.error); }
+                return;
+            }
+            const details = [
+                ['User', userEmail],
+                ['Plan', plan]
+            ];
+            if (typeof window.cpSuccessModal === 'function') {
+                cpSuccessModal({
+                    title: 'License assigned',
+                    message: 'The selected plan has been granted to this user.',
+                    details,
+                    primaryText: 'Done',
+                    variant: 'success'
+                });
+            } else if (typeof window.cpToast === 'function') {
+                cpToast({ title: 'License assigned', message: `${plan} granted to ${userEmail}.`, variant: 'success' });
+            } else {
+                alert('License assigned successfully.');
+            }
             loadUsers();
             loadLicenseInfo();
 
@@ -1055,22 +1316,34 @@
         fetch(`/api/billing/license-info?organizationId=${orgId}`)
             .then(r => r.json())
             .then(data => {
-                document.getElementById('licensePurchased').textContent = data.purchased || 0;
-                document.getElementById('licenseAssigned').textContent = data.assigned || 0;
-                document.getElementById('licenseAvailable').textContent = data.available || 0;
-                document.getElementById('licensePlanType').textContent = data.plan || '—';
-                _licenseAvailability = {
-                    pro: Number(data.proAvailable ?? data.availablePro ?? data.professionalAvailable ?? data.available ?? 0),
-                    enterprise: Number(data.enterpriseAvailable ?? data.availableEnterprise ?? data.available ?? 0)
-                };
+                const proPurchased = Number(data.proPurchased ?? 0);
+                const proAssigned = Number(data.proAssigned ?? 0);
+                const proAvailable = Number(data.proAvailable ?? Math.max(0, proPurchased - proAssigned));
+                const entPurchased = Number(data.enterprisePurchased ?? 0);
+                const entAssigned = Number(data.enterpriseAssigned ?? 0);
+                const entAvailable = Number(data.enterpriseAvailable ?? Math.max(0, entPurchased - entAssigned));
+                const totalAvailable = proAvailable + entAvailable;
+                const totalPurchased = Number(data.purchased ?? (proPurchased + entPurchased));
+
+                const proEl = document.getElementById('licenseProStats');
+                const entEl = document.getElementById('licenseEntStats');
+                const availEl = document.getElementById('licenseAvailable');
+                const planEl = document.getElementById('licensePlanType');
+                if (proEl) proEl.textContent = `${proAssigned} / ${proPurchased}`;
+                if (entEl) entEl.textContent = `${entAssigned} / ${entPurchased}`;
+                if (availEl) availEl.textContent = totalAvailable;
+                if (planEl) planEl.textContent = data.plan || '—';
+
+                _licenseAvailability = { pro: proAvailable, enterprise: entAvailable };
+
                 const hint = document.getElementById('licenseHint');
                 if (hint) {
-                    if (data.available <= 0 && data.purchased > 0) {
-                        hint.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>No licenses available. Buy more to assign paid plans to users.';
-                    } else if (data.purchased === 0) {
+                    if (totalPurchased === 0) {
                         hint.innerHTML = '<i class="bi bi-info-circle me-1"></i>No licenses purchased yet. Buy licenses to assign paid plans to users.';
+                    } else if (totalAvailable <= 0) {
+                        hint.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>No licenses available. Buy more to assign paid plans to users.';
                     } else {
-                        hint.textContent = `${data.available} license(s) available for assignment.`;
+                        hint.textContent = `${proAvailable} Professional and ${entAvailable} Enterprise license(s) available for assignment.`;
                     }
                 }
             }).catch(() => {});
@@ -1097,7 +1370,7 @@
         const price = type === 'Enterprise' ? 45.00 : 25.00;
         const total = count * price;
         bootstrap.Modal.getInstance(document.getElementById('buyLicensesModal'))?.hide();
-        openPayPalPayment('license', total, `${count} ${type} License(s)`, { quantity: count });
+        openPayPalPayment('license', total, `${count} ${type} License(s)`, { quantity: count, planKey: type });
     });
 
     // Buy Token Pack Modal
@@ -1133,23 +1406,44 @@
     }
 
     // ---- Left sidebar tab switching ----
-    function switchSettingsTab(tab) {
+    const SETTINGS_TAB_STORAGE_KEY = 'cp_orgSettings_activeTab';
+
+    function switchSettingsTab(tab, opts) {
         // Billing tab was merged into the Users & Licensing tab.
         if (tab === 'billing') tab = 'users';
+        // Fall back to the first nav item if an unknown tab is supplied.
+        const known = Array.from(document.querySelectorAll('.org-settings-nav-item[data-tab]')).map(b => b.dataset.tab);
+        if (!known.includes(tab)) tab = known[0] || 'org';
+
         document.querySelectorAll('.org-settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         document.querySelectorAll('.org-settings-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
         if (tab === 'activity') loadActivity();
         else if (tab === 'users') { loadUsers(); loadTokenUsage(); loadLicenseInfo(); loadBilling(); }
         else if (tab === 'ws-members' && window.orgAdminWM) orgAdminWM.init(orgId);
+
+        // Persist the active tab so it survives a page refresh.
+        if (!opts || opts.persist !== false) {
+            try { localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab); } catch { }
+            try {
+                const url = new URL(window.location.href);
+                if (url.searchParams.get('tab') !== tab) {
+                    url.searchParams.set('tab', tab);
+                    window.history.replaceState({}, '', url.toString());
+                }
+            } catch { }
+        }
     }
     document.querySelectorAll('.org-settings-nav-item').forEach(btn => {
         btn.addEventListener('click', () => switchSettingsTab(btn.dataset.tab));
     });
 
-    // Auto-open tab from URL query param
+    // Auto-open tab from URL query param, or fall back to the last active tab.
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
+    let savedTab = null;
+    try { savedTab = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY); } catch { }
     if (tabParam) switchSettingsTab(tabParam);
+    else if (savedTab) switchSettingsTab(savedTab);
 
     // Populate org name + email from stored user data, then refresh from /api/auth/me
     const orgNameInput = document.getElementById('orgNameInput');
@@ -1225,13 +1519,117 @@
             .catch(() => renderVerifyStatus(false));
     }
 
+    // ---- Embedded Reports Tab ----
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, function(c) {
+            return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+        });
+    }
+
+    async function loadEmbeddedReports() {
+        const host = document.getElementById('embeddedReportsList');
+        if (!host || !orgId) return;
+        host.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div>';
+        try {
+            const res = await fetch(`/api/org/${orgId}/embedded-reports`, { credentials: 'same-origin' });
+            if (!res.ok) {
+                host.innerHTML = '<div class="alert alert-danger small mb-0">Failed to load embedded reports.</div>';
+                return;
+            }
+            const items = await res.json();
+            if (!Array.isArray(items) || items.length === 0) {
+                host.innerHTML = '<div class="text-muted small py-3 text-center"><i class="bi bi-info-circle me-1"></i>No reports are currently published or embedded.</div>';
+                return;
+            }
+            const origin = window.location.origin;
+            const rows = items.map(function(r) {
+                const fullPublic = origin + r.publicUrl;
+                const fullEmbed = origin + r.embedUrl;
+                const dt = r.publishedAt ? new Date(r.publishedAt).toLocaleString() : '';
+                return (
+                    '<tr>' +
+                        '<td><div style="font-weight:500;">' + escapeHtml(r.name) + '</div>' +
+                            '<div class="small text-muted"><i class="bi bi-folder me-1"></i>' + escapeHtml(r.workspaceName) + '</div></td>' +
+                        '<td class="small"><a href="' + fullPublic + '" target="_blank" rel="noopener" style="word-break:break-all;">' + escapeHtml(fullPublic) + '</a></td>' +
+                        '<td class="small text-muted">' + escapeHtml(dt) + '</td>' +
+                        '<td class="text-end" style="white-space:nowrap;">' +
+                            '<button class="btn btn-sm btn-outline-secondary me-1" data-copy-embed="' + encodeURIComponent(fullEmbed) + '" title="Copy embed code">' +
+                                '<i class="bi bi-clipboard"></i></button>' +
+                            '<button class="btn btn-sm btn-outline-danger" data-revoke="' + encodeURIComponent(r.guid) + '" data-name="' + encodeURIComponent(r.name) + '" title="Revoke public/embed URL">' +
+                                '<i class="bi bi-slash-circle me-1"></i>Revoke</button>' +
+                        '</td>' +
+                    '</tr>'
+                );
+            }).join('');
+            host.innerHTML =
+                '<div class="table-responsive"><table class="table table-sm align-middle mb-0">' +
+                    '<thead><tr><th>Report</th><th>Public URL</th><th>Published</th><th class="text-end">Actions</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                '</table></div>';
+
+            host.querySelectorAll('[data-copy-embed]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const embedUrl = decodeURIComponent(btn.getAttribute('data-copy-embed'));
+                    const snippet = '<iframe src="' + embedUrl + '" width="100%" height="900" frameborder="0" style="border:0;border-radius:12px;"></iframe>';
+                    navigator.clipboard?.writeText(snippet);
+                    if (window.cpToast) cpToast('Embed snippet copied to clipboard.', 'success');
+                });
+            });
+            host.querySelectorAll('[data-revoke]').forEach(function(btn) {
+                btn.addEventListener('click', async function() {
+                    const guid = decodeURIComponent(btn.getAttribute('data-revoke'));
+                    const name = decodeURIComponent(btn.getAttribute('data-name'));
+                    const ok = (typeof cpConfirm === 'function')
+                        ? await cpConfirm({ title: 'Revoke embed URL?', message: 'This will unpublish "' + name + '" and break any external iframes embedding it.', confirmText: 'Revoke', danger: true })
+                        : confirm('Revoke embed URL for "' + name + '"? External iframes will stop working.');
+                    if (!ok) return;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Revoking...';
+                    try {
+                        const r = await fetch('/api/org/reports/' + encodeURIComponent(guid) + '/revoke-embed', {
+                            method: 'POST', credentials: 'same-origin'
+                        });
+                        if (!r.ok) {
+                            const err = await r.json().catch(function(){ return {}; });
+                            if (window.cpToast) cpToast(err.error || 'Failed to revoke embed.', 'error');
+                            else alert(err.error || 'Failed to revoke embed.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-slash-circle me-1"></i>Revoke';
+                            return;
+                        }
+                        if (window.cpToast) cpToast('Embed URL revoked.', 'success');
+                        loadEmbeddedReports();
+                    } catch (e) {
+                        if (window.cpToast) cpToast('Network error while revoking.', 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-slash-circle me-1"></i>Revoke';
+                    }
+                });
+            });
+        } catch (e) {
+            host.innerHTML = '<div class="alert alert-danger small mb-0">Failed to load embedded reports.</div>';
+        }
+    }
+
+    document.getElementById('reloadEmbedsBtn')?.addEventListener('click', loadEmbeddedReports);
+
     // Initial loads
     loadUsers();
     loadTokenUsage();
     loadLicenseInfo();
     loadBilling();
     loadVerifyStatus();
+    loadEmbeddedReports();
+
+    // Prefill Contact Support form with current user info
+    try {
+        const nameEl = document.getElementById('supportName');
+        const emailEl = document.getElementById('supportEmail');
+        if (nameEl && !nameEl.value) nameEl.value = user?.fullName || user?.userName || '';
+        if (emailEl && !emailEl.value) emailEl.value = user?.email || '';
+    } catch (e) { /* non-fatal */ }
 })();
 </script>
 <script src="~/js/orgAdminWorkspaceMembers.js"></script>
+<script src="~/js/cp-support-form.js"></script>
 }

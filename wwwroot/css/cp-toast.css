@@ -1,0 +1,254 @@
+/* ==========================================================================
+   cp-toast.css — reusable success / info / error toast + success modal
+   Used by Billing, Licenses, Token packs, Support tickets, etc.
+   ========================================================================== */
+
+.cp-toast-stack {
+    position: fixed;
+    top: 80px;
+    right: 24px;
+    z-index: 1080;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+    max-width: 380px;
+}
+
+.cp-toast {
+    pointer-events: auto;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(33, 37, 41, 0.14), 0 2px 6px rgba(33, 37, 41, 0.08);
+    padding: 14px 18px 14px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 300px;
+    border-left: 4px solid #2e7d32;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform .35s cubic-bezier(.2,.9,.2,1), opacity .25s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.cp-toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.cp-toast.hiding {
+    transform: translateX(120%);
+    opacity: 0;
+}
+
+.cp-toast-icon {
+    flex: 0 0 36px;
+    height: 36px;
+    width: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.cp-toast-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.cp-toast-title {
+    font-weight: 600;
+    color: #1b5e20;
+    font-size: .95rem;
+    line-height: 1.25;
+    margin: 0 0 2px;
+}
+
+.cp-toast-msg {
+    color: #555;
+    font-size: .85rem;
+    line-height: 1.35;
+    margin: 0;
+    word-wrap: break-word;
+}
+
+.cp-toast-close {
+    background: transparent;
+    border: 0;
+    color: #888;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    line-height: 1;
+    align-self: flex-start;
+    transition: background .15s ease;
+}
+.cp-toast-close:hover { background: rgba(0,0,0,.06); color: #333; }
+
+.cp-toast-progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #43a047, #2e7d32);
+    width: 100%;
+    transform-origin: left;
+    animation: cp-toast-progress var(--cp-toast-duration, 4000ms) linear forwards;
+}
+
+@keyframes cp-toast-progress {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+}
+
+/* Variants ---------------------------------------------------------------- */
+
+.cp-toast.cp-toast-info {
+    border-left-color: #1976d2;
+}
+.cp-toast.cp-toast-info .cp-toast-icon {
+    background: linear-gradient(135deg, #42a5f5, #1976d2);
+}
+.cp-toast.cp-toast-info .cp-toast-title { color: #0d47a1; }
+.cp-toast.cp-toast-info .cp-toast-progress {
+    background: linear-gradient(90deg, #42a5f5, #1976d2);
+}
+
+.cp-toast.cp-toast-warn {
+    border-left-color: #f9a825;
+}
+.cp-toast.cp-toast-warn .cp-toast-icon {
+    background: linear-gradient(135deg, #ffca28, #f9a825);
+}
+.cp-toast.cp-toast-warn .cp-toast-title { color: #8a6200; }
+.cp-toast.cp-toast-warn .cp-toast-progress {
+    background: linear-gradient(90deg, #ffca28, #f9a825);
+}
+
+.cp-toast.cp-toast-error {
+    border-left-color: #c62828;
+}
+.cp-toast.cp-toast-error .cp-toast-icon {
+    background: linear-gradient(135deg, #ef5350, #c62828);
+}
+.cp-toast.cp-toast-error .cp-toast-title { color: #b71c1c; }
+.cp-toast.cp-toast-error .cp-toast-progress {
+    background: linear-gradient(90deg, #ef5350, #c62828);
+}
+
+/* ==========================================================================
+   cp-success-modal — animated success confirmation dialog
+   ========================================================================== */
+
+.cp-success-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(3px);
+    z-index: 1070;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity .2s ease;
+    padding: 20px;
+}
+.cp-success-backdrop.show { opacity: 1; }
+
+.cp-success-card {
+    background: #fff;
+    border-radius: 18px;
+    padding: 32px 28px 24px;
+    text-align: center;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+    transform: translateY(20px) scale(.96);
+    opacity: 0;
+    transition: transform .35s cubic-bezier(.2,.9,.2,1), opacity .25s ease;
+}
+.cp-success-backdrop.show .cp-success-card {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.cp-success-check {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    color: #fff;
+    font-size: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    box-shadow: 0 8px 24px rgba(46, 125, 50, 0.35);
+    animation: cp-pop .45s cubic-bezier(.2,.9,.2,1);
+}
+
+.cp-success-check.cp-variant-info {
+    background: linear-gradient(135deg, #42a5f5, #1976d2);
+    box-shadow: 0 8px 24px rgba(25, 118, 210, 0.35);
+}
+
+@keyframes cp-pop {
+    0%   { transform: scale(.4); opacity: 0; }
+    70%  { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+.cp-success-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #1b5e20;
+    margin: 0 0 8px;
+}
+.cp-success-card.cp-variant-info .cp-success-title { color: #0d47a1; }
+
+.cp-success-msg {
+    color: #555;
+    font-size: .95rem;
+    line-height: 1.45;
+    margin: 0 0 20px;
+}
+
+.cp-success-details {
+    background: #f5f7fa;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0 0 18px;
+    text-align: left;
+    font-size: .85rem;
+    color: #444;
+}
+.cp-success-details .row-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+}
+.cp-success-details .row-line strong { color: #222; }
+
+.cp-success-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.cp-success-actions .btn {
+    min-width: 120px;
+}
+
+/* Responsive ------------------------------------------------------------- */
+@media (max-width: 480px) {
+    .cp-toast-stack { top: 72px; right: 12px; left: 12px; max-width: none; }
+    .cp-toast { min-width: 0; }
+}

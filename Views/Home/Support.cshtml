@@ -1,0 +1,69 @@
+@{
+    ViewData["Title"] = "Contact Support";
+    Layout = "_Layout";
+}
+
+<section class="cp-policy-page">
+    <div class="container" style="max-width:760px;">
+        <h1><i class="bi bi-life-preserver text-primary me-2"></i>Contact Support</h1>
+        <p class="lead">Open a ticket and our team will respond within your plan's SLA. You'll receive a ticket number by email to track your request.</p>
+
+        <div class="cp-policy-card">
+            <div id="supportAlert" class="alert d-none"></div>
+            <form id="supportForm">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Your Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="supportName" required maxlength="120" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email Address <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="supportEmail" required maxlength="160" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="supportCategory">
+                            <option value="Question">General question</option>
+                            <option value="BillingIssue">Billing / invoices</option>
+                            <option value="Bug">Bug report</option>
+                            <option value="FeatureRequest">Feature request</option>
+                            <option value="Outage">Outage / incident</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Priority</label>
+                        <select class="form-select" id="supportPriority">
+                            <option value="Low">Low</option>
+                            <option value="Normal" selected>Normal</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical (production down)</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Subject <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="supportSubject" required maxlength="200" placeholder="Briefly describe your issue" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Message <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="supportMessage" required rows="6" maxlength="4000" placeholder="Include steps to reproduce, error messages, screenshots (URLs), and anything else that might help us resolve this quickly."></textarea>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <small class="text-muted"><i class="bi bi-shield-lock me-1"></i>Your request is sent securely to <strong>support@AIInsights365.net</strong>.</small>
+                    <button type="submit" class="btn cp-btn-gradient">
+                        <i class="bi bi-send me-1"></i>Submit Ticket
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="text-center text-muted small mt-3">
+            Read our <a href="/home/sla">Service Level Agreement</a> for response time commitments.
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+<script src="~/js/cp-support-form.js"></script>
+}

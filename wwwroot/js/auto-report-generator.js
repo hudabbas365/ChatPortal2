@@ -184,6 +184,20 @@
         }
     }
 
+    // ── Plan gate: AI auto-report is Free Trial + Enterprise only. ───
+    function _isAutoReportAllowed() {
+        var f = global.cpPlanFeatures;
+        return !f || f.canUseAiReportGeneration !== false;
+    }
+    function _notifyAutoReportGated() {
+        var msg = 'AI Auto-Report generation is available on Free Trial and Enterprise plans. Upgrade to Enterprise to unlock this feature.';
+        if (typeof global.cpToast === 'function') {
+            global.cpToast({ title: 'Upgrade required', message: msg, variant: 'warn', duration: 6000 });
+        } else {
+            alert(msg);
+        }
+    }
+
     // ── Inject button into chat panel ────────────────────────────────
     function _injectButton() {
         var messagesEl = document.getElementById('dcpMessages');
@@ -194,6 +208,9 @@
         // Add button before the chips
         var existing = welcome.querySelector('.dcp-auto-report-btn');
         if (existing) return;
+
+        // Hide the button entirely for plans that don't include this feature.
+        if (!_isAutoReportAllowed()) return;
 
         var btn = document.createElement('button');
         btn.className = 'dcp-auto-report-btn';
@@ -217,8 +234,11 @@
     function _wireToolbarButton() {
         var btn = document.getElementById('auto-report-toolbar-btn');
         if (!btn) return;
+        // Hide the toolbar button when the plan doesn't allow auto-report.
+        if (!_isAutoReportAllowed()) { btn.style.display = 'none'; return; }
         btn.addEventListener('click', function (e) {
             e.preventDefault();
+            if (!_isAutoReportAllowed()) { _notifyAutoReportGated(); return; }
             var hasCharts = global.canvasManager && global.canvasManager.charts && global.canvasManager.charts.length > 0;
             if (hasCharts) {
                 _showModePickerModal();

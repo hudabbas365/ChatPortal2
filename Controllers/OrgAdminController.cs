@@ -494,6 +494,71 @@ public class OrgAdminController : Controller
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    // ── Embedded / Published Reports governance ──────────────────────────────
+    // OrgAdmin can list every Published report inside their org's workspaces
+    // and revoke its public/embed URL by flipping Status back to "Draft" and
+    // clearing the ShareToken. Anonymous access is gated on Status=="Published"
+    // in ReportController.ViewReport, so this immediately kills both the public
+    // link and any external <iframe> embeds.
+    [HttpGet("/api/org/{organizationId:int}/embedded-reports")]
+    public async Task<IActionResult> GetEmbeddedReports(int organizationId)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null || !IsOrgAdminOf(caller, organizationId))
+            return StatusCode(403, new { error = "You do not have permission to view this organization's reports." });
+
+        var reports = await _db.Reports
+            .Include(r => r.Workspace)
+            .Where(r => r.Status == "Published"
+                        && r.Workspace != null
+                        && r.Workspace.OrganizationId == organizationId)
+            .OrderByDescending(r => r.UpdatedAt ?? r.CreatedAt)
+            .Select(r => new
+            {
+                r.Guid,
+                r.Name,
+                workspaceName = r.Workspace!.Name,
+                r.CreatedBy,
+                publishedAt = r.UpdatedAt ?? r.CreatedAt,
+                publicUrl = $"/report/view/{r.Guid}",
+                embedUrl = $"/report/view/{r.Guid}?embed=1"
+            })
+            .ToListAsync();
+
+        return Ok(reports);
+    }
+
+    [HttpPost("/api/org/reports/{guid}/revoke-embed")]
+    public async Task<IActionResult> RevokeReportEmbed(string guid)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+
+        var report = await _db.Reports
+            .Include(r => r.Workspace)
+            .FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound(new { error = "Report not found." });
+
+        var orgId = report.Workspace?.OrganizationId ?? 0;
+        if (orgId == 0 || !IsOrgAdminOf(caller, orgId))
+            return StatusCode(403, new { error = "You do not have permission to revoke this report's embed URL." });
+
+        report.Status = "Draft";
+        report.ShareToken = null;
+        report.UpdatedAt = DateTime.UtcNow;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "report_embed_revoked",
+            Description = $"Embed/public URL revoked for report '{report.Name}' (guid={report.Guid}).",
+            UserId = caller.Id,
+            OrganizationId = orgId
+        });
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
 }
 
 public class OrgNotificationDto

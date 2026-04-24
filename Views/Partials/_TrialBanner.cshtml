@@ -6,15 +6,21 @@
         var planStr = String(raw == null ? '' : raw).toLowerCase();
         var planNum = (typeof raw === 'number') ? raw : Number(raw);
         if (isNaN(planNum)) planNum = -1;
-        var isPro        = planStr === 'pro' || planStr === 'professional' || planNum === 1;
-        var isEnterprise = planStr === 'enterprise' || planNum === 2;
-        var isFreeTrial  = planStr === 'freetrial' || planStr === 'free' || planStr === 'trial' || planNum === 0;
+        // Server enum ordering: Free=0, FreeTrial=1, Professional=2, Enterprise=3.
+        // The API now returns the plan name as a string; the numeric branch
+        // below is kept only as a defensive fallback for older responses.
+        var isPro        = planStr === 'pro' || planStr === 'professional' || planNum === 2;
+        var isEnterprise = planStr === 'enterprise' || planNum === 3;
+        var isFreeTrial  = planStr === 'freetrial' || planStr === 'trial' || planNum === 1;
+        var isFree       = planStr === 'free' || planNum === 0;
         var isPaid = isPro || isEnterprise ||
-            (!isFreeTrial && planNum > 0) ||
+            (!isFreeTrial && !isFree && planNum > 1) ||
             (plan.hasUsedTrial === true && plan.isTrialActive === false && plan.isTrialExpired === false);
         var label = isEnterprise ? 'Enterprise'
                   : isPro ? 'Pro'
-                  : isPaid ? (planNum >= 2 ? 'Enterprise' : 'Pro')
+                  : isFreeTrial ? 'Free Trial'
+                  : isFree ? 'Free'
+                  : isPaid ? (planNum >= 3 ? 'Enterprise' : 'Pro')
                   : 'Free Trial';
         return { isPaid: isPaid, isEnterprise: isEnterprise, isPro: isPro, planStr: planStr, planNum: planNum, label: label };
     }

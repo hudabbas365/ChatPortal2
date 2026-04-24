@@ -45,6 +45,34 @@ public class AutoReportController : ControllerBase
 
         try
         {
+            // Enforce plan feature gate: only FreeTrial + Enterprise can run the
+            // AI auto-report generator. Professional is chat+dashboard only.
+            // The check is keyed on the user's ASSIGNED license (SubscriptionPlan)
+            // rather than org.Plan so that per-user license assignments are
+            // honoured in mixed-license organisations.
+            if (!string.IsNullOrEmpty(req.UserId))
+            {
+                var userSub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == req.UserId);
+                PlanType effectivePlan;
+                if (userSub != null)
+                {
+                    effectivePlan = userSub.Plan;
+                }
+                else
+                {
+                    var user = await _db.Users.FindAsync(req.UserId);
+                    var org = user?.OrganizationId != null ? await _db.Organizations.FindAsync(user.OrganizationId) : null;
+                    effectivePlan = org?.Plan ?? PlanType.Free;
+                }
+                if (!PlanFeatures.AllowsAutoReport(effectivePlan))
+                {
+                    await Response.WriteAsync("data: {\"error\":\"AI Auto-Report generation is not available on your current plan. Upgrade to Enterprise to unlock this feature.\",\"code\":\"plan_gated\"}\n\n");
+                    await Response.WriteAsync("data: [DONE]\n\n");
+                    await Response.Body.FlushAsync();
+                    return;
+                }
+            }
+
             // Resolve datasource
             Datasource? ds = null;
             if (!string.IsNullOrEmpty(req.DatasourceId))

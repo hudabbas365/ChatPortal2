@@ -143,4 +143,40 @@ public class SmtpEmailService : IEmailService
 <br/><p>Regards,<br/><strong>AI Insights 365 Team</strong></p></div>";
         return await SendHtmlEmailAsync(toEmail, $"Invoice — AI Insights 365 ({amount:C2})", body);
     }
+
+    public async Task<bool> SendSupportTicketToSupportAsync(string ticketNumber, string requesterName, string requesterEmail, string category, string priority, string subject, string message, string? orgName)
+    {
+        var supportInbox = _config["Support:Email"] ?? "support@AIInsights365.net";
+        var safeMsg = System.Net.WebUtility.HtmlEncode(message ?? string.Empty).Replace("\n", "<br/>");
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:680px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>New Support Ticket — {ticketNumber}</h2>
+<table style='width:100%;border-collapse:collapse;margin:16px 0;'>
+  <tr><td style='padding:8px;font-weight:600;width:160px;'>Ticket #</td><td style='padding:8px;'>{ticketNumber}</td></tr>
+  <tr><td style='padding:8px;font-weight:600;'>From</td><td style='padding:8px;'>{System.Net.WebUtility.HtmlEncode(requesterName)} &lt;{System.Net.WebUtility.HtmlEncode(requesterEmail)}&gt;</td></tr>
+  <tr><td style='padding:8px;font-weight:600;'>Organization</td><td style='padding:8px;'>{System.Net.WebUtility.HtmlEncode(orgName ?? "(public submission)")}</td></tr>
+  <tr><td style='padding:8px;font-weight:600;'>Category</td><td style='padding:8px;'>{System.Net.WebUtility.HtmlEncode(category)}</td></tr>
+  <tr><td style='padding:8px;font-weight:600;'>Priority</td><td style='padding:8px;'>{System.Net.WebUtility.HtmlEncode(priority)}</td></tr>
+  <tr><td style='padding:8px;font-weight:600;'>Subject</td><td style='padding:8px;'>{System.Net.WebUtility.HtmlEncode(subject)}</td></tr>
+</table>
+<div style='background:#f8fafc;border-left:4px solid #1e3a5f;padding:14px;border-radius:6px;'>{safeMsg}</div>
+<p style='color:#666;font-size:12px;margin-top:18px;'>Reply directly to <a href='mailto:{requesterEmail}'>{requesterEmail}</a> to respond to the customer.</p>
+</div>";
+        return await SendHtmlEmailAsync(supportInbox, $"[{priority}] {ticketNumber} — {subject}", body);
+    }
+
+    public async Task<bool> SendSupportTicketAcknowledgmentAsync(string userEmail, string userName, string ticketNumber, string subject)
+    {
+        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+<h2 style='color:#1e3a5f;'>We've received your request</h2>
+<p>Hello {System.Net.WebUtility.HtmlEncode(userName)},</p>
+<p>Thank you for contacting AI Insights 365 support. Your ticket has been logged and our team will respond within your plan's SLA.</p>
+<table style='width:100%;border-collapse:collapse;margin:20px 0;'>
+  <tr style='border-bottom:1px solid #e2e8f0;'><td style='padding:10px;font-weight:600;width:160px;'>Ticket Number</td><td style='padding:10px;font-family:monospace;color:#1e3a5f;font-size:15px;'>{ticketNumber}</td></tr>
+  <tr><td style='padding:10px;font-weight:600;'>Subject</td><td style='padding:10px;'>{System.Net.WebUtility.HtmlEncode(subject)}</td></tr>
+</table>
+<p>Please keep this ticket number for your records — you can reference it in any follow-up email.</p>
+<p style='color:#666;font-size:13px;'>SLA targets: <a href='https://aiinsights365.net/sla'>aiinsights365.net/sla</a></p>
+<br/><p>Regards,<br/><strong>AI Insights 365 Support</strong></p></div>";
+        return await SendHtmlEmailAsync(userEmail, $"[Ticket {ticketNumber}] We received your request", body);
+    }
 }

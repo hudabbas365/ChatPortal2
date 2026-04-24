@@ -4,6 +4,7 @@ using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AIInsights.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260424204124_AddPerTypeLicenses")]
+    partial class AddPerTypeLicenses
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -520,12 +523,6 @@ namespace AIInsights.Migrations
                     b.Property<int>("EnterpriseExtraTokenPacks")
                         .HasColumnType("int");
 
-                    b.Property<int>("FailedPaymentCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("GraceUntil")
-                        .HasColumnType("datetime2");
-
                     b.Property<bool>("IsBlocked")
                         .HasColumnType("bit");
 
@@ -583,36 +580,6 @@ namespace AIInsights.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("BillingAddressLine1")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingAddressLine2")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingCity")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingCompany")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingCountry")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingEmail")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingPostalCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BillingState")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("CaptureId")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -626,28 +593,13 @@ namespace AIInsights.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("InvoiceNumber")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("LineItemsJson")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("OrganizationId")
                         .HasColumnType("int");
-
-                    b.Property<DateTime?>("PaidAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("PayPalOrderId")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PayPalSubscriptionId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PayerEmail")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PayerName")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PaymentMethod")
@@ -658,36 +610,12 @@ namespace AIInsights.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("PdfPath")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("PlanKey")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("Quantity")
-                        .HasColumnType("int");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("Subtotal")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("TaxAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("TaxRatePercent")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("TaxRegion")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<long?>("TokensAdded")
-                        .HasColumnType("bigint");
-
-                    b.Property<decimal?>("UnitPrice")
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("UserId")
                         .HasColumnType("nvarchar(max)");
@@ -973,77 +901,6 @@ namespace AIInsights.Migrations
                         .IsUnique();
 
                     b.ToTable("SubscriptionPlans");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.SupportTicket", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AssignedToUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("RequesterEmail")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("RequesterName")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Response")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("Subject")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<string>("TicketNumber")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SupportTickets");
                 });
 
             modelBuilder.Entity("AIInsights.Models.TokenUsage", b =>

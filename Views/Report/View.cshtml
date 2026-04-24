@@ -13,6 +13,7 @@
     var savedAt = ViewBag.UpdatedAt as DateTime?;
     var workspaceRole = ViewBag.WorkspaceRole as string;
     var isViewOnly = workspaceRole == "Viewer";
+    var embedMode = ViewBag.EmbedMode is bool em && em;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -30,7 +31,20 @@
     <link rel="stylesheet" href="~/css/report-qa-enhanced.css" />
     <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
 </head>
-<body class="rv-body">
+<body class="rv-body @(embedMode ? "rv-embed" : "")">
+    @if (embedMode)
+    {
+        <style>
+            /* Embed mode: strip all chrome for clean iframe embedding */
+            .rv-navbar, .rv-footer, .rv-page-nav, .rv-qa-fab, .rv-qa-panel,
+            .rv-share-overlay, .rv-export-overlay { display: none !important; }
+            .rv-layout { padding-top: 0 !important; padding-left: 0 !important; }
+            .rv-canvas-wrap { padding: 16px !important; }
+            html, body { background: #fff !important; }
+        </style>
+    }
+    @if (!embedMode)
+    {
     <nav class="rv-navbar">
         <a href="/" class="rv-brand">
             <i class="bi bi-bar-chart-fill text-primary"></i>
@@ -87,6 +101,7 @@
             </button>
         </div>
     </nav>
+    }
 
     @if (!isViewOnly)
     {
@@ -105,6 +120,44 @@
                     <i class="bi bi-info-circle-fill me-1"></i>
                     Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
                 </div>
+
+                @if (status == "Published")
+                {
+                    <hr style="margin:16px 0 14px;border:0;border-top:1px solid #e5e7eb;" />
+                    <h6 style="font-size:0.9rem;font-weight:600;margin-bottom:6px;">
+                        <i class="bi bi-code-slash me-1"></i>Public URL &amp; Embed
+                    </h6>
+                    <p style="font-size:0.78rem;color:#475569;margin-bottom:8px;">
+                        This report is <strong>Published</strong> — anyone with the link can view it (no sign-in required).
+                    </p>
+                    <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Public link</label>
+                    <div class="rv-share-url" style="display:flex;gap:6px;margin-bottom:10px;">
+                        <input type="text" id="rvPublicUrlInput" readonly onclick="this.select()"
+                               style="flex:1;font-size:0.78rem;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;"
+                               value="@($"{Context.Request.Scheme}://{Context.Request.Host}/report/view/{reportGuid}")" />
+                        <button type="button" onclick="rvCopyPublicUrl()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
+                            <i class="bi bi-clipboard me-1"></i>Copy
+                        </button>
+                    </div>
+                    <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Embed code</label>
+                    <div style="display:flex;gap:6px;align-items:flex-start;">
+                        <textarea id="rvEmbedSnippet" readonly onclick="this.select()" rows="3"
+                                  style="flex:1;font-size:0.74rem;font-family:ui-monospace,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;resize:vertical;">&lt;iframe src="@($"{Context.Request.Scheme}://{Context.Request.Host}/report/view/{reportGuid}?embed=1")" width="100%" height="900" frameborder="0" style="border:0;border-radius:12px;"&gt;&lt;/iframe&gt;</textarea>
+                        <button type="button" onclick="rvCopyEmbedSnippet()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
+                            <i class="bi bi-clipboard me-1"></i>Copy
+                        </button>
+                    </div>
+                    <div id="rvEmbedCopyStatus" style="font-size:0.74rem;color:#16a34a;margin-top:6px;display:none;">
+                        <i class="bi bi-check-circle-fill me-1"></i>Copied to clipboard.
+                    </div>
+                }
+                else
+                {
+                    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#92400e;margin-bottom:14px;">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Want a public URL or embed code? <strong>Publish</strong> the report first from the dashboard editor.
+                    </div>
+                }
                 <div id="rvShareStatus" style="font-size:0.78rem;margin-bottom:10px;display:none;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button class="rv-share-close" id="rvShareCloseBtn">Close</button>
@@ -196,6 +249,29 @@
     window._rvDatasourceId   = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
     window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
     window._rvWorkspaceName  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceName ?? ""));
+    </script>
+    <script>
+    function rvCopyPublicUrl() {
+        var el = document.getElementById('rvPublicUrlInput');
+        if (!el) return;
+        el.select();
+        navigator.clipboard?.writeText(el.value).catch(function(){ document.execCommand('copy'); });
+        rvShowCopyStatus();
+    }
+    function rvCopyEmbedSnippet() {
+        var el = document.getElementById('rvEmbedSnippet');
+        if (!el) return;
+        el.select();
+        navigator.clipboard?.writeText(el.value).catch(function(){ document.execCommand('copy'); });
+        rvShowCopyStatus();
+    }
+    function rvShowCopyStatus() {
+        var s = document.getElementById('rvEmbedCopyStatus');
+        if (!s) return;
+        s.style.display = '';
+        clearTimeout(window._rvCopyTimer);
+        window._rvCopyTimer = setTimeout(function(){ s.style.display = 'none'; }, 2200);
+    }
     </script>
     <script src="~/js/copyRichContent.js" asp-append-version="true"></script>
     <script src="~/js/report-qa-panel.js" asp-append-version="true"></script>

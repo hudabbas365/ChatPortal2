@@ -69,6 +69,11 @@ public class ReportController : Controller
         ViewBag.UpdatedAt = report.UpdatedAt ?? report.CreatedAt;
         ViewBag.WorkspaceRole = workspaceRole;
 
+        // Embed mode: clean, chrome-less view for iframe embedding (?embed=1).
+        // Only honored for Published reports so private drafts can never be silently embedded.
+        ViewBag.EmbedMode = report.Status == "Published"
+            && (Request.Query.ContainsKey("embed") || Request.Query.ContainsKey("embedded"));
+
         return View("~/Views/Report/View.cshtml");
     }
 

@@ -1,0 +1,90 @@
+@*
+    Home pricing / license teaser — 3 tier cards that redirect to signup.
+    Included by /Home/Index.Original.cshtml. Styled via cp-pricing-home.css.
+*@
+<section class="cp-home-pricing" id="license-plans">
+    <div class="container">
+        <div class="section-header text-center">
+            <h2 class="section-title">Licenses built for every team</h2>
+            <p class="section-subtitle">Start with a 30-day free trial. Upgrade, add licenses, or buy top-up token packs any time.</p>
+        </div>
+
+        <div class="row g-4 justify-content-center">
+            <!-- Free Trial -->
+            <div class="col-md-4">
+                <div class="cp-tier-card">
+                    <div class="cp-tier-name">Free Trial</div>
+                    <div class="cp-tier-tagline">Evaluate every feature for 30 days — no card required.</div>
+                    <div class="cp-tier-price">
+                        <span class="cp-tier-price-amount">$0</span>
+                        <span class="cp-tier-price-period">/ 30 days</span>
+                    </div>
+                    <ul class="cp-tier-features">
+                        <li><i class="bi bi-check-circle-fill"></i><span><strong>2,000,000</strong> AI tokens / month</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span><strong>1</strong> workspace</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>All features — AI chat, reports &amp; charts</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Auto Report Generator</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>"Explain by AI" on charts</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Community support</span></li>
+                    </ul>
+                    <a href="/auth/register?plan=FreeTrial" class="btn btn-outline-cp">
+                        <i class="bi bi-rocket-takeoff me-1"></i>Start Free Trial
+                    </a>
+                </div>
+            </div>
+
+            <!-- Professional (featured) -->
+            <div class="col-md-4">
+                <div class="cp-tier-card cp-tier-featured">
+                    <span class="cp-tier-badge">Most Popular</span>
+                    <div class="cp-tier-name">Professional</div>
+                    <div class="cp-tier-tagline">For growing teams that run on conversational analytics.</div>
+                    <div class="cp-tier-price">
+                        <span class="cp-tier-price-amount">$25</span>
+                        <span class="cp-tier-price-period">/ user / month</span>
+                    </div>
+                    <ul class="cp-tier-features">
+                        <li><i class="bi bi-check-circle-fill"></i><span><strong>4,000,000</strong> AI tokens / month</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Up to <strong>10</strong> workspaces</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>AI chat over SQL, Power BI, REST APIs</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Scheduled reports, exports, share links</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Priority email support (24h SLA)</span></li>
+                        <li class="muted"><i class="bi bi-x-circle"></i><span>No Auto Report Generator</span></li>
+                        <li class="muted"><i class="bi bi-x-circle"></i><span>No "Explain by AI" on charts</span></li>
+                    </ul>
+                    <a href="/auth/register?plan=Professional" class="btn cp-btn-gradient">
+                        <i class="bi bi-lightning-charge-fill me-1"></i>Get Professional
+                    </a>
+                </div>
+            </div>
+
+            <!-- Enterprise -->
+            <div class="col-md-4">
+                <div class="cp-tier-card">
+                    <div class="cp-tier-name">Enterprise</div>
+                    <div class="cp-tier-tagline">Advanced governance &amp; everything AI for large orgs.</div>
+                    <div class="cp-tier-price">
+                        <span class="cp-tier-price-amount">$45</span>
+                        <span class="cp-tier-price-period">/ user / month</span>
+                    </div>
+                    <ul class="cp-tier-features">
+                        <li><i class="bi bi-check-circle-fill"></i><span><strong>10,000,000</strong> AI tokens / month</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span><strong>Unlimited</strong> workspaces</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>Every feature — AI Auto Reports &amp; Explain by AI</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>SSO / SAML, on-prem gateway</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>99.9% uptime SLA</span></li>
+                        <li><i class="bi bi-check-circle-fill"></i><span>24/7 priority support (4h SLA)</span></li>
+                    </ul>
+                    <a href="/auth/register?plan=Enterprise" class="btn btn-outline-cp">
+                        <i class="bi bi-building-fill-check me-1"></i>Get Enterprise
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-muted small mt-4 mb-0">
+            Need token top-ups? Add <strong>2,000,000 tokens for $15</strong> any time from your Organization Settings.
+            <a href="/pricing">Compare full features &rarr;</a>
+        </p>
+    </div>
+</section>

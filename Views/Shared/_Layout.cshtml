@@ -31,6 +31,8 @@
     <link rel="stylesheet" href="~/css/site.css" />
     <link rel="stylesheet" href="~/css/permissions.css" />
     <link rel="stylesheet" href="~/css/orgadmin.css" />
+    <link rel="stylesheet" href="~/css/cp-toast.css" />
+    <link rel="stylesheet" href="~/css/cp-pricing-home.css" />
     @RenderSection("Head", required: false)
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.ico" />
@@ -65,6 +67,8 @@
                         <a href="/about">About</a>
                         <a href="/docs">Docs</a>
                         <a href="/blog">Blog</a>
+                        <a href="/home/sla">SLA</a>
+                        <a href="/home/support">Support</a>
                     </div>
                 </div>
                 <div class="col-md-4 text-end">
@@ -81,6 +85,31 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="~/js/app.js"></script>
+    <script src="~/js/cp-toast.js"></script>
+    <script>
+        // Fetch plan feature flags for the current user once per page load so gated
+        // features (AI auto-report, Explain by AI) can be hidden client-side.
+        (function () {
+            try {
+                var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                if (!u || !u.id) return;
+                fetch('/api/subscription/' + u.id, { credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (p) {
+                        if (!p) return;
+                        window.cpPlanFeatures = {
+                            plan: p.plan,
+                            canUseAiReportGeneration: p.canUseAiReportGeneration !== false,
+                            canUseAiChartExplain: p.canUseAiChartExplain !== false,
+                            monthlyTokenBudget: p.monthlyTokenBudget || 0,
+                            maxWorkspaces: p.maxWorkspaces || 1
+                        };
+                        document.dispatchEvent(new CustomEvent('cp:plan-features-loaded', { detail: window.cpPlanFeatures }));
+                    })
+                    .catch(function () { /* non-fatal */ });
+            } catch (e) { /* non-fatal */ }
+        })();
+    </script>
     @await RenderSectionAsync("Scripts", required: false)
 
   

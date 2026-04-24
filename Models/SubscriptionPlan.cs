@@ -17,6 +17,15 @@ public static class PlanPricing
 
 public enum PlanType { Free, FreeTrial, Professional, Enterprise }
 
+// Centralised plan-feature matrix used by both server-side gates and API.
+// Professional is the "chat + dashboards only" tier — AI Auto-Report and
+// Explain-by-AI are Free Trial / Enterprise only.
+public static class PlanFeatures
+{
+    public static bool AllowsAutoReport(PlanType p)   => p == PlanType.FreeTrial || p == PlanType.Enterprise;
+    public static bool AllowsChartExplain(PlanType p) => p == PlanType.FreeTrial || p == PlanType.Enterprise;
+}
+
 public class SubscriptionPlan
 {
     public int Id { get; set; }

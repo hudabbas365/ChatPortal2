@@ -126,21 +126,40 @@
 .token-pack-option {
     cursor: pointer;
     display: block;
+    margin: 0;
 }
 .token-pack-option input[type="radio"] {
-    display: none;
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+/* Override .glass-card defaults so these behave like compact selectable cards */
+.token-pack-option .token-pack-card {
+    border: 2px solid transparent !important;
+    border-radius: 10px !important;
+    padding: 16px !important;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.85) !important;
+    box-shadow: var(--cp-shadow, 0 2px 8px rgba(0,0,0,0.06)) !important;
+    transform: none !important;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s !important;
+    height: 100%;
+}
+.token-pack-option:hover .token-pack-card {
+    border-color: rgba(74, 144, 217, 0.35) !important;
+    transform: none !important;
 }
 .token-pack-option input[type="radio"]:checked + .token-pack-card {
-    border: 2px solid var(--cp-primary, #4A90D9) !important;
-    box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.25);
-    background: rgba(74, 144, 217, 0.06);
+    border-color: var(--cp-primary, #4A90D9) !important;
+    box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.25) !important;
+    background: rgba(74, 144, 217, 0.08) !important;
 }
-.token-pack-card {
-    border: 2px solid transparent;
-    border-radius: 10px;
-    padding: 16px;
-    text-align: center;
-    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+/* Keep "featured" accent but don't conflict with the selected highlight */
+.token-pack-option .token-pack-card.pricing-featured {
+    position: relative;
+}
+.token-pack-option input[type="radio"]:not(:checked) + .token-pack-card.pricing-featured {
+    border-color: rgba(74, 144, 217, 0.5) !important;
 }
 
 /* Datasource detail modal styling */

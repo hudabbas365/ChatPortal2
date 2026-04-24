@@ -13,14 +13,24 @@ public class Organization
 
     public PlanType Plan { get; set; } = PlanType.Free;
     public int EnterpriseExtraTokenPacks { get; set; } = 0; // Each pack = +2M tokens, $15
-    public int PurchasedLicenses { get; set; } = 0; // Licenses bought by OrgAdmin, each allows 1 user assignment
+    public int PurchasedLicenses { get; set; } = 0; // Legacy total (kept for backwards compatibility). New code uses per-type counters below.
+    public int PurchasedProfessionalLicenses { get; set; } = 0; // Professional licenses bought by OrgAdmin
+    public int PurchasedEnterpriseLicenses { get; set; } = 0;   // Enterprise licenses bought by OrgAdmin
 
     // ── PayPal Recurring Subscription ──
     public string? PayPalSubscriptionId { get; set; }
     public string? PayPalPlanId { get; set; }
-    public string SubscriptionStatus { get; set; } = "NONE"; // NONE, APPROVAL_PENDING, ACTIVE, SUSPENDED, CANCELLED, EXPIRED
+    public string SubscriptionStatus { get; set; } = "NONE"; // NONE, APPROVAL_PENDING, ACTIVE, SUSPENDED, CANCELLED, EXPIRED, PAST_DUE
     public DateTime? SubscriptionStartDate { get; set; }
     public DateTime? SubscriptionNextBillingDate { get; set; }
+
+    // ── Recurring-payment grace tracking ──
+    // Counts consecutive failed recurring charges. Reset to 0 on a successful
+    // PAYMENT.SALE.COMPLETED webhook. When >= 1 a 5-day grace window is set
+    // via GraceUntil; if it expires the SubscriptionExpiryJob downgrades the
+    // plan to Free and marks status EXPIRED.
+    public int FailedPaymentCount { get; set; } = 0;
+    public DateTime? GraceUntil { get; set; }
 
     // ── Email Verification ──
     public bool IsEmailVerified { get; set; } = false;
@@ -38,7 +48,7 @@ public class Organization
     public int MonthlyTokenBudget => Plan switch
     {
         PlanType.Enterprise    => 10_000_000 + (EnterpriseExtraTokenPacks * 2_000_000),
-        PlanType.Professional  => 5_000_000  + (EnterpriseExtraTokenPacks * 2_000_000),
+        PlanType.Professional  => 4_000_000  + (EnterpriseExtraTokenPacks * 2_000_000),
         PlanType.FreeTrial     => 2_000_000  + (EnterpriseExtraTokenPacks * 2_000_000),
         _                      => 0 // Free plan = no AI access
     };
@@ -49,4 +59,11 @@ public class Organization
         PlanType.Professional => 10,
         _                     => 1
     };
+
+    // ── Plan feature matrix ──
+    // FreeTrial  : all features (evaluation)
+    // Professional: chat + dashboards, but NO AI auto-report generation and NO "Explain by AI"
+    // Enterprise : everything
+    public bool CanUseAiReportGeneration => Plan == PlanType.FreeTrial || Plan == PlanType.Enterprise;
+    public bool CanUseAiChartExplain     => Plan == PlanType.FreeTrial || Plan == PlanType.Enterprise;
 }

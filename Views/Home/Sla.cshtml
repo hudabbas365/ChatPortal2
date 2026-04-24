@@ -1,0 +1,87 @@
+@{
+    ViewData["Title"] = "Service Level Agreement (SLA)";
+    Layout = "_Layout";
+}
+
+<section class="cp-policy-page">
+    <div class="container" style="max-width:920px;">
+        <h1><i class="bi bi-shield-check text-primary me-2"></i>Service Level Agreement</h1>
+        <p class="lead">Our commitment to keeping AI Insights 365 fast, available, and supported.</p>
+
+        <div class="cp-policy-card">
+            <h2><i class="bi bi-activity"></i>Uptime Commitments</h2>
+            <p>We operate a globally distributed platform with automated failover. Uptime is measured monthly and excludes scheduled maintenance announced 72 hours in advance.</p>
+            <div class="cp-sla-grid">
+                <div>
+                    <div class="sla-tier">Free Trial</div>
+                    <div class="sla-value">Best effort</div>
+                    <div class="sla-label">No guaranteed uptime</div>
+                </div>
+                <div>
+                    <div class="sla-tier">Professional</div>
+                    <div class="sla-value">99.5%</div>
+                    <div class="sla-label">Monthly uptime target</div>
+                </div>
+                <div>
+                    <div class="sla-tier">Enterprise</div>
+                    <div class="sla-value">99.9%</div>
+                    <div class="sla-label">Monthly uptime SLA</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cp-policy-card">
+            <h2><i class="bi bi-headset"></i>Support Response Times</h2>
+            <p>Response time is measured from when a ticket is submitted through <a href="/home/support">the support form</a> or emailed to <a href="mailto:support@AIInsights365.net">support@AIInsights365.net</a>.</p>
+            <div class="cp-sla-grid">
+                <div>
+                    <div class="sla-tier">Free Trial</div>
+                    <div class="sla-value">72 h</div>
+                    <div class="sla-label">Community + email</div>
+                </div>
+                <div>
+                    <div class="sla-tier">Professional</div>
+                    <div class="sla-value">24 h</div>
+                    <div class="sla-label">Priority email support</div>
+                </div>
+                <div>
+                    <div class="sla-tier">Enterprise</div>
+                    <div class="sla-value">4 h</div>
+                    <div class="sla-label">24/7 critical-issue response</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cp-policy-card">
+            <h2><i class="bi bi-exclamation-diamond"></i>Incident Severity Levels</h2>
+            <ul>
+                <li><strong>Sev-1 (Critical)</strong> — Platform unavailable or core feature broken for all users of your organization.</li>
+                <li><strong>Sev-2 (High)</strong> — Major feature degraded; workaround may be available.</li>
+                <li><strong>Sev-3 (Normal)</strong> — Minor issue or question that does not block work.</li>
+                <li><strong>Sev-4 (Low)</strong> — Cosmetic issue, feature request, or documentation question.</li>
+            </ul>
+        </div>
+
+        <div class="cp-policy-card">
+            <h2><i class="bi bi-gear-wide-connected"></i>Maintenance &amp; Change Policy</h2>
+            <p>Planned maintenance is announced at least <strong>72 hours in advance</strong> via email to Organization Admins and an in-app banner. Emergency maintenance required to preserve platform stability or security may be performed immediately, with post-incident notification.</p>
+        </div>
+
+        <div class="cp-policy-card">
+            <h2><i class="bi bi-receipt-cutoff"></i>Service Credits (Enterprise)</h2>
+            <p>If monthly uptime falls below 99.9% for a calendar month, the Enterprise customer is eligible for service credits applied to the following invoice, as follows:</p>
+            <ul>
+                <li>Uptime 99.0% – 99.9%: <strong>10%</strong> credit of that month's subscription</li>
+                <li>Uptime 95.0% – 99.0%: <strong>25%</strong> credit</li>
+                <li>Uptime below 95.0%: <strong>50%</strong> credit</li>
+            </ul>
+            <p class="text-muted small mb-0">Credits must be requested within 30 days of the end of the affected month by emailing <a href="mailto:support@AIInsights365.net">support@AIInsights365.net</a> with your organization name and the affected dates.</p>
+        </div>
+
+        <div class="cp-policy-card text-center">
+            <h2 class="mb-2" style="border:none;"><i class="bi bi-chat-dots"></i>Need help right now?</h2>
+            <p class="mb-3">Open a support ticket and we'll reply with a ticket number you can track.</p>
+            <a href="/home/support" class="btn cp-btn-gradient"><i class="bi bi-life-preserver me-1"></i>Contact Support</a>
+        </div>
+    </div>
+</section>

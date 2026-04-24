@@ -1,0 +1,225 @@
+/* ==========================================================================
+   cp-pricing-home.css — homepage license/pricing teaser
+   ========================================================================== */
+
+.cp-home-pricing {
+    padding: 64px 0;
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.cp-home-pricing .section-header {
+    margin-bottom: 40px;
+}
+
+.cp-home-pricing .section-title {
+    font-size: 2.1rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.cp-home-pricing .section-subtitle {
+    color: #64748b;
+    font-size: 1.05rem;
+}
+
+.cp-tier-card {
+    position: relative;
+    background: #fff;
+    border-radius: 18px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+.cp-tier-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+    border-color: rgba(25, 118, 210, 0.25);
+}
+
+.cp-tier-card.cp-tier-featured {
+    border-color: transparent;
+    background: linear-gradient(180deg, #ffffff, #f4f8ff);
+    box-shadow: 0 20px 50px rgba(25, 118, 210, 0.18);
+    transform: translateY(-6px);
+}
+
+.cp-tier-card.cp-tier-featured::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 18px;
+    padding: 2px;
+    background: linear-gradient(135deg, #42a5f5, #7b1fa2);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+}
+
+.cp-tier-badge {
+    position: absolute;
+    top: -12px;
+    right: 20px;
+    background: linear-gradient(135deg, #42a5f5, #7b1fa2);
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 999px;
+    box-shadow: 0 6px 14px rgba(123, 31, 162, 0.35);
+}
+
+.cp-tier-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+
+.cp-tier-tagline {
+    color: #64748b;
+    font-size: .9rem;
+    margin-bottom: 18px;
+}
+
+.cp-tier-price {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 20px;
+}
+
+.cp-tier-price-amount {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #1e293b;
+    line-height: 1;
+}
+
+.cp-tier-price-period {
+    color: #64748b;
+    font-size: .9rem;
+}
+
+.cp-tier-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 24px;
+    flex: 1;
+}
+
+.cp-tier-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 0;
+    color: #334155;
+    font-size: .92rem;
+    line-height: 1.4;
+}
+
+.cp-tier-features li i {
+    flex-shrink: 0;
+    font-size: 1rem;
+    margin-top: 2px;
+}
+
+.cp-tier-features .bi-check-circle-fill { color: #2e7d32; }
+.cp-tier-features .bi-x-circle          { color: #cbd5e1; }
+.cp-tier-features li.muted              { color: #94a3b8; }
+
+.cp-tier-card .btn {
+    width: 100%;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 10px;
+}
+
+/* SLA / Support shared page layout -------------------------------------- */
+
+.cp-policy-page {
+    padding: 80px 0 48px;
+    background: linear-gradient(180deg, #f8fafc, #ffffff);
+    min-height: 70vh;
+}
+
+.cp-policy-page h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.cp-policy-page .lead {
+    color: #64748b;
+    margin-bottom: 32px;
+}
+
+.cp-policy-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    margin-bottom: 20px;
+}
+
+.cp-policy-card h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 10px;
+}
+
+.cp-policy-card h2 i { color: #1976d2; margin-right: 8px; }
+
+.cp-policy-card p, .cp-policy-card li {
+    color: #475569;
+    line-height: 1.6;
+}
+
+.cp-sla-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 16px 0;
+}
+
+.cp-sla-grid > div {
+    background: linear-gradient(180deg, #f4f8ff, #eef4ff);
+    border-radius: 12px;
+    padding: 18px 14px;
+    text-align: center;
+    border: 1px solid rgba(25, 118, 210, 0.12);
+}
+
+.cp-sla-grid .sla-tier {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #1976d2;
+    margin-bottom: 4px;
+}
+
+.cp-sla-grid .sla-value {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.cp-sla-grid .sla-label {
+    color: #64748b;
+    font-size: .82rem;
+}
+
+@media (max-width: 768px) {
+    .cp-sla-grid { grid-template-columns: 1fr; }
+    .cp-tier-card.cp-tier-featured { transform: none; }
+}

@@ -232,6 +232,22 @@ class CanvasManager {
     async explainChart(chartId) {
         const chart = this.charts.find(c => c.id === chartId);
         if (!chart) return;
+        // Plan gate: "Explain by AI" is Free Trial + Enterprise only.
+        // `window.cpPlanFeatures` is populated by the layout via /api/subscription.
+        const features = window.cpPlanFeatures || {};
+        if (features.canUseAiChartExplain === false) {
+            if (typeof window.cpToast === 'function') {
+                window.cpToast({
+                    title: 'Upgrade required',
+                    message: '"Explain by AI" is available on Free Trial and Enterprise plans. Upgrade to Enterprise to unlock this feature.',
+                    variant: 'warn',
+                    duration: 6000
+                });
+            } else {
+                alert('Explain by AI is not available on your current plan. Upgrade to Enterprise to unlock this feature.');
+            }
+            return;
+        }
         const modalEl = document.getElementById('explainChartModal');
         const bodyEl  = document.getElementById('explainChartBody');
         if (!modalEl || !bodyEl || !window.bootstrap) return;
@@ -580,10 +596,16 @@ class CanvasManager {
         // Phase 30-B17: Explain with AI (only present on non-shape, non-navigation cards)
         const explainBtn = card.querySelector('[data-action="explain"]');
         if (explainBtn) {
-            explainBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.explainChart(chartDef.id);
-            });
+            // Hide the button entirely for plans that don't include this feature.
+            const features = window.cpPlanFeatures || {};
+            if (features.canUseAiChartExplain === false) {
+                explainBtn.style.display = 'none';
+            } else {
+                explainBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.explainChart(chartDef.id);
+                });
+            }
         }
 
         card.addEventListener('mousedown', (e) => {
