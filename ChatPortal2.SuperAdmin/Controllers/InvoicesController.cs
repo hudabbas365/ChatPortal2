@@ -131,6 +131,8 @@ public class InvoicesController : Controller
         var lastPaymentAt = allFiltered
             .Where(p => p.Status is "succeeded" or "paid")
             .Max(p => (DateTime?)p.CreatedAt);
+        // MRR: most recent subscription payment amount per the spec
+        // (identifies the recurring charge amount; not a true normalized MRR sum)
         var mrr = allFiltered
             .Where(p => p.PaymentType.Contains("subscription", StringComparison.OrdinalIgnoreCase)
                      && p.Status is "succeeded" or "paid")

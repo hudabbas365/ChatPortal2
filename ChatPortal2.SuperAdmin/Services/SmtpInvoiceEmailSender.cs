@@ -48,15 +48,17 @@ public class SmtpInvoiceEmailSender : IInvoiceEmailSender
     {
         var safeInvoice = SanitizeForLog(invoiceNumber);
 
-        using var client = TryCreateClient(out var from);
+        var client = TryCreateClient(out var from);
         if (client == null)
         {
             _logger.LogWarning("SMTP not configured. Invoice email for '{Invoice}' was not sent.", safeInvoice);
             return false;
         }
 
-        var subject = $"Invoice {invoiceNumber} from AIInsights365";
-        var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
+        using (client)
+        {
+            var subject = $"Invoice {invoiceNumber} from AIInsights365";
+            var body = $@"<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;'>
 <h2 style='color:#1e3a5f;'>Invoice {WebUtility.HtmlEncode(invoiceNumber)}</h2>
 <p>Hello,</p>
 <p>Please find attached your invoice <strong>{WebUtility.HtmlEncode(invoiceNumber)}</strong> from <strong>AIInsights365</strong> for organization <strong>{WebUtility.HtmlEncode(orgName)}</strong>.</p>
@@ -66,27 +68,28 @@ public class SmtpInvoiceEmailSender : IInvoiceEmailSender
 <br/><p>Regards,<br/><strong>AIInsights365 Team</strong></p>
 </div>";
 
-        using var mail = new MailMessage(from ?? "support@aiinsights365.net", toEmail)
-        {
-            Subject = subject,
-            Body = body,
-            IsBodyHtml = true
-        };
+            using var mail = new MailMessage(from ?? "support@aiinsights365.net", toEmail)
+            {
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = true
+            };
 
-        using var ms = new MemoryStream(pdfBytes);
-        using var attachment = new Attachment(ms, pdfFileName, "application/pdf");
-        mail.Attachments.Add(attachment);
+            // Attachment takes ownership of the stream; keep it alive until mail is sent.
+            using var attachment = new Attachment(new MemoryStream(pdfBytes), pdfFileName, "application/pdf");
+            mail.Attachments.Add(attachment);
 
-        try
-        {
-            await client.SendMailAsync(mail);
-            _logger.LogInformation("Invoice email for '{Invoice}' was sent successfully.", safeInvoice);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send invoice email for '{Invoice}'.", safeInvoice);
-            return false;
+            try
+            {
+                await client.SendMailAsync(mail);
+                _logger.LogInformation("Invoice email for '{Invoice}' was sent successfully.", safeInvoice);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send invoice email for '{Invoice}'.", safeInvoice);
+                return false;
+            }
         }
     }
 }

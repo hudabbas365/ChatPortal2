@@ -167,7 +167,9 @@
                             </a>
                             <button type="button"
                                     class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem"
-                                    onclick="resendEmail(@r.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(invNum)))"
+                                    data-invoice-id="@r.Id"
+                                    data-invoice-number="@invNum"
+                                    onclick="resendEmail(this)"
                                     title="Resend Invoice Email">
                                 <i class="bi bi-envelope-arrow-up"></i> Resend
                             </button>
@@ -249,7 +251,9 @@ function showToast(message, type = 'success', title = null) {
     setTimeout(dismiss, type === 'error' ? 5000 : 3500);
 }
 
-async function resendEmail(invoiceId, invoiceNumber) {
+async function resendEmail(btn) {
+    const invoiceId = btn.dataset.invoiceId;
+    const invoiceNumber = btn.dataset.invoiceNumber;
     const override = prompt(
         'Resend invoice ' + invoiceNumber + '\n\nEnter an override email address, or leave blank to use the org admin email:',
         ''
