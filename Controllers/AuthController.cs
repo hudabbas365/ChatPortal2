@@ -453,6 +453,7 @@ public class AuthController : Controller
 
     [HttpPost("/api/auth/change-password")]
     [Authorize]
+    [IgnoreAntiforgeryToken]
     public async Task<IActionResult> ChangePasswordApi([FromBody] ChangePasswordRequest req)
     {
         if (string.IsNullOrEmpty(req.CurrentPassword) || string.IsNullOrEmpty(req.NewPassword))

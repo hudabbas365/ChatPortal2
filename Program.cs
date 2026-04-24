@@ -212,6 +212,55 @@ app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Impersonation middleware (D23): if imp_jwt cookie is present and valid,
+// override the current principal with the impersonated user's identity.
+app.Use(async (context, next) =>
+{
+    var impCookie = context.Request.Cookies["imp_jwt"];
+    if (!string.IsNullOrEmpty(impCookie))
+    {
+        var jwtKey = context.RequestServices.GetRequiredService<IConfiguration>()["Jwt:Key"];
+        if (!string.IsNullOrEmpty(jwtKey))
+        {
+            try
+            {
+                var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                    System.Text.Encoding.UTF8.GetBytes(jwtKey));
+                var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                handler.MapInboundClaims = false;
+                var principal = handler.ValidateToken(impCookie, new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = key,
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                }, out _);
+
+                // Only override if this is actually an impersonation token (has act:sub claim)
+                if (principal.FindFirst("act:sub") != null)
+                {
+                    context.User = principal;
+                    // Store impersonation info in Items for banner rendering
+                    var targetEmail = principal.FindFirst("email")?.Value
+                                     ?? principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+                    var actorEmail = principal.FindFirst("act:email")?.Value;
+                    var impExpClaim = principal.FindFirst("imp_exp")?.Value;
+                    if (long.TryParse(impExpClaim, out var impExpUnix))
+                    {
+                        var impEnd = DateTimeOffset.FromUnixTimeSeconds(impExpUnix).UtcDateTime;
+                        context.Items["ImpersonationBanner"] = $"⚠️ Impersonating {targetEmail}. Started by {actorEmail}. Ends at {impEnd:HH:mm} UTC.";
+                        context.Items["ImpersonationActive"] = true;
+                    }
+                }
+            }
+            catch { /* invalid or expired imp_jwt — ignore */ }
+        }
+    }
+    await next();
+});
+
 // Redirect 401/403 to the Access Denied page for browser requests
 app.UseStatusCodePages(async context =>
 {
