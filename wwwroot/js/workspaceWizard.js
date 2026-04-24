@@ -80,14 +80,32 @@
                 if (hasAgentReports) {
                     html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
                     html += '<div class="wf-flow-col wf-flow-col-report">';
-                    agentLinkedReports.forEach(function (rpt) {
+                    if (agentLinkedReports.length > 1) {
+                        // Multiple reports: branch-wrap with vertical spine so each report
+                        // gets its own connector line, making the lineage clear.
+                        html += '<div class="wf-flow-branch-wrap wf-flow-report-branch-wrap">';
+                        agentLinkedReports.forEach(function (rpt) {
+                            var agentForRpt = boundAgents.find(function (a) { return a.id === rpt.agentId; });
+                            var agentName = agentForRpt ? agentForRpt.name : '';
+                            html += '<div class="wf-flow-branch-row">';
+                            html += '<div class="wf-flow-h-line wf-flow-h-line-report"></div>';
+                            html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                            html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
+                            html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + (agentName ? ' \xb7 via ' + self._esc(agentName) : '') + '</div>';
+                            html += '</div>';
+                            html += '</div>'; // wf-flow-branch-row
+                        });
+                        html += '<div class="wf-flow-v-spine-left wf-flow-v-spine-report"></div>';
+                        html += '</div>'; // wf-flow-report-branch-wrap
+                    } else {
+                        var rpt = agentLinkedReports[0];
                         var agentForRpt = boundAgents.find(function (a) { return a.id === rpt.agentId; });
                         var agentName = agentForRpt ? agentForRpt.name : '';
                         html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
                         html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
                         html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + (agentName ? ' \xb7 via ' + self._esc(agentName) : '') + '</div>';
                         html += '</div>';
-                    });
+                    }
                     html += '</div>'; // wf-flow-col-report
                 }
 
@@ -108,12 +126,26 @@
 
                 html += '<div class="wf-flow-h-line wf-flow-h-line-in"></div>';
                 html += '<div class="wf-flow-col wf-flow-col-report">';
-                orphanedReports.forEach(function (rpt) {
+                if (orphanedReports.length > 1) {
+                    html += '<div class="wf-flow-branch-wrap wf-flow-report-branch-wrap">';
+                    orphanedReports.forEach(function (rpt) {
+                        html += '<div class="wf-flow-branch-row">';
+                        html += '<div class="wf-flow-h-line wf-flow-h-line-report"></div>';
+                        html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                        html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
+                        html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + '</div>';
+                        html += '</div>';
+                        html += '</div>'; // wf-flow-branch-row
+                    });
+                    html += '<div class="wf-flow-v-spine-left wf-flow-v-spine-report"></div>';
+                    html += '</div>'; // wf-flow-report-branch-wrap
+                } else {
+                    var rpt = orphanedReports[0];
                     html += '<div class="wf-flow-node wf-flow-report" data-action="report-view" data-report-guid="' + self._esc(rpt.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
                     html += '<div class="wf-flow-label">' + self._esc(rpt.name) + '</div>';
                     html += '<div class="wf-flow-sublabel">' + self._esc(rpt.status || 'Draft') + '</div>';
                     html += '</div>';
-                });
+                }
                 html += '</div>'; // wf-flow-col-report
 
             } else {
