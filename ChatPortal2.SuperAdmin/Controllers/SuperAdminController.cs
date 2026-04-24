@@ -10,6 +10,7 @@ using System.Text;
 namespace AIInsights.SuperAdmin.Controllers;
 
 [Authorize]
+[AutoValidateAntiforgeryToken]
 public class SuperAdminController : Controller
 {
     private readonly AppDbContext _db;
@@ -45,10 +46,15 @@ public class SuperAdminController : Controller
         ViewBag.TotalUsers = stats.TotalUsers;
         ViewBag.TotalWorkspaces = stats.TotalWorkspaces;
         ViewBag.TotalMessages = stats.TotalMessages;
-        ViewBag.ProUsers = stats.ProUsers;
-        ViewBag.EnterpriseUsers = stats.EnterpriseUsers;
+        ViewBag.ProUsers = stats.ProSubscriptions;
+        ViewBag.EnterpriseUsers = stats.EnterpriseSubscriptions;
         ViewBag.TotalIncome = stats.TotalIncome;
         ViewBag.ActiveTrials = stats.ActiveTrials;
+        ViewBag.ActiveNow = stats.ActiveNow;
+        ViewBag.ActiveToday = stats.ActiveToday;
+        ViewBag.Dau = stats.Dau;
+        ViewBag.Wau = stats.Wau;
+        ViewBag.Mau = stats.Mau;
 
         return View("~/Views/Admin/Index.cshtml");
     }
@@ -68,9 +74,16 @@ public class SuperAdminController : Controller
         var totalWorkspaces = await _db.Workspaces.CountAsync();
         var totalMessages = await _db.ChatMessages.CountAsync();
 
-        var plans = await _db.SubscriptionPlans.ToListAsync();
-        var proCount = plans.Count(p => p.Plan == PlanType.Professional);
-        var enterpriseCount = plans.Count(p => p.Plan == PlanType.Enterprise);
+        var proCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Professional);
+        var enterpriseCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Enterprise);
+        var activeTrials = await _db.SubscriptionPlans.CountAsync(p => p.IsTrialActive);
+
+        var now = DateTime.UtcNow;
+        var activeNow = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.AddMinutes(-5));
+        var activeToday = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.Date);
+        var dau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-1)).Select(l => l.UserId).Distinct().CountAsync();
+        var wau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-7)).Select(l => l.UserId).Distinct().CountAsync();
+        var mau = await _db.ActivityLogs.Where(l => l.CreatedAt >= now.AddDays(-30)).Select(l => l.UserId).Distinct().CountAsync();
 
         return new DashboardStatsDto
         {
@@ -78,10 +91,15 @@ public class SuperAdminController : Controller
             TotalUsers = totalUsers,
             TotalWorkspaces = totalWorkspaces,
             TotalMessages = totalMessages,
-            ProUsers = proCount,
-            EnterpriseUsers = enterpriseCount,
+            ProSubscriptions = proCount,
+            EnterpriseSubscriptions = enterpriseCount,
             TotalIncome = proCount * PlanPricing.ProPricePerUser + enterpriseCount * PlanPricing.EnterprisePricePerUser,
-            ActiveTrials = plans.Count(p => p.IsTrialActive)
+            ActiveTrials = activeTrials,
+            ActiveNow = activeNow,
+            ActiveToday = activeToday,
+            Dau = dau,
+            Wau = wau,
+            Mau = mau
         };
     }
 
@@ -91,10 +109,18 @@ public class SuperAdminController : Controller
         public int TotalUsers { get; set; }
         public int TotalWorkspaces { get; set; }
         public int TotalMessages { get; set; }
-        public int ProUsers { get; set; }
-        public int EnterpriseUsers { get; set; }
+        // Kept for JSON backward-compat; also exposed via new names below
+        [Newtonsoft.Json.JsonProperty("proUsers")]
+        public int ProSubscriptions { get; set; }
+        [Newtonsoft.Json.JsonProperty("enterpriseUsers")]
+        public int EnterpriseSubscriptions { get; set; }
         public decimal TotalIncome { get; set; }
         public int ActiveTrials { get; set; }
+        public int ActiveNow { get; set; }
+        public int ActiveToday { get; set; }
+        public int Dau { get; set; }
+        public int Wau { get; set; }
+        public int Mau { get; set; }
     }
 
     [HttpGet("/superadmin/organizations")]
@@ -771,5 +797,12 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public class BlockOrgRequest
     {
         public string? Reason { get; set; }
+    }
+
+    [HttpGet("/superadmin/error")]
+    [AllowAnonymous]
+    public IActionResult Error()
+    {
+        return Content("An unexpected error occurred. Please try again later.", "text/plain");
     }
 }
