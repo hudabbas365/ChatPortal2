@@ -5,7 +5,13 @@ using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
+using System.Security.Claims;
+
+// Set QuestPDF community license
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -94,10 +100,11 @@ builder.Services.AddHostedService<WeeklyDigestService>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DigestSenderService>();
+
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>
-    {
+    { 
         // Remove the main AIInsights assembly so its controllers are not discovered
         var mainPart = manager.ApplicationParts
             .FirstOrDefault(p => p.Name == "AIInsights");
@@ -107,9 +114,14 @@ builder.Services.AddControllersWithViews()
 
 var app = builder.Build();
 
+// Show detailed errors in Development only; use a generic error page in Production.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler("/superadmin/error");
 }
 
 app.UseStaticFiles();
@@ -129,6 +141,33 @@ app.Use(async (context, next) =>
         SameSite = SameSiteMode.Strict,
         Path = "/"
     });
+// Middleware: update LastSeenAt for authenticated users (at most once every 5 minutes)
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? context.User.FindFirstValue("sub");
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
+            var cacheKey = $"lastseen:{userId}";
+            if (!cache.TryGetValue(cacheKey, out _))
+            {
+                var db = context.RequestServices.GetRequiredService<AppDbContext>();
+                var user = await db.Users.OfType<ApplicationUser>().FirstOrDefaultAsync(u => u.Id == userId);
+                if (user != null)
+                {
+                    user.LastSeenAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                cache.Set(cacheKey, true, new MemoryCacheEntryOptions
+                {
+                    SlidingExpiration = TimeSpan.FromMinutes(5)
+                });
+            }
+        }
+    }
     await next();
 });
 

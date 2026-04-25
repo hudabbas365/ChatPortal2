@@ -43,7 +43,7 @@
         <tbody>
             @foreach (var log in Model)
             {
-                <tr>
+            <tr>
                     <td style="white-space:nowrap;color:var(--text-muted)">@log.CreatedAt.ToString("MMM d HH:mm")</td>
                     <td><span class="badge-sm badge-indigo">@log.Action</span></td>
                     <td>@log.Description</td>
@@ -57,6 +57,11 @@
                         {
                             <span style="font-size:.75rem;color:var(--text-muted)">@(log.UserId.Length > 12 ? log.UserId[..12] + "…" : log.UserId)</span>
                         }
+                        <div style="margin-top:.25rem">
+                            <a href="/superadmin/users/@log.UserId/timeline" class="btn-ghost-sm" style="padding:.2rem .5rem;font-size:.72rem">
+                                <i class="bi bi-clock-history"></i>Timeline
+                            </a>
+                        </div>
                     </td>
                     <td>
                         @if (!string.IsNullOrEmpty(log.OrganizationName))

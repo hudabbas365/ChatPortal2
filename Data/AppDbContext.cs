@@ -32,6 +32,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
     public DbSet<IntegrationHealthCheck> IntegrationHealthChecks => Set<IntegrationHealthCheck>();
     public DbSet<DigestRun> DigestRuns => Set<DigestRun>();
+    public DbSet<PlanChangeLog> PlanChangeLogs => Set<PlanChangeLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -215,5 +216,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<ReportRevision>()
             .HasIndex(rr => new { rr.ReportId, rr.Kind, rr.CreatedAt });
+
+        builder.Entity<PlanChangeLog>()
+            .HasOne(p => p.Organization)
+            .WithMany()
+            .HasForeignKey(p => p.OrganizationId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
