@@ -15,9 +15,74 @@
         <a href="/org/settings?tab=activity" class="cp-user-menu-item" id="navUserMenuActivity" style="display:none;">
             <i class="bi bi-activity"></i><span>Activity</span>
         </a>
+        <button type="button" class="cp-user-menu-item" id="navUserMenuAbout">
+            <i class="bi bi-info-circle"></i><span>About</span>
+        </button>
         <div class="cp-user-menu-divider"></div>
         <button type="button" class="cp-user-menu-item cp-user-menu-item-danger" id="navLogoutBtn">
             <i class="bi bi-box-arrow-right"></i><span>Sign Out</span>
         </button>
+    </div>
+</div>
+
+<!-- About Organization Modal -->
+<div class="modal fade cp-about-modal" id="cpAboutModal" tabindex="-1" aria-labelledby="cpAboutModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cpAboutModalLabel">
+                    <i class="bi bi-info-circle me-2"></i>About this Organization
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="cpAboutLoading" class="text-center py-4">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Loading organization details…
+                </div>
+                <div id="cpAboutError" class="alert alert-danger d-none mb-0"></div>
+                <div id="cpAboutContent" class="d-none">
+                    <div class="cp-about-section">
+                        <div class="cp-about-section-label"><i class="bi bi-building me-2"></i>Organization</div>
+                        <dl class="cp-about-list">
+                            <dt>Name</dt>
+                            <dd id="cpAboutOrgName">—</dd>
+                            <dt>Organization ID</dt>
+                            <dd><code id="cpAboutOrgId">—</code></dd>
+                        </dl>
+                    </div>
+
+                    <div class="cp-about-section">
+                        <div class="cp-about-section-label"><i class="bi bi-shield-lock me-2"></i>Data &amp; Compliance</div>
+                        <ul class="cp-about-meta">
+                            <li>
+                                <i class="bi bi-geo-alt-fill text-primary"></i>
+                                <div>
+                                    <strong>Hosting region:</strong>
+                                    <span id="cpAboutRegion">European Union (EU)</span>
+                                    <p class="cp-about-hint" id="cpAboutHostingNotice">All servers and databases are located in European Union data centers, in compliance with GDPR.</p>
+                                </div>
+                            </li>
+                            <li>
+                                <i class="bi bi-key-fill text-success"></i>
+                                <div>
+                                    <strong>Encryption:</strong>
+                                    <p class="cp-about-hint" id="cpAboutEncryption">Connection strings and credentials are encrypted at rest using AES-256.</p>
+                                </div>
+                            </li>
+                            <li>
+                                <i class="bi bi-database-x text-warning"></i>
+                                <div>
+                                    <strong>Data storage:</strong>
+                                    <p class="cp-about-hint" id="cpAboutDataStored">AI Insights does not retain copies of your business data. Queries run live against your own datasource.</p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
     </div>
 </div>

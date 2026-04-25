@@ -158,6 +158,7 @@
             try {
                 var r = await fetch('/api/workspaces/' + guid, { method: 'DELETE' });
                 if (!r.ok) throw new Error();
+                this._purgeChatHistory(guid);
                 if (item) item.remove();
                 if (this._WF._selectedWsId === guid) {
                     this._WF._selectedWsId = null;
@@ -168,6 +169,29 @@
             } catch {
                 alert('Failed to delete workspace.');
             }
+        },
+
+        // Remove cached chat history from localStorage so deleted artifacts
+        // don't leave stale conversations behind.
+        // Keys are written by chat.js as `cp_chats_{wsId}` or
+        // `cp_chats_{wsId}_{agentId}`.
+        _purgeChatHistory(wsGuid, agentGuid) {
+            try {
+                if (!wsGuid) return;
+                if (agentGuid) {
+                    localStorage.removeItem('cp_chats_' + wsGuid + '_' + agentGuid);
+                    return;
+                }
+                // Whole-workspace purge: scan and remove every chat bucket
+                // belonging to this workspace (with or without agent suffix).
+                var prefix = 'cp_chats_' + wsGuid;
+                var toRemove = [];
+                for (var i = 0; i < localStorage.length; i++) {
+                    var k = localStorage.key(i);
+                    if (k && (k === prefix || k.indexOf(prefix + '_') === 0)) toRemove.push(k);
+                }
+                toRemove.forEach(function (k) { localStorage.removeItem(k); });
+            } catch { /* best-effort */ }
         },
 
         /* ═══════════════════════════════════════════════════
@@ -207,6 +231,9 @@
                         // been cleaned up by an earlier wizard-cancel/orphan sweep.
                         // Still refresh the UI so the stale lineage row disappears.
                         if (!r.ok && r.status !== 404) throw new Error();
+                        // Cascade also wipes any cached chat history for agents
+                        // that were bound to this workspace's datasource.
+                        self._purgeChatHistory(data.guid);
                         // Optimistic UI: remove the lineage row immediately so the user
                         // sees the deletion reflect without waiting on a full re-render.
                         if (row && row.parentNode) row.remove();
@@ -258,6 +285,12 @@
                         : '/api/datasources/' + guid;
                     var r = await fetch(url, { method: 'DELETE' });
                     if (!r.ok) throw new Error();
+                    // Clear cached chat history so deleted agents/datasources
+                    // don't leave stale conversations behind in localStorage.
+                    if (wsData && wsData.guid) {
+                        if (type === 'agent') self._purgeChatHistory(wsData.guid, guid);
+                        else if (type === 'datasource') self._purgeChatHistory(wsData.guid);
+                    }
                     // Optimistic UI: remove the host element so the user sees
                     // the change immediately, then reconcile via re-fetch.
                     if (el && el.parentNode) el.remove();

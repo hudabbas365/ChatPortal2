@@ -1,0 +1,102 @@
+/* ============================================================
+   AI Insights — About Organization Modal
+   Used by the user-menu "About" entry to surface non-sensitive
+   organization metadata + data-protection notices.
+   ============================================================ */
+
+.cp-about-modal .modal-content {
+    border: 1px solid var(--cp-border, #DDE8F0);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(91, 155, 213, .18);
+}
+
+.cp-about-modal .modal-header {
+    border-bottom: 1px solid var(--cp-border, #DDE8F0);
+    background: linear-gradient(135deg, rgba(91, 155, 213, .08), rgba(126, 200, 164, .08));
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+}
+
+.cp-about-modal .modal-title {
+    font-weight: 600;
+    color: var(--cp-text, #1E2D3D);
+}
+
+.cp-about-modal .modal-body {
+    padding: 20px 22px;
+}
+
+.cp-about-section {
+    padding: 14px 0;
+    border-bottom: 1px dashed var(--cp-border, #DDE8F0);
+}
+.cp-about-section:first-child { padding-top: 0; }
+.cp-about-section:last-child  { padding-bottom: 0; border-bottom: none; }
+
+.cp-about-section-label {
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--cp-primary, #5B9BD5);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.cp-about-list {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    column-gap: 14px;
+    row-gap: 8px;
+    margin: 0;
+}
+.cp-about-list dt {
+    font-weight: 500;
+    color: var(--cp-text-muted, #7A90A8);
+    font-size: .85rem;
+}
+.cp-about-list dd {
+    margin: 0;
+    color: var(--cp-text, #1E2D3D);
+    font-size: .9rem;
+    word-break: break-word;
+}
+.cp-about-list dd code {
+    background: var(--cp-primary-light, #EBF4FF);
+    color: var(--cp-primary-dark, #3A7BBF);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: .82rem;
+    font-family: var(--cp-font-mono, 'Fira Code', Consolas, monospace);
+}
+
+.cp-about-meta {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.cp-about-meta > li {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+.cp-about-meta > li > i {
+    font-size: 1.15rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.cp-about-meta > li strong {
+    font-weight: 600;
+    color: var(--cp-text, #1E2D3D);
+    margin-right: 6px;
+}
+.cp-about-hint {
+    margin: 4px 0 0;
+    font-size: .82rem;
+    color: var(--cp-text-muted, #7A90A8);
+    line-height: 1.45;
+}

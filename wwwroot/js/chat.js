@@ -1469,6 +1469,20 @@
 
             const chatWorkspace = document.getElementById('chatWorkspace');
             if (chatWorkspace) chatWorkspace.style.display = tab === 'chat' ? '' : 'none';
+
+            // The "AI Insights" subnav button (data-tab="chat") navigates back
+            // to the workspace home panel so users can pick another artifact.
+            if (tab === 'chat') {
+                const WF = window.workspaceFlow;
+                if (WF) {
+                    if (WF._wsData) {
+                        if (chatWorkspace) chatWorkspace.style.display = 'none';
+                        WF._renderHome(WF._wsData);
+                    } else if (typeof WF._showLanding === 'function') {
+                        WF._showLanding();
+                    }
+                }
+            }
         }
 
         // ── Manage Users ─────────────────────────────────────────────

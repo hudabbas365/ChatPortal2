@@ -50,6 +50,43 @@ public class OrgAdminController : Controller
         return View();
     }
 
+    // Returns lightweight, non-sensitive metadata about the caller's
+    // organization so the navbar's "About" popup can display where data
+    // is hosted, what is encrypted, and the org's identifiers.
+    [HttpGet("/api/org/about")]
+    public async Task<IActionResult> About()
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (caller.OrganizationId == null)
+        {
+            return Ok(new
+            {
+                id = (int?)null,
+                name = (string?)null,
+                dataRegion = "European Union (EU)",
+                hostingNotice = "Your data is hosted exclusively in European Union data centers, in compliance with GDPR.",
+                encryptionNotice = "All connection strings and credentials are encrypted at rest using AES-256.",
+                dataStorageNotice = "AI Insights does not retain copies of your business data. Queries run live against your own datasource and only the requested results are returned to your browser."
+            });
+        }
+
+        var org = await _db.Organizations
+            .Where(o => o.Id == caller.OrganizationId)
+            .Select(o => new { o.Id, o.Name })
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            id = org?.Id,
+            name = org?.Name,
+            dataRegion = "European Union (EU)",
+            hostingNotice = "Your data is hosted exclusively in European Union data centers, in compliance with GDPR.",
+            encryptionNotice = "All connection strings and credentials are encrypted at rest using AES-256.",
+            dataStorageNotice = "AI Insights does not retain copies of your business data. Queries run live against your own datasource and only the requested results are returned to your browser."
+        });
+    }
+
     [HttpGet("/api/org/users")]
     public async Task<IActionResult> GetUsers([FromQuery] int organizationId)
     {

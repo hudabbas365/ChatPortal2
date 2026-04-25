@@ -156,24 +156,38 @@ public sealed class FileDatasourceService : IFileDatasourceService
             throw new ArgumentException("Only http:// or https:// URLs are supported.");
 
         var host = uri.Host.ToLowerInvariant();
-        if (host == "1drv.ms")
+        if (host == "1drv.ms" || host == "onedrive.live.com")
         {
+            // Resolve redirects so we can detect whether the personal OneDrive
+            // has been migrated to SharePoint Online. Migrated accounts return
+            // HTTP 400 from the legacy api.onedrive.com Shares endpoint, so we
+            // fall back to the SharePoint "&download=1" direct-download trick.
+            string? resolved = null;
             try
             {
                 using var probe = new HttpRequestMessage(HttpMethod.Get, url);
                 using var resp = await client.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead);
-                var resolved = resp.RequestMessage?.RequestUri?.ToString();
-                if (!string.IsNullOrWhiteSpace(resolved) &&
-                    !resolved.StartsWith("https://1drv.ms", StringComparison.OrdinalIgnoreCase))
-                {
-                    return ToOneDriveSharesContentUrl(resolved);
-                }
+                resolved = resp.RequestMessage?.RequestUri?.ToString();
             }
-            catch { /* fall through and try with the short URL */ }
+            catch { /* network failed — fall through */ }
+
+            if (!string.IsNullOrWhiteSpace(resolved) &&
+                resolved!.IndexOf("migratedtospo=true", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return AppendDownloadFlag(resolved);
+            }
+
+            // Legacy (non-migrated) personal OneDrive — the Shares API works.
             return ToOneDriveSharesContentUrl(url);
         }
 
         return NormalizeUrl(url);
+    }
+
+    private static string AppendDownloadFlag(string url)
+    {
+        if (url.IndexOf("download=1", StringComparison.OrdinalIgnoreCase) >= 0) return url;
+        return url + (url.Contains('?') ? "&download=1" : "?download=1");
     }
 
     /// <summary>

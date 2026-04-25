@@ -778,6 +778,31 @@ public class BillingController : Controller
         var org = await _db.Organizations.FindAsync(organizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
 
+        // Self-heal: if the row is stuck on APPROVAL_PENDING but PayPal has
+        // already activated the subscription, update the DB now so the banner
+        // disappears on this page load without requiring any manual action.
+        if (org.SubscriptionStatus == "APPROVAL_PENDING" && !string.IsNullOrEmpty(org.PayPalSubscriptionId))
+        {
+            try
+            {
+                var details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+                if (details != null && (details.Status == "ACTIVE" || details.Status == "APPROVED"))
+                {
+                    org.SubscriptionStatus = "ACTIVE";
+                    org.SubscriptionStartDate ??= DateTime.UtcNow;
+                    org.SubscriptionNextBillingDate = details.NextBillingTime ?? org.SubscriptionNextBillingDate ?? DateTime.UtcNow.AddMonths(1);
+                    _db.ActivityLogs.Add(new ActivityLog
+                    {
+                        Action = "subscription_status_self_healed",
+                        Description = $"Subscription status corrected from APPROVAL_PENDING to ACTIVE on status check ({org.PayPalSubscriptionId}).",
+                        OrganizationId = org.Id
+                    });
+                    await _db.SaveChangesAsync();
+                }
+            }
+            catch { /* best effort — don't break the status endpoint if PayPal is unreachable */ }
+        }
+
         return Ok(new
         {
             subscriptionId = org.PayPalSubscriptionId,
@@ -831,7 +856,7 @@ public class BillingController : Controller
                         // Successful recurring charge → clear any past-due state.
                         org.FailedPaymentCount = 0;
                         org.GraceUntil = null;
-                        if (org.SubscriptionStatus == "PAST_DUE") org.SubscriptionStatus = "ACTIVE";
+                        if (org.SubscriptionStatus == "PAST_DUE" || org.SubscriptionStatus == "APPROVAL_PENDING") org.SubscriptionStatus = "ACTIVE";
                         _db.PaymentRecords.Add(new PaymentRecord
                         {
                             OrganizationId = org.Id,
