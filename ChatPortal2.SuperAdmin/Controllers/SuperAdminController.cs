@@ -809,19 +809,26 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer? emailer,
         IConfiguration config)
     {
-        if (notification.Scope != "User" && notification.Scope != "Role")
-            return; // All and Org use implicit fan-out via BaseQueryFor in NotificationsController
-
+        // Fan-out for ALL scopes so metrics (UserNotification rows) are accurate
         var recipients = await AIInsights.SuperAdmin.Services.NotificationDispatcher
             .ResolveRecipientsAsync(_db, notification, CancellationToken.None);
 
         var distinctIds = recipients.Select(r => r.Id).Distinct().ToHashSet();
+        if (distinctIds.Count == 0) return;
+
+        var existingUserIds = await _db.UserNotifications
+            .Where(un => un.NotificationId == notification.Id && distinctIds.Contains(un.UserId))
+            .Select(un => un.UserId)
+            .ToListAsync();
+        var existingSet = existingUserIds.ToHashSet();
+
         var isUrgent = string.Equals(notification.Severity, "urgent", StringComparison.OrdinalIgnoreCase);
         var baseUrl = config["AppBaseUrl"] ?? "";
 
         var newRows = new List<AIInsights.Models.UserNotification>();
         foreach (var uid in distinctIds)
         {
+            if (existingSet.Contains(uid)) continue;
             newRows.Add(new AIInsights.Models.UserNotification
             {
                 UserId = uid,
@@ -838,7 +845,6 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             {
                 var recipientMap = recipients.ToDictionary(r => r.Id);
                 var rowData = newRows.Select(r => new { r.Id, r.UserId }).ToList();
-                var notificationId = notification.Id;
                 var notificationTitle = notification.Title;
                 var notificationBody = notification.Body;
                 var scopeFactory = _scopeFactory;
@@ -871,7 +877,8 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                         }
                         catch (Exception ex)
                         {
-                            var logger = scopeFactory.CreateScope().ServiceProvider
+                            using var errScope = scopeFactory.CreateScope();
+                            var logger = errScope.ServiceProvider
                                 .GetRequiredService<ILogger<SuperAdminController>>();
                             logger.LogError(ex, "Failed to send urgent email for UserNotification {Id}.", rd.Id);
                         }
@@ -943,11 +950,16 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (n == null) return NotFound();
         if (n.IsRecalled)
             return BadRequest(new { error = "Notification is already recalled." });
+        if (n.DeliveryStatus != "Delivered" && n.DeliveryStatus != "Scheduled")
+            return BadRequest(new { error = "Only delivered or scheduled notifications can be recalled." });
 
         var now = DateTime.UtcNow;
         n.IsRecalled = true;
         n.RecalledAt = now;
         n.RecalledByUserId = GetCurrentUserId();
+        // If still scheduled, cancel it so dispatcher won't deliver it
+        if (n.DeliveryStatus == "Scheduled")
+            n.DeliveryStatus = "Cancelled";
 
         _db.ActivityLogs.Add(new AIInsights.Models.ActivityLog
         {
@@ -1032,18 +1044,35 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> CreateTemplate([FromBody] NotificationTemplateDto dto)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        if (dto == null || string.IsNullOrWhiteSpace(dto.Name))
+        if (dto == null) return BadRequest(new { error = "Request body is required." });
+
+        var name = dto.Name?.Trim() ?? "";
+        var title = dto.Title?.Trim() ?? "";
+        var body = dto.Body?.Trim() ?? "";
+        var type = dto.Type?.Trim() ?? "Announcement";
+        var severity = dto.Severity?.Trim() ?? "normal";
+        var link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
             return BadRequest(new { error = "Name is required." });
+        if (name.Length > 120)
+            return BadRequest(new { error = "Name must be 120 characters or fewer." });
+        if (title.Length > 200)
+            return BadRequest(new { error = "Title must be 200 characters or fewer." });
+        if (type.Length > 40)
+            return BadRequest(new { error = "Type must be 40 characters or fewer." });
+        if (severity.Length > 20)
+            return BadRequest(new { error = "Severity must be 20 characters or fewer." });
 
         var now = DateTime.UtcNow;
         var tmpl = new AIInsights.Models.NotificationTemplate
         {
-            Name = dto.Name.Trim(),
-            Title = dto.Title?.Trim() ?? "",
-            Body = dto.Body?.Trim() ?? "",
-            Type = dto.Type?.Trim() ?? "Announcement",
-            Severity = dto.Severity?.Trim() ?? "normal",
-            Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim(),
+            Name = name,
+            Title = title,
+            Body = body,
+            Type = type,
+            Severity = severity,
+            Link = link,
             CreatedByUserId = GetCurrentUserId(),
             CreatedAt = now,
             UpdatedAt = now
@@ -1069,11 +1098,25 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         var tmpl = await _db.NotificationTemplates.FindAsync(id);
         if (tmpl == null) return NotFound();
 
-        if (!string.IsNullOrWhiteSpace(dto.Name)) tmpl.Name = dto.Name.Trim();
-        if (!string.IsNullOrWhiteSpace(dto.Title)) tmpl.Title = dto.Title.Trim();
+        var name = dto.Name?.Trim();
+        var title = dto.Title?.Trim();
+        var type = dto.Type?.Trim();
+        var severity = dto.Severity?.Trim();
+
+        if (name != null && name.Length > 120)
+            return BadRequest(new { error = "Name must be 120 characters or fewer." });
+        if (title != null && title.Length > 200)
+            return BadRequest(new { error = "Title must be 200 characters or fewer." });
+        if (type != null && type.Length > 40)
+            return BadRequest(new { error = "Type must be 40 characters or fewer." });
+        if (severity != null && severity.Length > 20)
+            return BadRequest(new { error = "Severity must be 20 characters or fewer." });
+
+        if (!string.IsNullOrWhiteSpace(name)) tmpl.Name = name;
+        if (!string.IsNullOrWhiteSpace(title)) tmpl.Title = title;
         if (!string.IsNullOrWhiteSpace(dto.Body)) tmpl.Body = dto.Body.Trim();
-        if (!string.IsNullOrWhiteSpace(dto.Type)) tmpl.Type = dto.Type.Trim();
-        if (!string.IsNullOrWhiteSpace(dto.Severity)) tmpl.Severity = dto.Severity.Trim();
+        if (!string.IsNullOrWhiteSpace(type)) tmpl.Type = type;
+        if (!string.IsNullOrWhiteSpace(severity)) tmpl.Severity = severity;
         if (dto.Link != null) tmpl.Link = string.IsNullOrWhiteSpace(dto.Link) ? null : dto.Link.Trim();
         tmpl.UpdatedAt = DateTime.UtcNow;
 
