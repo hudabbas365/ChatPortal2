@@ -21,11 +21,11 @@ public class SuperAdminController : Controller
         _cohere = cohere;
     }
 
-    private string? GetCurrentUserId() =>
+    protected string? GetCurrentUserId() =>
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
 
     // Verifies SuperAdmin role both from JWT claims AND database for defense-in-depth
-    private async Task<bool> IsSuperAdminAsync()
+    protected async Task<bool> IsSuperAdminAsync()
     {
         if (!User.Claims.Any(c => c.Type == "role" && c.Value == "SuperAdmin"))
             return false;

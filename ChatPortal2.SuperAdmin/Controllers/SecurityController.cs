@@ -1,5 +1,6 @@
 using AIInsights.Data;
 using AIInsights.Models;
+using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -10,28 +11,16 @@ namespace AIInsights.SuperAdmin.Controllers;
 
 [Authorize]
 [AutoValidateAntiforgeryToken]
-public class SecurityController : Controller
+public class SecurityController : SuperAdminController
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
 
-    public SecurityController(AppDbContext db, UserManager<ApplicationUser> userManager)
+    public SecurityController(AppDbContext db, UserManager<ApplicationUser> userManager, CohereService cohere)
+        : base(db, cohere)
     {
         _db = db;
         _userManager = userManager;
-    }
-
-    private string? GetCurrentUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-
-    private async Task<bool> IsSuperAdminAsync()
-    {
-        if (!User.Claims.Any(c => c.Type == "role" && c.Value == "SuperAdmin"))
-            return false;
-        var userId = GetCurrentUserId();
-        if (string.IsNullOrEmpty(userId)) return false;
-        var user = await _db.Users.FindAsync(userId) as ApplicationUser;
-        return user?.Role == "SuperAdmin";
     }
 
     // ─── D22: Failed-login / lockout monitor ───────────────────────────────
