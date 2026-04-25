@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using System.Text;
 
 namespace AIInsights.SuperAdmin.Controllers;
 
@@ -42,7 +41,7 @@ public class SecurityController : Controller
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
 
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
 
         var users = await _db.Users
             .Include(u => u.Organization)
@@ -219,34 +218,27 @@ public class SecurityController : Controller
                 $"attachment; filename=\"audit-{fromDate:yyyyMMdd}-{(toDate.AddDays(-1)):yyyyMMdd}.csv\"");
             Response.ContentType = "text/csv";
 
-            var sb = new StringBuilder();
-            sb.AppendLine("CreatedAtUtc,Action,Description,UserId,UserEmail,UserName,OrganizationId,OrganizationName,Ip,Country");
+            // Stream directly to response body to avoid large in-memory buffers
+            await using var writer = new StreamWriter(Response.Body, leaveOpen: true);
+            await writer.WriteLineAsync("CreatedAtUtc,Action,Description,UserId,UserEmail,UserName,OrganizationId,OrganizationName,Ip,Country");
 
-            int skip = 0;
-            const int batchSize = 5000;
-            while (true)
+            await foreach (var row in query.OrderBy(l => l.CreatedAt).AsAsyncEnumerable())
             {
-                var batch = await query.OrderBy(l => l.CreatedAt).Skip(skip).Take(batchSize).ToListAsync();
-                if (batch.Count == 0) break;
-                foreach (var row in batch)
-                {
-                    sb.AppendLine(string.Join(",",
-                        CsvEscape(row.CreatedAt.ToString("O")),
-                        CsvEscape(row.Action),
-                        CsvEscape(row.Description),
-                        CsvEscape(row.UserId),
-                        CsvEscape(row.UserEmail),
-                        CsvEscape(row.UserName),
-                        CsvEscape(row.OrganizationId?.ToString()),
-                        CsvEscape(row.OrganizationName),
-                        CsvEscape(row.Ip),
-                        CsvEscape(row.Country)));
-                }
-                skip += batchSize;
-                if (batch.Count < batchSize) break;
+                await writer.WriteLineAsync(string.Join(",",
+                    CsvEscape(row.CreatedAt.ToString("O")),
+                    CsvEscape(row.Action),
+                    CsvEscape(row.Description),
+                    CsvEscape(row.UserId),
+                    CsvEscape(row.UserEmail),
+                    CsvEscape(row.UserName),
+                    CsvEscape(row.OrganizationId?.ToString()),
+                    CsvEscape(row.OrganizationName),
+                    CsvEscape(row.Ip),
+                    CsvEscape(row.Country)));
             }
 
-            return Content(sb.ToString(), "text/csv");
+            await writer.FlushAsync();
+            return new EmptyResult();
         }
         else // xlsx
         {
@@ -263,47 +255,56 @@ public class SecurityController : Controller
             range.SetAutoFilter();
 
             int row = 2;
-            int skip = 0;
-            const int batchSize = 5000;
-            while (true)
+            await foreach (var r in query.OrderBy(l => l.CreatedAt).AsAsyncEnumerable())
             {
-                var batch = await query.OrderBy(l => l.CreatedAt).Skip(skip).Take(batchSize).ToListAsync();
-                if (batch.Count == 0) break;
-                foreach (var r in batch)
-                {
-                    ws.Cell(row, 1).Value = r.CreatedAt.ToString("O");
-                    ws.Cell(row, 2).Value = r.Action;
-                    ws.Cell(row, 3).Value = r.Description;
-                    ws.Cell(row, 4).Value = r.UserId;
-                    ws.Cell(row, 5).Value = r.UserEmail ?? "";
-                    ws.Cell(row, 6).Value = r.UserName ?? "";
-                    ws.Cell(row, 7).Value = r.OrganizationId?.ToString() ?? "";
-                    ws.Cell(row, 8).Value = r.OrganizationName ?? "";
-                    ws.Cell(row, 9).Value = r.Ip ?? "";
-                    ws.Cell(row, 10).Value = r.Country ?? "";
-                    row++;
-                }
-                skip += batchSize;
-                if (batch.Count < batchSize) break;
+                ws.Cell(row, 1).Value = r.CreatedAt.ToString("O");
+                ws.Cell(row, 2).Value = XlsxSafe(r.Action);
+                ws.Cell(row, 3).Value = XlsxSafe(r.Description);
+                ws.Cell(row, 4).Value = r.UserId;
+                ws.Cell(row, 5).Value = r.UserEmail ?? "";
+                ws.Cell(row, 6).Value = r.UserName ?? "";
+                ws.Cell(row, 7).Value = r.OrganizationId?.ToString() ?? "";
+                ws.Cell(row, 8).Value = r.OrganizationName ?? "";
+                ws.Cell(row, 9).Value = r.Ip ?? "";
+                ws.Cell(row, 10).Value = r.Country ?? "";
+                row++;
             }
 
             ws.Columns().AdjustToContents();
 
-            using var ms = new MemoryStream();
+            var ms = new MemoryStream();
             workbook.SaveAs(ms);
             ms.Position = 0;
             var fileName = $"audit-{fromDate:yyyyMMdd}-{(toDate.AddDays(-1)):yyyyMMdd}.xlsx";
-            return File(ms.ToArray(),
+            return File(ms,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 fileName);
         }
     }
 
+    /// <summary>
+    /// Escapes a value for CSV, and prefixes formula-injection characters with a tab to
+    /// prevent them from being evaluated as formulas when opened in Excel.
+    /// </summary>
     private static string CsvEscape(string? value)
     {
         if (value == null) return "";
+        // Mitigate CSV formula injection: prefix cells starting with formula chars
+        if (value.Length > 0 && (value[0] == '=' || value[0] == '+' || value[0] == '-' || value[0] == '@'))
+            value = "\t" + value;
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
+    }
+
+    /// <summary>
+    /// Sanitises an XLSX cell value to prevent formula injection when opened in Excel.
+    /// </summary>
+    private static string XlsxSafe(string? value)
+    {
+        if (value == null) return "";
+        if (value.Length > 0 && (value[0] == '=' || value[0] == '+' || value[0] == '-' || value[0] == '@'))
+            return "'" + value;
         return value;
     }
 

@@ -60,15 +60,35 @@ public class GeoIpService
 
     private static bool IsPrivateIp(string ip)
     {
-        if (ip == "::1" || ip == "127.0.0.1") return true;
-        if (ip.StartsWith("10.")) return true;
-        if (ip.StartsWith("192.168.")) return true;
-        if (ip.StartsWith("172."))
+        if (!System.Net.IPAddress.TryParse(ip, out var address))
+            return true; // unparseable — skip lookup
+
+        if (System.Net.IPAddress.IsLoopback(address))
+            return true;
+
+        // Normalise IPv4-mapped IPv6 (e.g. ::ffff:10.0.0.1)
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
-            var parts = ip.Split('.');
-            if (parts.Length >= 2 && int.TryParse(parts[1], out var second))
-                return second >= 16 && second <= 31;
+            var b = address.GetAddressBytes();
+            return
+                b[0] == 10 ||                                         // 10.0.0.0/8
+                b[0] == 127 ||                                        // 127.0.0.0/8
+                (b[0] == 169 && b[1] == 254) ||                      // 169.254.0.0/16 link-local
+                (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||         // 172.16.0.0/12
+                (b[0] == 192 && b[1] == 168) ||                      // 192.168.0.0/16
+                (b[0] == 100 && (b[1] & 0b1100_0000) == 64);         // 100.64.0.0/10 shared
         }
+
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            var b = address.GetAddressBytes();
+            // fc00::/7 ULA, fe80::/10 link-local
+            return (b[0] & 0xFE) == 0xFC || (b[0] == 0xFE && (b[1] & 0xC0) == 0x80);
+        }
+
         return false;
     }
 

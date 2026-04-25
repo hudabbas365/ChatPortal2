@@ -1,7 +1,6 @@
 using AIInsights.Data;
 using AIInsights.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using System.Text;
 
 namespace AIInsights.SuperAdmin.Services;
@@ -76,7 +75,9 @@ public class DigestSenderService
             .CountAsync(ct);
 
         var top5Actions = await db.ActivityLogs
-            .Where(l => l.CreatedAt >= weekStart && l.CreatedAt < weekEnd && l.UserId != null)
+            .Where(l => l.CreatedAt >= weekStart && l.CreatedAt < weekEnd
+                && (l.Action.StartsWith("Security.") || l.Action.StartsWith("Digest.")
+                    || l.Action.StartsWith("Integration.") || l.Action.StartsWith("Auth.")))
             .GroupBy(l => l.Action)
             .OrderByDescending(g => g.Count())
             .Take(5)
@@ -195,7 +196,7 @@ public class DigestSenderService
             var subject = $"AIInsights365 weekly digest — {weekStart:MMM d} – {weekEnd:MMM d, yyyy}";
             foreach (var email in recipients)
             {
-                var msg = new System.Net.Mail.MailMessage(from, email, subject, html);
+                using var msg = new System.Net.Mail.MailMessage(from, email, subject, html);
                 msg.IsBodyHtml = true;
                 await smtp.SendMailAsync(msg);
             }
@@ -215,8 +216,8 @@ public class DigestSenderService
 
     public static string GetIsoWeekLabel(DateTime monday)
     {
-        var cal = CultureInfo.InvariantCulture.Calendar;
-        var weekNum = cal.GetWeekOfYear(monday, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
-        return $"{monday.Year}-W{weekNum:D2}";
+        var isoYear = System.Globalization.ISOWeek.GetYear(monday);
+        var weekNum = System.Globalization.ISOWeek.GetWeekOfYear(monday);
+        return $"{isoYear}-W{weekNum:D2}";
     }
 }

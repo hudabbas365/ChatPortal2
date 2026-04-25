@@ -243,7 +243,7 @@ public class IntegrationHealthService : BackgroundService
 
             foreach (var email in alertEmails)
             {
-                var msg = new System.Net.Mail.MailMessage(from, email,
+                using var msg = new System.Net.Mail.MailMessage(from, email,
                     $"[AIInsights365] Integration Alert: {provider} is DOWN",
                     $"The {provider} integration has gone DOWN at {DateTime.UtcNow:O}.\n\nError: {error ?? "Unknown"}\n\nPlease investigate.");
                 await smtp.SendMailAsync(msg);

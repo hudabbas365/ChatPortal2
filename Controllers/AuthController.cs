@@ -449,11 +449,11 @@ public class AuthController : Controller
 
     [HttpGet("/auth/change-password")]
     [Authorize]
-    public IActionResult ChangePassword() => View();
+    public IActionResult ChangePassword() => View("ChangePassword");
 
     [HttpPost("/api/auth/change-password")]
     [Authorize]
-    [IgnoreAntiforgeryToken]
+    [IgnoreAntiforgeryToken] // JWT Bearer + SameSite=Strict cookie provides CSRF protection
     public async Task<IActionResult> ChangePasswordApi([FromBody] ChangePasswordRequest req)
     {
         if (string.IsNullOrEmpty(req.CurrentPassword) || string.IsNullOrEmpty(req.NewPassword))
@@ -472,12 +472,33 @@ public class AuthController : Controller
 
         // Clear the MustChangePassword flag
         user.MustChangePassword = false;
-        await _userManager.UpdateAsync(user);
+        var updateResult = await _userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+            _logger.LogWarning("Failed to clear MustChangePassword for user {UserId}: {Errors}",
+                user.Id, string.Join(", ", updateResult.Errors.Select(e => e.Description)));
 
         _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.PasswordChanged", Description = "User changed password.", UserId = user.Id, OrganizationId = user.OrganizationId });
         await _db.SaveChangesAsync();
 
         return Ok(new { success = true, redirectUrl = "/chat" });
+    }
+
+    /// <summary>
+    /// Clears the impersonation cookie in the main app context and redirects back to SuperAdmin.
+    /// This endpoint is in the main app so the banner can call it without cross-origin issues.
+    /// </summary>
+    [HttpPost("/api/auth/impersonate/stop")]
+    [IgnoreAntiforgeryToken] // JWT Bearer + SameSite=Strict; no session cookie CSRF risk
+    public IActionResult StopImpersonation()
+    {
+        Response.Cookies.Delete("imp_jwt", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/"
+        });
+        return Ok(new { success = true, redirectUrl = "/superadmin" });
     }
 
     private void SetJwtCookie(string token)

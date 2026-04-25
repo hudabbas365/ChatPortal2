@@ -60,14 +60,8 @@ public class ImpersonationController : Controller
         var expiry = DateTime.UtcNow.AddMinutes(minutes);
         var impToken = GenerateImpersonationToken(targetUser, superAdmin!, expiry);
 
-        // Set short-lived impersonation cookie
-        Response.Cookies.Append("imp_jwt", impToken, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
-            Expires = expiry
-        });
+        // Set short-lived impersonation cookie with consistent options
+        Response.Cookies.Append("imp_jwt", impToken, GetImpersonationCookieOptions(expiry));
 
         _db.ActivityLogs.Add(new ActivityLog
         {
@@ -105,9 +99,18 @@ public class ImpersonationController : Controller
             }
         }
 
-        Response.Cookies.Delete("imp_jwt");
+        Response.Cookies.Delete("imp_jwt", GetImpersonationCookieOptions(expiry: null));
         return Ok(new { success = true, redirectUrl = "/superadmin" });
     }
+
+    private static CookieOptions GetImpersonationCookieOptions(DateTime? expiry) => new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/",
+        Expires = expiry
+    };
 
     private string GenerateImpersonationToken(ApplicationUser target, ApplicationUser superAdmin, DateTime expiry)
     {

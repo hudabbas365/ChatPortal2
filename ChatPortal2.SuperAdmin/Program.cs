@@ -79,6 +79,13 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "RequestVerificationToken";
+    options.Cookie.Name = "XSRF-TOKEN";
+    options.Cookie.HttpOnly = false; // Must be JS-readable for SPA-style AJAX
+    options.Cookie.SameSite = SameSiteMode.Strict;
+});
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
@@ -100,14 +107,30 @@ builder.Services.AddControllersWithViews()
 
 var app = builder.Build();
 
-// Show detailed errors so 500 responses include the full exception.
-// Remove or guard with app.Environment.IsDevelopment() once the issue is resolved.
-app.UseDeveloperExceptionPage();
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
 
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Issue XSRF-TOKEN cookie on every request so JS can read it for fetch calls
+app.Use(async (context, next) =>
+{
+    var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
+    {
+        HttpOnly = false,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/"
+    });
+    await next();
+});
 
 app.UseStatusCodePages(async context =>
 {

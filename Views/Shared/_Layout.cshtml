@@ -60,7 +60,8 @@
         </div>
         <script>
         function stopImpersonation() {
-            fetch('/api/superadmin/impersonate/stop', {
+            // Call the local stop endpoint (JWT Bearer + SameSite=Strict — no CSRF token needed)
+            fetch('/api/auth/impersonate/stop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             }).then(function(r){ return r.json(); }).then(function(d){

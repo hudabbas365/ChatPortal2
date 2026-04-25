@@ -18,23 +18,55 @@ public class WeeklyDigestService : BackgroundService
     {
         await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
 
+        DateTime? lastProcessedScheduledRunUtc = null;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var now = DateTime.UtcNow;
-                if (now.DayOfWeek == DayOfWeek.Monday && now.Hour == 9)
+                var mostRecentScheduledRun = GetMostRecentScheduledRunUtc(now);
+
+                // Fire if we haven't processed this scheduled run yet and the time has passed
+                if ((!lastProcessedScheduledRunUtc.HasValue || lastProcessedScheduledRunUtc.Value < mostRecentScheduledRun)
+                    && now >= mostRecentScheduledRun)
                 {
                     await _sender.TrySendDigestAsync(null, stoppingToken);
+                    lastProcessedScheduledRunUtc = mostRecentScheduledRun;
                 }
+
+                // Sleep until the next scheduled Monday 09:00 UTC
+                now = DateTime.UtcNow;
+                var nextRun = GetNextScheduledRunUtc(now);
+                var delay = nextRun - now;
+                if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+
+                await Task.Delay(delay, stoppingToken);
             }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "WeeklyDigestService failed.");
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
             }
-
-            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
         }
+    }
+
+    /// <summary>Returns the most recent Monday 09:00 UTC at or before <paramref name="utcNow"/>.</summary>
+    private static DateTime GetMostRecentScheduledRunUtc(DateTime utcNow)
+    {
+        var daysSinceMonday = ((int)utcNow.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        var scheduled = utcNow.Date.AddDays(-daysSinceMonday).AddHours(9);
+        if (scheduled > utcNow)
+            scheduled = scheduled.AddDays(-7);
+        return scheduled;
+    }
+
+    /// <summary>Returns the next Monday 09:00 UTC strictly after <paramref name="utcNow"/>.</summary>
+    private static DateTime GetNextScheduledRunUtc(DateTime utcNow)
+    {
+        var mostRecent = GetMostRecentScheduledRunUtc(utcNow);
+        return mostRecent.AddDays(7);
     }
 }
 

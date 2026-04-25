@@ -130,6 +130,8 @@ builder.Services.AddHostedService<SubscriptionExpiryJob>();
 // GeoIP service (D25)
 builder.Services.AddHttpClient("geoip");
 builder.Services.AddScoped<GeoIpService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ActivityLogger>();
 
 // Session support
 builder.Services.AddDistributedMemoryCache();
@@ -210,10 +212,11 @@ app.Use(async (context, next) =>
 app.UseCors();
 app.UseSession();
 app.UseAuthentication();
-app.UseAuthorization();
 
 // Impersonation middleware (D23): if imp_jwt cookie is present and valid,
 // override the current principal with the impersonated user's identity.
+// Must run AFTER UseAuthentication() and BEFORE UseAuthorization() so
+// authorization decisions are made against the impersonated principal.
 app.Use(async (context, next) =>
 {
     var impCookie = context.Request.Cookies["imp_jwt"];
@@ -260,6 +263,8 @@ app.Use(async (context, next) =>
     }
     await next();
 });
+
+app.UseAuthorization();
 
 // Redirect 401/403 to the Access Denied page for browser requests
 app.UseStatusCodePages(async context =>
