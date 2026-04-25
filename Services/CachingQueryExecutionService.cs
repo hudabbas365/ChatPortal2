@@ -103,6 +103,23 @@ public class CachingQueryExecutionService : IQueryExecutionService, IQueryCacheI
     public Task<(bool Success, string? Error)> TestRestApiAsync(string? apiUrl, string? apiKey, string? apiMethod = null)
         => _inner.TestRestApiAsync(apiUrl, apiKey, apiMethod);
 
+    public Task<(bool Success, string? Error)> TestFileUrlAsync(string? url)
+        => _inner.TestFileUrlAsync(url);
+
+    public async Task<QueryExecutionResult> ExecuteFileUrlAsync(Datasource ds, int maxRows = 1000)
+    {
+        if (ds == null) return await _inner.ExecuteFileUrlAsync(ds!, maxRows);
+
+        var key = $"fileurl:{ds.Id}:{maxRows}";
+        if (_cache.TryGetValue<QueryExecutionResult>(key, out var hit) && hit != null)
+            return hit;
+
+        var result = await _inner.ExecuteFileUrlAsync(ds, maxRows);
+        if (result.Success && result.RowCount <= MaxResultRowsToCache)
+            Store(ds.Id, key, result, RestTtl);
+        return result;
+    }
+
     public void InvalidateDatasource(int datasourceId)
     {
         if (_tokens.TryRemove(datasourceId, out var cts))

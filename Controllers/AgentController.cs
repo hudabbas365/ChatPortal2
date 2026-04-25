@@ -312,7 +312,8 @@ public class AgentController : ControllerBase
         var dsType = datasourceType ?? "";
         bool isPowerBi = Services.QueryExecutionService.PowerBiTypes.Contains(dsType);
         bool isRestApi = Services.QueryExecutionService.RestApiTypes.Contains(dsType);
-        string queryLang = isRestApi ? "REST API" : isPowerBi ? "DAX" : "SQL";
+        bool isFileUrl = Services.QueryExecutionService.FileUrlTypes.Contains(dsType);
+        string queryLang = isRestApi ? "REST API" : isFileUrl ? "File URL" : isPowerBi ? "DAX" : "SQL";
 
         var sb = new System.Text.StringBuilder();
         sb.Append($"You are {agentName}, an AI data assistant for the \"{workspaceName}\" workspace. ");
@@ -322,14 +323,14 @@ public class AgentController : ControllerBase
 
         if (!string.IsNullOrEmpty(selectedTables))
         {
-            var tableLabel = isRestApi ? "Available API fields" : isPowerBi ? "Available tables/measures" : "Available tables and views";
+            var tableLabel = isRestApi ? "Available API fields" : isFileUrl ? "Available file columns" : isPowerBi ? "Available tables/measures" : "Available tables and views";
             sb.Append($"{tableLabel}: {selectedTables}. ");
         }
 
         sb.AppendLine("Your responsibilities include:");
-        if (isRestApi)
+        if (isRestApi || isFileUrl)
         {
-            sb.AppendLine("1. Answering data-related questions by analyzing the pre-fetched API data");
+            sb.AppendLine("1. Answering data-related questions by analyzing the pre-fetched data");
             sb.AppendLine("2. Providing clear, actionable insights based on the data fields available");
         }
         else
@@ -347,6 +348,12 @@ public class AgentController : ControllerBase
             sb.AppendLine("IMPORTANT: This is a REST API datasource. Do NOT generate SQL or DAX queries.");
             sb.AppendLine("Always set the query field to \"REST_API\" — the system fetches data automatically from the API.");
             sb.AppendLine("Suggest charts and field mappings based on the available API fields.");
+        }
+        else if (isFileUrl)
+        {
+            sb.AppendLine("IMPORTANT: This is a File URL datasource (CSV/Excel). Do NOT generate SQL or DAX queries.");
+            sb.AppendLine("Always set the query field to \"FILE_URL\" — the system fetches and parses the file automatically.");
+            sb.AppendLine("Suggest charts and field mappings based on the available file columns.");
         }
         else if (isPowerBi)
         {

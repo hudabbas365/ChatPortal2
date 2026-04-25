@@ -130,6 +130,10 @@ builder.Services.AddHostedService<SubscriptionExpiryJob>();
 // GeoIP service (D25)
 builder.Services.AddHttpClient("geoip");
 builder.Services.AddScoped<GeoIpService>();
+
+// File URL datasource (CSV / XLSX public share links — anonymous fetch, no storage)
+builder.Services.AddHttpClient("fileds");
+builder.Services.AddSingleton<IFileDatasourceService, FileDatasourceService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ActivityLogger>();
 
