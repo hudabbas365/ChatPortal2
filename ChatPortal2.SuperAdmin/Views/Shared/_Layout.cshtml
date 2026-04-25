@@ -247,6 +247,15 @@
                 <a href="/superadmin/seo" class="sb-link @(ViewData["ActivePage"]?.ToString() == "seo" ? "active" : "")"><i class="bi bi-search"></i>SEO Manager</a>
             </nav>
 
+            <div class="sb-section">Insights</div>
+            <nav class="sb-nav">
+                <a href="/superadmin/users" class="sb-link @(ViewData["ActivePage"]?.ToString() == "users" ? "active" : "")"><i class="bi bi-person-lines-fill"></i>User Search</a>
+                <a href="/superadmin/insights/token-usage" class="sb-link @(ViewData["ActivePage"]?.ToString() == "token-usage" ? "active" : "")"><i class="bi bi-cpu"></i>Token Usage</a>
+                <a href="/superadmin/insights/margin" class="sb-link @(ViewData["ActivePage"]?.ToString() == "margin" ? "active" : "")"><i class="bi bi-bar-chart-line"></i>AI Margin</a>
+                <a href="/superadmin/insights/churn-risk" class="sb-link @(ViewData["ActivePage"]?.ToString() == "churn-risk" ? "active" : "")"><i class="bi bi-exclamation-triangle"></i>Churn Risk</a>
+                <a href="/superadmin/insights/health" class="sb-link @(ViewData["ActivePage"]?.ToString() == "health" ? "active" : "")"><i class="bi bi-heart-pulse"></i>Org Health</a>
+            </nav>
+
             <div class="sb-section">Content</div>
             <nav class="sb-nav">
                 <a href="/superadmin/docs" class="sb-link @(ViewData["ActivePage"]?.ToString() == "docs" ? "active" : "")"><i class="bi bi-file-earmark-text"></i>Documentation</a>

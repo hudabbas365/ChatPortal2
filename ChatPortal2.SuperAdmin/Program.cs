@@ -88,14 +88,11 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
-builder.Services.AddScoped<InvoicePdfService>();
-builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
-builder.Services.AddMemoryCache();
-builder.Services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN");
+
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>
-    {
+    { 
         // Remove the main AIInsights assembly so its controllers are not discovered
         var mainPart = manager.ApplicationParts
             .FirstOrDefault(p => p.Name == "AIInsights");
