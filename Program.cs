@@ -147,6 +147,12 @@ builder.Services.AddSession(options =>
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson();
 
+// Configure antiforgery to accept tokens via request header (for AJAX/SPA calls)
+builder.Services.AddAntiforgery(opts =>
+{
+    opts.HeaderName = "RequestVerificationToken";
+});
+
 var app = builder.Build();
 
 // Database initialization and SEO seeding
@@ -265,6 +271,22 @@ app.Use(async (context, next) =>
 });
 
 app.UseAuthorization();
+
+// Issue XSRF-TOKEN cookie so JS can read and send it in fetch calls for CSRF-protected API endpoints
+app.Use(async (context, next) =>
+{
+    var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    // HttpOnly=false is intentional: JS needs to read this cookie to send the header
+    context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
+    {
+        HttpOnly = false,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/"
+    });
+    await next();
+});
 
 // Redirect 401/403 to the Access Denied page for browser requests
 app.UseStatusCodePages(async context =>

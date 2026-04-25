@@ -272,6 +272,7 @@ public class SecurityController : Controller
 
             ws.Columns().AdjustToContents();
 
+            // MemoryStream is intentionally not disposed here: FileStreamResult owns and disposes it after the response is sent.
             var ms = new MemoryStream();
             workbook.SaveAs(ms);
             ms.Position = 0;

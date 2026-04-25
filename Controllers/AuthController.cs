@@ -488,7 +488,7 @@ public class AuthController : Controller
     /// This endpoint is in the main app so the banner can call it without cross-origin issues.
     /// </summary>
     [HttpPost("/api/auth/impersonate/stop")]
-    [IgnoreAntiforgeryToken] // JWT Bearer + SameSite=Strict; no session cookie CSRF risk
+    [ValidateAntiForgeryToken]
     public IActionResult StopImpersonation()
     {
         Response.Cookies.Delete("imp_jwt", new CookieOptions

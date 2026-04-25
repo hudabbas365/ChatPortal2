@@ -60,10 +60,11 @@
         </div>
         <script>
         function stopImpersonation() {
-            // Call the local stop endpoint (JWT Bearer + SameSite=Strict — no CSRF token needed)
+            // Call the local stop endpoint; send XSRF-TOKEN cookie value as header for CSRF validation
+            var xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
             fetch('/api/auth/impersonate/stop', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': decodeURIComponent(xsrf) }
             }).then(function(r){ return r.json(); }).then(function(d){
                 window.location.href = d.redirectUrl || '/superadmin';
             });

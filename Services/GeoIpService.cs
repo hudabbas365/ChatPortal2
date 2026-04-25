@@ -79,7 +79,7 @@ public class GeoIpService
                 (b[0] == 169 && b[1] == 254) ||                      // 169.254.0.0/16 link-local
                 (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||         // 172.16.0.0/12
                 (b[0] == 192 && b[1] == 168) ||                      // 192.168.0.0/16
-                (b[0] == 100 && (b[1] & 0b1100_0000) == 64);         // 100.64.0.0/10 shared
+                (b[0] == 100 && b[1] >= 64 && b[1] <= 127);          // 100.64.0.0/10 shared address space
         }
 
         if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
