@@ -1,0 +1,158 @@
+@model List<AIInsights.SuperAdmin.Controllers.SecurityController.FailedLoginUserVm>
+@{
+    ViewData["Title"] = "Failed Logins & Lockouts";
+    ViewData["ActivePage"] = "security-logins";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var failedEvents = ViewBag.FailedEvents as List<AIInsights.Models.ActivityLog> ?? new();
+}
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Failed Logins &amp; Lockouts</h1>
+        <p class="page-desc">Accounts with failed attempts or active lockouts</p>
+    </div>
+</div>
+
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-3" id="secTabs">
+    <li class="nav-item"><a class="nav-link active" href="#tab-locked" data-bs-toggle="tab">🔒 Locked / At-Risk Users</a></li>
+    <li class="nav-item"><a class="nav-link" href="#tab-events" data-bs-toggle="tab">📋 Recent Failed Events</a></li>
+</ul>
+
+<div class="tab-content">
+    <!-- Tab 1: Locked users -->
+    <div class="tab-pane fade show active" id="tab-locked">
+        <div class="card-panel" style="overflow-x:auto">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Org</th>
+                        <th>Failed Attempts</th>
+                        <th>Lockout Ends</th>
+                        <th>Last Login</th>
+                        <th>Last IP</th>
+                        <th>Country</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in Model)
+                    {
+                        var isLocked = u.LockoutEnd.HasValue && u.LockoutEnd > DateTimeOffset.UtcNow;
+                        <tr>
+                            <td>
+                                <div style="font-weight:500;color:#1e3a5f">@u.FullName</div>
+                                <div style="font-size:.75rem;color:#596d82">@u.Email</div>
+                            </td>
+                            <td>@(u.OrgName ?? "—")</td>
+                            <td>
+                                @if (u.AccessFailedCount > 0)
+                                {
+                                    <span class="badge-sm badge-red">@u.AccessFailedCount</span>
+                                }
+                                else
+                                {
+                                    <span style="color:var(--text-muted)">0</span>
+                                }
+                            </td>
+                            <td>
+                                @if (isLocked && u.LockoutEnd.HasValue)
+                                {
+                                    <span class="badge-sm badge-red">@u.LockoutEnd.Value.UtcDateTime.ToString("MMM d HH:mm") UTC</span>
+                                }
+                                else
+                                {
+                                    <span style="color:var(--text-muted)">—</span>
+                                }
+                            </td>
+                            <td style="font-size:.8rem;color:var(--text-muted)">@(u.LastLoginAt.HasValue ? u.LastLoginAt.Value.ToString("MMM d HH:mm") : "—")</td>
+                            <td style="font-size:.8rem;font-family:monospace">@(u.LastLoginIp ?? "—")</td>
+                            <td>@(u.LastLoginCountry ?? "—")</td>
+                            <td>
+                                <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+                                    <button class="btn-ghost-sm" onclick="doAction('/api/superadmin/security/users/@u.Id/reset-failed-attempts','Reset attempts for @u.Email?')">
+                                        <i class="bi bi-arrow-counterclockwise"></i> Reset
+                                    </button>
+                                    @if (isLocked)
+                                    {
+                                        <button class="btn-ghost-sm" onclick="doAction('/api/superadmin/security/users/@u.Id/unlock','Unlock @u.Email?')">
+                                            <i class="bi bi-unlock"></i> Unlock
+                                        </button>
+                                    }
+                                    <button class="btn-ghost-sm" style="color:#ef4444" onclick="doAction('/api/superadmin/security/users/@u.Id/force-password-reset','Force password reset for @u.Email?')">
+                                        <i class="bi bi-key"></i> Force Reset
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (Model.Count == 0)
+                    {
+                        <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem">No accounts with failed attempts or lockouts.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab 2: Recent failed events -->
+    <div class="tab-pane fade" id="tab-events">
+        <div class="card-panel" style="overflow-x:auto">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ev in failedEvents)
+                    {
+                        <tr>
+                            <td style="white-space:nowrap;color:var(--text-muted)">@ev.CreatedAt.ToString("MMM d HH:mm")</td>
+                            <td style="font-size:.82rem">@ev.Description</td>
+                        </tr>
+                    }
+                    @if (failedEvents.Count == 0)
+                    {
+                        <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:2rem">No failed login events recorded.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="toast" style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;background:#1e3a5f;color:#fff;padding:.75rem 1.25rem;border-radius:8px;font-size:.85rem;z-index:9999"></div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+var _token = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('XSRF-TOKEN='));
+
+function getCsrf() {
+    var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+}
+
+function showToast(msg, ok) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = ok ? '#16a34a' : '#dc2626';
+    t.style.display = 'block';
+    setTimeout(function(){ t.style.display='none'; }, 3000);
+}
+
+function doAction(url, confirmMsg) {
+    if (!confirm(confirmMsg)) return;
+    fetch(url, {
+        method: 'POST',
+        headers: { 'RequestVerificationToken': getCsrf() }
+    })
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+    .then(function(x){ showToast(x.ok ? 'Done!' : (x.j.error||'Error'), x.ok); if(x.ok) setTimeout(function(){ location.reload(); },1200); })
+    .catch(function(){ showToast('Request failed',false); });
+}
+</script>
+}

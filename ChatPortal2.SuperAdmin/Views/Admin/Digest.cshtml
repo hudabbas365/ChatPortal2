@@ -1,0 +1,109 @@
+@model List<AIInsights.Models.DigestRun>
+@{
+    ViewData["Title"] = "Weekly Digest";
+    ViewData["ActivePage"] = "digest";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Weekly Digest</h1>
+        <p class="page-desc">Manage and preview the weekly SuperAdmin email digest</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn-primary-sm" onclick="sendNow()"><i class="bi bi-send"></i> Send Now</button>
+        <button class="btn-ghost-sm" onclick="previewDigest()"><i class="bi bi-eye"></i> Preview</button>
+    </div>
+</div>
+
+<!-- Week override input -->
+<div class="card-panel mb-3" style="padding:.85rem 1.25rem">
+    <label style="font-size:.82rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;display:block">Week Start (optional, for manual send/preview)</label>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <input type="date" id="weekStartInput" style="background:#fff;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.3rem .6rem;font-size:.85rem;font-family:inherit" />
+        <span style="font-size:.78rem;color:var(--text-muted)">Leave empty to use previous week</span>
+    </div>
+</div>
+
+<!-- Digest runs table -->
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>Week</th>
+                <th>Sent At</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var run in Model)
+            {
+                <tr>
+                    <td style="font-weight:500;color:#1e3a5f">@run.RunWeekIso</td>
+                    <td style="color:var(--text-muted);font-size:.82rem">@run.SentAt.ToString("MMM d, yyyy HH:mm") UTC</td>
+                </tr>
+            }
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:2rem">No digest runs yet.</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<!-- Preview iframe (hidden by default) -->
+<div id="previewPanel" style="display:none;margin-top:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+        <h3 style="font-size:1rem;font-weight:600;color:#1e3a5f;margin:0">Digest Preview</h3>
+        <button class="btn-ghost-sm" onclick="closePreview()"><i class="bi bi-x-lg"></i> Close</button>
+    </div>
+    <iframe id="previewFrame" style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
+</div>
+
+<div id="toast" style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;background:#1e3a5f;color:#fff;padding:.75rem 1.25rem;border-radius:8px;font-size:.85rem;z-index:9999"></div>
+
+@section Scripts {
+<script>
+function getCsrf() {
+    var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+}
+
+function showToast(msg, ok) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = ok ? '#16a34a' : '#dc2626';
+    t.style.display = 'block';
+    setTimeout(function(){ t.style.display='none'; }, 3500);
+}
+
+function sendNow() {
+    var weekStart = document.getElementById('weekStartInput').value;
+    if (!confirm('Send weekly digest' + (weekStart ? ' for week of ' + weekStart : ' for previous week') + '?')) return;
+
+    fetch('/api/superadmin/digest/send-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getCsrf() },
+        body: JSON.stringify(weekStart ? { weekStart: weekStart } : {})
+    })
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+    .then(function(x){
+        showToast(x.ok ? 'Digest sent!' : (x.j.error||'Error sending digest'), x.ok);
+        if (x.ok) setTimeout(function(){ location.reload(); }, 2000);
+    })
+    .catch(function(){ showToast('Request failed', false); });
+}
+
+function previewDigest() {
+    var weekStart = document.getElementById('weekStartInput').value;
+    var url = '/api/superadmin/digest/preview' + (weekStart ? '?weekStart=' + encodeURIComponent(weekStart) : '');
+    document.getElementById('previewFrame').src = url;
+    document.getElementById('previewPanel').style.display = 'block';
+    document.getElementById('previewPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function closePreview() {
+    document.getElementById('previewPanel').style.display = 'none';
+    document.getElementById('previewFrame').src = '';
+}
+</script>
+}

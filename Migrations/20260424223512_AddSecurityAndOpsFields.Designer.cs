@@ -4,6 +4,7 @@ using AIInsights.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AIInsights.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260424223512_AddSecurityAndOpsFields")]
+    partial class AddSecurityAndOpsFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -142,9 +145,6 @@ namespace AIInsights.Migrations
 
                     b.Property<string>("LastLoginIp")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("LastSeenAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
@@ -570,9 +570,6 @@ namespace AIInsights.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("AutoRenew")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime?>("BlockedAt")
                         .HasColumnType("datetime2");
 
@@ -602,15 +599,6 @@ namespace AIInsights.Migrations
 
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LicenseEndsAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("LicenseNotes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("LicenseStartsAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("LogoUrl")
                         .HasColumnType("nvarchar(max)");
@@ -702,9 +690,6 @@ namespace AIInsights.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("DueDate")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
@@ -814,59 +799,6 @@ namespace AIInsights.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("PinnedResults");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.PlanChangeLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ChangeType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ChangedByEmail")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ChangedByUserId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("FromLicenseEndsAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("FromPlan")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("FromPurchasedLicenses")
-                        .HasColumnType("int");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("ToLicenseEndsAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ToPlan")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ToPurchasedLicenses")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.ToTable("PlanChangeLogs");
                 });
 
             modelBuilder.Entity("AIInsights.Models.Report", b =>
@@ -1578,17 +1510,6 @@ namespace AIInsights.Migrations
                 {
                     b.HasOne("AIInsights.Models.Organization", "Organization")
                         .WithMany("PaymentRecords")
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("AIInsights.Models.PlanChangeLog", b =>
-                {
-                    b.HasOne("AIInsights.Models.Organization", "Organization")
-                        .WithMany()
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

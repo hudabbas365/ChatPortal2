@@ -15,4 +15,13 @@ public class ApplicationUser : IdentityUser
     public string? StripeCustomerId { get; set; }
     public string? CardBrand { get; set; }
     public string? CardLast4 { get; set; }
+
+    // Last-login geo fields (D25)
+    public string? LastLoginIp { get; set; }
+    public string? LastLoginCountry { get; set; }  // ISO-3166 alpha-2
+    public string? LastLoginCity { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+
+    // Force-password-reset flag (D22)
+    public bool MustChangePassword { get; set; } = false;
 }

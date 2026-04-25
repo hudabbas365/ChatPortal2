@@ -85,9 +85,21 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "RequestVerificationToken";
+    options.Cookie.Name = "XSRF-TOKEN";
+    options.Cookie.HttpOnly = false; // Must be JS-readable for SPA-style AJAX
+    options.Cookie.SameSite = SameSiteMode.Strict;
+});
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
+builder.Services.AddHostedService<IntegrationHealthService>();
+builder.Services.AddHostedService<WeeklyDigestService>();
+builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<DigestSenderService>();
 
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
@@ -117,6 +129,18 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Issue XSRF-TOKEN cookie on every request so JS can read it for fetch calls
+app.Use(async (context, next) =>
+{
+    var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
+    {
+        HttpOnly = false,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/"
+    });
 // Middleware: update LastSeenAt for authenticated users (at most once every 5 minutes)
 app.Use(async (context, next) =>
 {
