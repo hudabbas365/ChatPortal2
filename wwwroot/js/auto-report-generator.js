@@ -1139,29 +1139,50 @@
     // ── Extract JSON from AI text (handles markdown fences) ──────────
     function _extractJson(text) {
         if (!text) return null;
-        // Try extracting from code fence
+        // Try extracting from code fence first
         var fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
         var jsonStr = fenceMatch ? fenceMatch[1].trim() : text.trim();
 
-        // Find the outermost { ... }
-        var start = jsonStr.indexOf('{');
-        if (start === -1) return null;
-        var depth = 0, inStr = false, esc = false;
-        for (var i = start; i < jsonStr.length; i++) {
+        // Collect ALL complete top-level { ... } objects in the text.
+        // The AI sometimes emits commentary with braces before the actual JSON,
+        // so we scan the full string and try candidates from last to first.
+        var candidates = [];
+        var depth = 0, inStr = false, esc = false, start = -1;
+        for (var i = 0; i < jsonStr.length; i++) {
             var ch = jsonStr[i];
             if (esc) { esc = false; continue; }
             if (ch === '\\' && inStr) { esc = true; continue; }
             if (ch === '"') { inStr = !inStr; continue; }
             if (inStr) continue;
-            if (ch === '{') depth++;
-            else if (ch === '}') {
+            if (ch === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (ch === '}') {
                 depth--;
-                if (depth === 0) {
-                    try { return JSON.parse(jsonStr.slice(start, i + 1)); }
-                    catch (e) { return null; }
+                if (depth === 0 && start !== -1) {
+                    candidates.push(jsonStr.slice(start, i + 1));
+                    start = -1;
                 }
             }
         }
+
+        // Try each candidate from last to first — the AI typically puts the main JSON last.
+        for (var j = candidates.length - 1; j >= 0; j--) {
+            try {
+                var parsed = JSON.parse(candidates[j]);
+                if (parsed && parsed.pages) return parsed;
+            } catch (e) {}
+        }
+
+        // Last resort: repair common JSON issues (trailing commas before } or ])
+        for (var k = candidates.length - 1; k >= 0; k--) {
+            try {
+                var repaired = candidates[k].replace(/,(\s*[}\]])/g, '$1');
+                var parsedRepaired = JSON.parse(repaired);
+                if (parsedRepaired && parsedRepaired.pages) return parsedRepaired;
+            } catch (e) {}
+        }
+
         return null;
     }
 

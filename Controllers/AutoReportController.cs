@@ -203,6 +203,8 @@ public class AutoReportController : ControllerBase
 - NEVER write ORDER BY on a column that is not in that table/view's listed columns. If no suitable sort column exists, OMIT ORDER BY entirely.
 - Items marked (VIEW) are views — their column list in the schema is AUTHORITATIVE; treat any column not listed as non-existent.
 - If you need a metric and the chosen object has no matching column, pick a DIFFERENT object from the schema or skip that chart. Do NOT guess.
+- Schema column markers: ★ = numeric/aggregatable (safe to use in SUM/AVG/COUNT), ⏱ = date/time (safe for time-series and trend charts).
+- Tables show an approximate row count (e.g. ""~50k rows""). PREFER tables with more rows — they contain real data. Avoid querying tables with 0 or very few rows.
 
 ## Rules
 - Return ONLY valid JSON — no markdown, no explanation, no code fences.
@@ -212,8 +214,8 @@ public class AutoReportController : ControllerBase
   - ""chartType"": one of ""bar"", ""line"", ""pie"", ""doughnut"", ""area"", ""scatter"", ""table"", ""kpi"", ""card"" (single-metric card visual, interchangeable with kpi), ""shape-textbox""
   - ""title"": short descriptive title (max ~40 chars)
   - ""dataQuery"": see query rules below
-  - ""labelField"": the column/field for labels/categories (MUST be an actual column name from the schema, NOT a SQL alias)
-  - ""valueField"": the primary numeric column/field (MUST be an actual column name from the schema, NOT a SQL alias)
+  - ""labelField"": the column/field name for labels/categories. **For kpi/card: always set to ""Value"" (the mandatory alias).** For all other chart types: use the actual column name exactly as it appears in the schema (NOT a SQL alias — use the real schema column name for the GROUP BY field).
+  - ""valueField"": the primary numeric column/field name. **For kpi/card: always set to ""Value"" (the mandatory alias).** For all other chart types: use the actual column name exactly as it appears in the schema (NOT a SQL alias — use the real schema column name for the aggregated field, marked ★).
   - ""description"": 1-2 sentence explanation of what this chart shows
   - ""tableName"": the table name this chart queries (must match one of the available tables)
   - ""width"": grid width per Layout Rules (title textbox: 12, KPI: 2, middle chart: 4, bottom table: 12)
@@ -225,19 +227,19 @@ public class AutoReportController : ControllerBase
 - ""kpi"" and ""card"" = the single-metric card visual. Use them for ANY single-number metric (total, average, count, max, min). Use ""kpi"" when a delta-vs-prior indicator is meaningful; use ""card"" for a cleaner, plain single-value tile.
 - CRITICAL KPI/CARD QUERY RULE — the query MUST return EXACTLY ONE ROW with ONE numeric column aliased [Value]:
   - CORRECT:  SELECT COUNT(*) AS [Value] FROM [dbo].[Products]
-  - CORRECT:  SELECT AVG([ListPrice]) AS [Value] FROM [dbo].[Products]
-  - CORRECT:  SELECT SUM([Revenue]) AS [Value] FROM [dbo].[Sales]
+  - CORRECT:  SELECT AVG([ListPrice★]) AS [Value] FROM [dbo].[Products]
+  - CORRECT:  SELECT SUM([Revenue★]) AS [Value] FROM [dbo].[Sales]
   - CORRECT:  SELECT COUNT(*) AS [Value] FROM [dbo].[Products] WHERE [Discontinued] = 1
   - WRONG:    SELECT [Name], [Price] FROM [dbo].[Products]   (multi-row → renders as bar chart)
   - WRONG:    SELECT [Category], COUNT(*) AS [Value] FROM ... GROUP BY [Category]   (multi-row)
   - NEVER use GROUP BY in a kpi/card query. NEVER select more than one column. NEVER use TOP N for kpi/card — it must aggregate to a scalar.
   - For kpi/card, set both ""labelField"" and ""valueField"" to ""Value"".
-- ""bar"" / ""column"" — use for categorical comparisons (top N items, counts by category). Query: GROUP BY a category + aggregate, ORDER BY the aggregate DESC, LIMIT/TOP 10.
-- ""line"" / ""area"" — use ONLY when you have a real date/time column and want a trend. Group by month/year and order chronologically.
-- ""pie"" / ""doughnut"" — use ONLY for part-of-whole with a small category count (≤ 8 slices). Never use on high-cardinality columns (IDs, names, descriptions).
+- ""bar"" / ""column"" — use for categorical comparisons (top N items, counts by category). Query: GROUP BY a category + aggregate a ★ column, ORDER BY the aggregate DESC, TOP 10. Set labelField to the GROUP BY column name, valueField to the ★ column name.
+- ""line"" / ""area"" — use ONLY when you have a real ⏱ date/time column and want a trend. Group by month/year and order chronologically. Set labelField to the date column, valueField to the ★ column.
+- ""pie"" / ""doughnut"" — use ONLY for part-of-whole with a small category count (≤ 8 slices). Never use on high-cardinality columns (IDs, names, descriptions). Set labelField to the category column, valueField to the ★ column.
 - ""table"" — use for detail rows (top-N lists). NEVER select long-text columns (Description, Notes, Comment, XML/JSON blobs); pick short ID/name/numeric columns only.
 - DO NOT invent charts over unknown columns. If a column's purpose is unclear, skip it. Better to generate fewer, meaningful charts than many confusing ones.
-- Every chart's query MUST make obvious sense: aggregating a clearly numeric field, grouping by a clearly categorical field.
+- Every chart's query MUST make obvious sense: aggregating a clearly ★ numeric field, grouping by a clearly categorical field.
 - Use ""shape-textbox"" charts for page titles and report descriptions. Set ""text"" field with the content.
 - For KPI cards, use chartType ""kpi"" with a query that returns a single aggregated value aliased [Value].
 
@@ -446,6 +448,7 @@ public class AutoReportController : ControllerBase
         else
         {
             sb.AppendLine("## SQL Server Schema");
+            sb.AppendLine("Column markers: ★ = numeric/aggregatable, ⏱ = date/time");
             try
             {
                 var schemaQuery = @"
@@ -463,6 +466,35 @@ public class AutoReportController : ControllerBase
                 var result = await _queryService.ExecuteReadOnlyAsync(ds, schemaQuery);
                 if (result.Success && result.Data.Count > 0)
                 {
+                    // Fetch estimated row counts from partition stats (best-effort).
+                    var rowCounts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+                    try
+                    {
+                        const string rowCountQuery = @"
+                            SELECT o.name AS TableName, SUM(p.row_count) AS RowCount
+                            FROM sys.objects o
+                            JOIN sys.dm_db_partition_stats p ON p.object_id = o.object_id
+                            WHERE o.type IN ('U','V') AND p.index_id IN (0, 1)
+                            GROUP BY o.name";
+                        var rcResult = await _queryService.ExecuteReadOnlyAsync(ds, rowCountQuery);
+                        if (rcResult.Success)
+                        {
+                            foreach (var row in rcResult.Data)
+                            {
+                                var tblName = row.ContainsKey("TableName") ? row["TableName"]?.ToString() ?? "" : "";
+                                var cnt = row.ContainsKey("RowCount") && long.TryParse(row["RowCount"]?.ToString(), out var n) ? n : 0;
+                                if (!string.IsNullOrEmpty(tblName)) rowCounts[tblName] = cnt;
+                            }
+                        }
+                    }
+                    catch { /* best-effort: row counts are informational only */ }
+
+                    // Column type classifiers.
+                    var numericTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        { "int", "bigint", "smallint", "tinyint", "decimal", "numeric", "float", "real", "money", "smallmoney", "bit" };
+                    var dateTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        { "datetime", "datetime2", "date", "time", "datetimeoffset", "smalldatetime" };
+
                     var grouped = result.Data
                         .GroupBy(r =>
                         {
@@ -471,19 +503,37 @@ public class AutoReportController : ControllerBase
                             var kind = r.ContainsKey("ObjectKind") ? r["ObjectKind"]?.ToString() ?? "TABLE" : "TABLE";
                             return $"[{schema}].[{table}]|{kind}";
                         })
-                        .Where(g => !string.IsNullOrEmpty(g.Key));
+                        .Where(g => !string.IsNullOrEmpty(g.Key))
+                        // Sort most-populated tables first so the AI focuses on data-rich objects.
+                        .OrderByDescending(g =>
+                        {
+                            var tblName = g.Key.Split('.').LastOrDefault()?.Trim('[', ']', '|') ?? "";
+                            // Strip trailing |TABLE or |VIEW suffix that may be present.
+                            tblName = tblName.Split('|')[0].Trim('[', ']');
+                            return rowCounts.TryGetValue(tblName, out var rc) ? rc : 0;
+                        })
+                        .Take(50); // cap at 50 tables to prevent token overflow
+
                     foreach (var tbl in grouped)
                     {
                         var parts = tbl.Key.Split('|');
                         var qualified = parts[0];
                         var kind = parts.Length > 1 ? parts[1] : "TABLE";
-                        var cols = tbl.Select(r =>
+
+                        // Extract unqualified table name for row-count lookup.
+                        var tblNameOnly = qualified.Split('.').LastOrDefault()?.Trim('[', ']') ?? "";
+                        var rowCountStr = rowCounts.TryGetValue(tblNameOnly, out var rc) ? $", ~{FormatRowCount(rc)} rows" : "";
+
+                        var colRows = tbl.ToList();
+                        var cols = colRows.Take(30).Select(r =>
                         {
                             var name = r.ContainsKey("ColumnName") ? r["ColumnName"]?.ToString() ?? "" : "";
                             var dtype = r.ContainsKey("DataType") ? r["DataType"]?.ToString() ?? "" : "";
-                            return $"[{name}] ({dtype})";
+                            var marker = numericTypes.Contains(dtype) ? "★" : (dateTypes.Contains(dtype) ? "⏱" : "");
+                            return $"[{name}]{marker} ({dtype})";
                         });
-                        sb.AppendLine($"- **{qualified}** ({kind}): {string.Join(", ", cols)}");
+                        var truncationNote = colRows.Count > 30 ? $", ...and {colRows.Count - 30} more columns" : "";
+                        sb.AppendLine($"- **{qualified}** ({kind}{rowCountStr}): {string.Join(", ", cols)}{truncationNote}");
                     }
                 }
             }
@@ -495,4 +545,11 @@ public class AutoReportController : ControllerBase
 
         return sb.ToString();
     }
+
+    private static string FormatRowCount(long n) => n switch
+    {
+        >= 1_000_000 => $"{n / 1_000_000}M",
+        >= 1_000 => $"{n / 1_000}k",
+        _ => n.ToString()
+    };
 }
