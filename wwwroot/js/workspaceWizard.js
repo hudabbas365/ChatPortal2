@@ -373,6 +373,21 @@
                             <input type="password" id="wfDsApiKey" placeholder="Bearer token or API key" />
                         </div>
                     </div>
+                    <div id="wfDsFileUrlFields" style="display:none">
+                        <div class="wf-setup-field">
+                            <label>File URL <span class="wfe-opt">(public/anonymous share link)</span></label>
+                            <input type="text" id="wfDsFileUrl" placeholder="https://… (OneDrive, Google Drive, Dropbox, raw CSV/XLSX URL)" />
+                            <small style="color:var(--cp-text-muted);font-size:0.78rem">Paste a public "Anyone with the link" share URL. No login or API key needed. Supports OneDrive, SharePoint, Google Drive, Dropbox, GitHub raw, S3, and direct HTTPS URLs.</small>
+                        </div>
+                        <div class="wf-setup-field">
+                            <label>Format Override <span class="wfe-opt">(optional)</span></label>
+                            <select id="wfDsFileFormat" style="width:100%;padding:6px 10px;border:1.5px solid var(--cp-border);border-radius:8px;font-size:0.875rem;">
+                                <option value="Auto" selected>Auto (detect from URL / Content-Type)</option>
+                                <option value="CSV">CSV</option>
+                                <option value="XLSX">Excel (XLSX)</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="wfe-cred-row">
                         <div class="wf-setup-field">
                             <label>Database User <span class="wfe-opt">(optional)</span></label>
@@ -412,17 +427,20 @@
                 document.getElementById('wfDsTypeSelector').style.display = 'none';
                 document.getElementById('wfDsConfigForm').style.display = 'block';
 
-                // Toggle Power BI vs REST API vs standard fields
+                // Toggle Power BI vs REST API vs File URL vs standard fields
                 var isPbi = /power\s*bi/i.test(self._selectedDsType);
                 var isRestApi = /rest\s*api/i.test(self._selectedDsType);
+                var isFileUrl = /file\s*url/i.test(self._selectedDsType);
                 var connStrField = document.getElementById('wfDsConnStr');
-                if (connStrField) connStrField.closest('.wf-setup-field').style.display = (isPbi || isRestApi) ? 'none' : '';
+                if (connStrField) connStrField.closest('.wf-setup-field').style.display = (isPbi || isRestApi || isFileUrl) ? 'none' : '';
                 var credRow = document.querySelector('.wfe-cred-row');
-                if (credRow) credRow.style.display = (isPbi || isRestApi) ? 'none' : '';
+                if (credRow) credRow.style.display = (isPbi || isRestApi || isFileUrl) ? 'none' : '';
                 var pbiFields = document.getElementById('wfDsPbiFields');
                 if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
                 var restApiFields = document.getElementById('wfDsRestApiFields');
                 if (restApiFields) restApiFields.style.display = isRestApi ? '' : 'none';
+                var fileUrlFields = document.getElementById('wfDsFileUrlFields');
+                if (fileUrlFields) fileUrlFields.style.display = isFileUrl ? '' : 'none';
             });
         }
         if (search) {
@@ -456,6 +474,7 @@
         var testBtn = document.getElementById('wfDsTestBtn');
         var isPbi = /power\s*bi/i.test(this._selectedDsType);
         var isRestApi = /rest\s*api/i.test(this._selectedDsType);
+        var isFileUrl = /file\s*url/i.test(this._selectedDsType);
 
         var payload = {
             name: name,
@@ -469,6 +488,9 @@
             payload.apiUrl = document.getElementById('wfDsApiUrl')?.value.trim() || '';
             payload.apiKey = document.getElementById('wfDsApiKey')?.value.trim() || '';
             payload.apiMethod = document.getElementById('wfDsApiMethod')?.value || 'GET';
+        } else if (isFileUrl) {
+            payload.apiUrl = document.getElementById('wfDsFileUrl')?.value.trim() || '';
+            payload.apiMethod = document.getElementById('wfDsFileFormat')?.value || 'Auto';
         } else if (isPbi) {
             payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
             payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
@@ -717,8 +739,11 @@
             if (pf) pf.value = result.prompt;
         } catch {
             var isRest = (self._createdDsType || '').toLowerCase().indexOf('rest api') !== -1;
+            var isFile = (self._createdDsType || '').toLowerCase().indexOf('file url') !== -1;
             if (pf) pf.value = isRest
                 ? 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You are connected to ' + (self._createdDsName || 'a REST API') + ' (' + (self._createdDsType || 'REST API') + '). Data is fetched automatically from the API. Help users analyze the API data, suggest charts and visualizations. Always set query to "REST_API".'
+                : isFile
+                ? 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You are connected to ' + (self._createdDsName || 'a CSV/Excel file') + ' (' + (self._createdDsType || 'File URL') + '). The file is fetched and parsed automatically. Help users analyze the data, suggest charts and visualizations. Always set query to "FILE_URL".'
                 : 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You have access to ' + (self._createdDsName || 'the datasource') + ' (' + (self._createdDsType || 'database') + '). Available tables: ' + (self._selectedTables || []).join(', ') + '. Help users query data, generate SQL, analyze results, and create visualizations.';
         }
         document.getElementById('wfGenPromptBtn')?.addEventListener('click', async function (e) {

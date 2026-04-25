@@ -629,10 +629,67 @@
                         break;
                     case 'APPROVAL_PENDING':
                         el.innerHTML = `
-                            <div class="alert alert-info mb-0 py-2">
-                                <i class="bi bi-hourglass-split me-1"></i>
-                                Awaiting PayPal approval. Complete the checkout window to activate your plan.
+                            <div class="alert alert-info mb-0 py-2 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-hourglass-split me-1"></i>
+                                    <span id="pendingSubMsg">Awaiting PayPal approval — checking activation status…</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="clearPendingSubscription()">
+                                    <i class="bi bi-x-circle me-1"></i>Cancel pending
+                                </button>
                             </div>`;
+                        // Self-heal: keep polling /api/paypal/activate-subscription
+                        // until PayPal flips the sub to ACTIVE or we hit the
+                        // timeout. PayPal sandbox commonly takes 10-30s to
+                        // propagate APPROVAL_PENDING -> ACTIVE after the user
+                        // approves in the popup, so a single check on page
+                        // load isn't enough.
+                        if (sub.subscriptionId && !window._pendingSubPollActive) {
+                            window._pendingSubPollActive = true;
+                            const planKeyForActivate = (plan?.plan === 'Enterprise' ? 'Enterprise' : 'Professional');
+                            const startedAt = Date.now();
+                            const maxWaitMs = 60_000;   // total poll window
+                            const intervalMs = 4_000;   // every 4s
+                            let attempt = 0;
+                            const poll = async () => {
+                                attempt++;
+                                try {
+                                    const r = await fetch('/api/paypal/activate-subscription', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            organizationId: orgId,
+                                            subscriptionId: sub.subscriptionId,
+                                            planKey: planKeyForActivate
+                                        })
+                                    });
+                                    const j = await r.json().catch(() => ({}));
+                                    if (j && j.success && j.status === 'ACTIVE') {
+                                        window._pendingSubPollActive = false;
+                                        // Refresh whole billing card so the
+                                        // ACTIVE banner replaces the pending one
+                                        // without any user action.
+                                        if (typeof window.cpToast === 'function') {
+                                            cpToast({ title: 'Subscription activated', message: `${planKeyForActivate} plan is now active.`, variant: 'success' });
+                                        }
+                                        loadBilling();
+                                        if (typeof window.refreshTrialBanner === 'function') window.refreshTrialBanner();
+                                        return;
+                                    }
+                                } catch { /* ignore, will retry */ }
+
+                                if (Date.now() - startedAt < maxWaitMs) {
+                                    setTimeout(poll, intervalMs);
+                                } else {
+                                    window._pendingSubPollActive = false;
+                                    const msg = document.getElementById('pendingSubMsg');
+                                    if (msg) msg.textContent =
+                                        'Awaiting PayPal approval. Complete the checkout window to activate your plan.';
+                                }
+                            };
+                            // Kick off immediately
+                            poll();
+                        }
                         break;
                     case 'SUSPENDED':
                         el.innerHTML = `
@@ -816,13 +873,25 @@
                     setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
                 });
 
-                // Activate the subscription
-                const activateResp = await fetch('/api/paypal/activate-subscription', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
-                });
-                const activateData = await activateResp.json();
+                // Activate the subscription. The server already polls PayPal a few
+                // times, but we also retry on this side because the user might close
+                // the popup the instant they click Subscribe — before PayPal has
+                // finished promoting APPROVAL_PENDING → ACTIVE.
+                let activateData = null;
+                let activateResp = null;
+                for (let attempt = 0; attempt < 4; attempt++) {
+                    activateResp = await fetch('/api/paypal/activate-subscription', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
+                    });
+                    activateData = await activateResp.json();
+                    if (activateResp.ok && activateData.success) break;
+                    // Only retry while PayPal is still propagating the approval.
+                    const stillPending = activateData && (activateData.status === 'APPROVAL_PENDING' || activateData.status === 'APPROVED');
+                    if (!stillPending) break;
+                    await new Promise(r => setTimeout(r, 2500));
+                }
 
                 if (activateResp.ok && activateData.success) {
                     processing.classList.add('d-none');
@@ -997,6 +1066,39 @@
         } catch (err) {
             if (typeof window.cpToast === 'function') cpToast({ title: 'Cancel failed', message: err.message, variant: 'danger' });
             else alert('Error cancelling subscription: ' + err.message);
+        }
+    };
+
+    // Clears a stuck APPROVAL_PENDING subscription (popup closed before approval).
+    window.clearPendingSubscription = async function() {
+        if (!orgId) return;
+        const ok = typeof window.cpConfirm === 'function'
+            ? await cpConfirm({
+                title: 'Cancel Pending Subscription',
+                message: 'Discard the pending PayPal subscription? You can start a new checkout afterwards.',
+                icon: 'bi-x-circle',
+                variant: 'warning',
+                confirmText: 'Discard',
+                cancelText: 'Keep waiting'
+              })
+            : confirm('Discard the pending PayPal subscription?');
+        if (!ok) return;
+        try {
+            const resp = await fetch('/api/paypal/clear-pending-subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ organizationId: orgId, reason: 'Abandoned before approval' })
+            });
+            const data = await resp.json();
+            if (resp.ok && data.success) {
+                if (typeof window.cpToast === 'function') cpToast({ title: 'Pending subscription cleared', message: 'You can start a new subscription now.', variant: 'success' });
+                loadBilling();
+            } else {
+                if (typeof window.cpToast === 'function') cpToast({ title: 'Could not clear', message: data.error || 'Failed.', variant: 'danger' });
+                else alert(data.error || 'Failed.');
+            }
+        } catch (err) {
+            if (typeof window.cpToast === 'function') cpToast({ title: 'Error', message: err.message, variant: 'danger' });
         }
     };
 

@@ -612,8 +612,22 @@ public class BillingController : Controller
 
         try
         {
-            // Verify subscription status with PayPal
-            var details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+            // PayPal subscription state transitions APPROVAL_PENDING → APPROVED → ACTIVE
+            // and there is a small propagation delay (often 1–5s in sandbox) between
+            // the user finishing the approval popup and PayPal flipping the status.
+            // Poll a few times so we don't return "still pending" prematurely.
+            PayPalSubscriptionDetails? details = null;
+            string lastStatus = "";
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+                lastStatus = details?.Status ?? "";
+                if (details != null && (lastStatus == "ACTIVE" || lastStatus == "APPROVED"))
+                    break;
+                if (attempt < 5)
+                    await Task.Delay(1500);
+            }
+
             if (details == null)
                 return BadRequest(new { error = "Could not verify subscription with PayPal." });
 
@@ -710,6 +724,51 @@ public class BillingController : Controller
         }
     }
 
+    // Clears a stuck APPROVAL_PENDING subscription (e.g. user closed the PayPal
+    // popup before approving). Only allowed when the org is currently in
+    // APPROVAL_PENDING state — never touches an ACTIVE subscription.
+    [HttpPost("/api/paypal/clear-pending-subscription")]
+    public async Task<IActionResult> PayPalClearPendingSubscription([FromBody] PayPalCancelSubscriptionRequest req)
+    {
+        var caller = await GetCallerAsync();
+        if (caller == null) return Unauthorized();
+        if (!IsOrgAdminOf(caller, req.OrganizationId))
+            return StatusCode(403, new { error = "Only Organization Admins can manage subscriptions." });
+
+        var org = await _db.Organizations.FindAsync(req.OrganizationId);
+        if (org == null) return NotFound(new { error = "Organization not found." });
+
+        if (!string.Equals(org.SubscriptionStatus, "APPROVAL_PENDING", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = $"Cannot clear — current status is {org.SubscriptionStatus}." });
+
+        var staleSubId = org.PayPalSubscriptionId;
+
+        // Best-effort: attempt to cancel the pending subscription on PayPal so
+        // it doesn't linger in their dashboard. Ignore failures (it may already
+        // be expired, or never approved at all).
+        if (!string.IsNullOrEmpty(staleSubId))
+        {
+            try { await _payPal.CancelSubscriptionAsync(staleSubId, "Abandoned before approval"); }
+            catch { /* swallow */ }
+        }
+
+        org.PayPalSubscriptionId = null;
+        org.SubscriptionStatus = "NONE";
+        org.SubscriptionStartDate = null;
+        org.SubscriptionNextBillingDate = null;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "subscription_pending_cleared",
+            Description = $"Cleared abandoned APPROVAL_PENDING subscription (PayPal: {staleSubId ?? "none"}).",
+            UserId = caller.Id,
+            OrganizationId = req.OrganizationId
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true });
+    }
+
     [HttpGet("/api/paypal/subscription-status")]
     public async Task<IActionResult> GetSubscriptionStatus([FromQuery] int organizationId)
     {
@@ -804,6 +863,40 @@ public class BillingController : Controller
                                 amount, "USD",
                                 billingAgreementId, DateTime.UtcNow);
                         }
+                    }
+                }
+            }
+            else if (eventType == "BILLING.SUBSCRIPTION.ACTIVATED" || eventType == "BILLING.SUBSCRIPTION.UPDATED" || eventType == "BILLING.SUBSCRIPTION.RE-ACTIVATED")
+            {
+                // Safety net: if the popup-close → activate-subscription call missed the
+                // brief APPROVAL_PENDING → ACTIVE window, PayPal will still fire this
+                // event and we flip the org to ACTIVE here.
+                var subId = resource.TryGetProperty("id", out var sid2) ? sid2.GetString() : null;
+                if (!string.IsNullOrEmpty(subId))
+                {
+                    var org = await _db.Organizations.FirstOrDefaultAsync(o => o.PayPalSubscriptionId == subId);
+                    if (org != null && org.SubscriptionStatus != "ACTIVE")
+                    {
+                        DateTime? nextBilling = null;
+                        if (resource.TryGetProperty("billing_info", out var bi) &&
+                            bi.TryGetProperty("next_billing_time", out var nbt) &&
+                            DateTime.TryParse(nbt.GetString(), out var dt))
+                        {
+                            nextBilling = dt;
+                        }
+
+                        org.SubscriptionStatus = "ACTIVE";
+                        if (org.SubscriptionStartDate == null || org.SubscriptionStartDate == default)
+                            org.SubscriptionStartDate = DateTime.UtcNow;
+                        org.SubscriptionNextBillingDate = nextBilling ?? org.SubscriptionNextBillingDate ?? DateTime.UtcNow.AddMonths(1);
+
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "subscription_activated_webhook",
+                            Description = $"Subscription activated by PayPal webhook ({subId}). Next billing: {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                            OrganizationId = org.Id
+                        });
+                        await _db.SaveChangesAsync();
                     }
                 }
             }

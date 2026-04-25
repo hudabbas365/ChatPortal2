@@ -117,6 +117,7 @@ public class ChatController : Controller
         string datasourceIdentity = "";
         bool connectedToPowerBi = false;
         bool isRestApi = false;
+        bool isFileUrl = false;
         Datasource? activeDatasource = null;
         if (!string.IsNullOrEmpty(req.AgentId))
         {
@@ -131,6 +132,7 @@ public class ChatController : Controller
                 schemaContext = await BuildSchemaPromptAsync(agent.Datasource);
                 connectedToPowerBi = IsPowerBi(agent.Datasource.Type);
                 isRestApi = IsRestApi(agent.Datasource.Type);
+                isFileUrl = IsFileUrl(agent.Datasource.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{agent.Datasource.Name}** (Type: {agent.Datasource.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -161,6 +163,7 @@ public class ChatController : Controller
                         schemaContext = await BuildSchemaPromptAsync(ds);
                         connectedToPowerBi = IsPowerBi(ds.Type);
                         isRestApi = IsRestApi(ds.Type);
+                        isFileUrl = IsFileUrl(ds.Type);
                         datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                             $"All queries you generate MUST target this specific datasource. " +
                             $"Use the exact table and column names from the schema provided below. " +
@@ -180,6 +183,7 @@ public class ChatController : Controller
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
                 isRestApi = IsRestApi(ds.Type);
+                isFileUrl = IsFileUrl(ds.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -197,6 +201,7 @@ public class ChatController : Controller
                 schemaContext = await BuildSchemaPromptAsync(ds);
                 connectedToPowerBi = IsPowerBi(ds.Type);
                 isRestApi = IsRestApi(ds.Type);
+                isFileUrl = IsFileUrl(ds.Type);
                 datasourceIdentity = $"\n\n## Active Datasource\nYou are currently connected to **{ds.Name}** (Type: {ds.Type}). " +
                     $"All queries you generate MUST target this specific datasource. " +
                     $"Use the exact table and column names from the schema provided below. " +
@@ -233,6 +238,32 @@ IMPORTANT RULES:
 - Always include ""followUpSuggestions"": exactly 3 short, business-friendly next questions phrased the way a real user would ask them.
 - For non-data follow-ups (e.g. ""explain more"", ""why"", ""tell me more""): reply in plain friendly language for an end user. NEVER show code blocks, SQL, DAX, table names, dbo./schema prefixes, column types, or markdown headers like ""Query"" / ""Type"" / ""Description"". Describe the INSIGHT in 2–4 short sentences. Never expose internal details or error codes.
 - EVERY response (data or plain text) MUST end with a single line containing 3 follow-up questions in this exact machine-readable tag: <followups>[""question 1"",""question 2"",""question 3""]</followups>. No other text after that tag."
+            : isFileUrl
+            ? @"You are AI Insight's friendly data assistant. You speak to business end-users, not developers. The data comes from a CSV or Excel file connected via a public share link.
+
+When the user asks a data question, respond in this JSON format:
+
+{
+  ""type"": ""data_response"",
+  ""prompt"": ""The original user question rephrased as a clear intent"",
+  ""query"": ""FILE_URL"",
+  ""description"": ""Here's a summary of the data from your file."",
+  ""suggestedChart"": ""bar"",
+  ""suggestedFields"": { ""label"": ""fieldName"", ""value"": ""fieldName"" },
+  ""followUpSuggestions"": [
+    ""Show me the top 10 rows"",
+    ""What are the unique values of the first column?"",
+    ""Summarize the numeric columns""
+  ]
+}
+
+IMPORTANT RULES:
+- Always set ""query"" to ""FILE_URL"" — the system fetches and parses the file automatically.
+- Return ONE unified answer per response.
+- The ""description"" must sound like a helpful colleague summarizing the insight. NEVER mention SQL, DAX, databases, API, or internal details.
+- Always include ""followUpSuggestions"": exactly 3 short, business-friendly next questions.
+- For non-data follow-ups: reply in plain friendly language. NEVER show code or technical details.
+- EVERY response MUST end with: <followups>[""question 1"",""question 2"",""question 3""]</followups>. No other text after that tag."
             : connectedToPowerBi
             ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
 
@@ -428,9 +459,10 @@ IMPORTANT RULES:
             normalized.TrimStart(), @"[\s(;]+").FirstOrDefault() ?? "";
 
         // Allow DAX EVALUATE and DMV queries (read-only Power BI operations)
-        // Allow REST_API marker (REST API datasources bypass SQL entirely)
+        // Allow REST_API / FILE_URL markers (these datasources bypass SQL entirely)
         var isDaxOrDmv = firstToken == "EVALUATE"
             || firstToken == "REST_API"
+            || firstToken == "FILE_URL"
             || (firstToken == "SELECT" && normalized.Contains("$SYSTEM."));
 
         if (!isDaxOrDmv &&
@@ -487,13 +519,20 @@ IMPORTANT RULES:
                     ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
                     : !string.IsNullOrWhiteSpace(ds.ConnectionString);
 
-                if (hasConnection || IsRestApi(ds.Type))
+                if (hasConnection || IsRestApi(ds.Type) || IsFileUrl(ds.Type))
                     {
                         // REST API datasources: fetch data from the API instead of executing SQL
                         if (IsRestApi(ds.Type))
                         {
                             var apiResult = await _queryService.ExecuteRestApiAsync(ds);
                             return Ok(new { success = apiResult.Success, data = apiResult.Data, rowCount = apiResult.RowCount, error = apiResult.Error });
+                        }
+
+                        // File URL (CSV/XLSX) datasources: fetch and parse the file instead of executing SQL
+                        if (IsFileUrl(ds.Type))
+                        {
+                            var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
+                            return Ok(new { success = fileResult.Success, data = fileResult.Data, rowCount = fileResult.RowCount, error = fileResult.Error });
                         }
 
                         var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
@@ -647,11 +686,13 @@ IMPORTANT RULES:
 
     private static bool IsPowerBi(string? type) => QueryExecutionService.PowerBiTypes.Contains(type ?? "");
     private static bool IsRestApi(string? type) => QueryExecutionService.RestApiTypes.Contains(type ?? "");
+    private static bool IsFileUrl(string? type) => QueryExecutionService.FileUrlTypes.Contains(type ?? "");
 
     private async Task<string> BuildSchemaPromptAsync(Datasource ds)
     {
         var isPbi = IsPowerBi(ds.Type);
         var isRest = IsRestApi(ds.Type);
+        var isFile = IsFileUrl(ds.Type);
         var sb = new StringBuilder();
         sb.AppendLine($"## Connected Datasource: {ds.Name} ({ds.Type})");
 
@@ -689,6 +730,41 @@ IMPORTANT RULES:
             }
             sb.AppendLine();
             sb.AppendLine("Use these field names when suggesting charts. Always set query to \"REST_API\".");
+            return sb.ToString();
+        }
+
+        // File URL (CSV/XLSX): build schema from column headers in the parsed file
+        if (isFile)
+        {
+            sb.AppendLine("You are connected to a CSV/Excel file datasource. Data is fetched and parsed automatically — do NOT generate SQL.");
+            sb.AppendLine("When the user asks a data question, set the query field to \"FILE_URL\" and the system will fetch and parse the file.");
+            sb.AppendLine("### File Data Fields:");
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds, 5);
+                if (fileResult.Success && fileResult.Data.Count > 0)
+                {
+                    var fields = fileResult.Data.First().Keys.ToList();
+                    sb.AppendLine($"- **{ds.Name.Replace(" ", "_")}** (File): {string.Join(", ", fields)}");
+                    sb.AppendLine($"- Sample row count: {fileResult.Data.Count}");
+                    sb.AppendLine("### Sample Data:");
+                    foreach (var row in fileResult.Data.Take(3))
+                    {
+                        var vals = row.Select(kv => $"{kv.Key}={kv.Value}");
+                        sb.AppendLine($"  - {string.Join(", ", vals)}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("- Could not retrieve sample data from the file.");
+                }
+            }
+            catch
+            {
+                sb.AppendLine("- Could not retrieve sample data from the file.");
+            }
+            sb.AppendLine();
+            sb.AppendLine("Use these field names when suggesting charts. Always set query to \"FILE_URL\".");
             return sb.ToString();
         }
 
@@ -923,6 +999,43 @@ IMPORTANT RULES:
             {
                 suggestions.Add(new { text = $"Show me all data from {apiDsName}", icon = "bi-table" });
                 suggestions.Add(new { text = $"What fields are available?", icon = "bi-diagram-3" });
+                suggestions.Add(new { text = $"Summarize the data", icon = "bi-graph-up" });
+            }
+            return Ok(suggestions);
+        }
+
+        // File URL (CSV/XLSX): use column names from the parsed file for suggestions
+        if (IsFileUrl(ds.Type))
+        {
+            var fileDsName = ds.Name ?? "File";
+            var fields = new List<string>();
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds, 5);
+                if (fileResult.Success && fileResult.Data.Count > 0)
+                    fields = fileResult.Data.First().Keys.ToList();
+            }
+            catch { /* use generic suggestions */ }
+
+            if (fields.Count > 0)
+            {
+                var firstField = fields.FirstOrDefault(f => !f.Equals("id", StringComparison.OrdinalIgnoreCase)) ?? fields[0];
+                var numeric = fields.FirstOrDefault(f =>
+                    f.Contains("amount", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("price", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("total", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("count", StringComparison.OrdinalIgnoreCase) ||
+                    f.Contains("value", StringComparison.OrdinalIgnoreCase)) ?? fields.Last();
+                suggestions.Add(new { text = $"Show me all data from {fileDsName}", icon = "bi-file-earmark-spreadsheet" });
+                suggestions.Add(new { text = $"What are the unique values of {firstField}?", icon = "bi-list-ul" });
+                suggestions.Add(new { text = $"Summarize {numeric}", icon = "bi-graph-up" });
+                suggestions.Add(new { text = $"Show the top 10 rows", icon = "bi-sort-down" });
+                suggestions.Add(new { text = $"What columns are available?", icon = "bi-diagram-3" });
+            }
+            else
+            {
+                suggestions.Add(new { text = $"Show me all data from {fileDsName}", icon = "bi-file-earmark-spreadsheet" });
+                suggestions.Add(new { text = $"What columns are available?", icon = "bi-diagram-3" });
                 suggestions.Add(new { text = $"Summarize the data", icon = "bi-graph-up" });
             }
             return Ok(suggestions);

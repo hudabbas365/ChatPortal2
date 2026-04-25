@@ -319,6 +319,7 @@
 
         // REST API queries are handled server-side — always allow
         if (firstWord === 'REST_API') return { valid: true };
+        if (firstWord === 'FILE_URL') return { valid: true };
 
         // DAX EVALUATE and DMV queries are read-only — allow through without body scan
         var isDaxOrDmv = firstWord === 'EVALUATE'
