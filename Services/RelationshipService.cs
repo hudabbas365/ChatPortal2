@@ -60,6 +60,8 @@ public class RelationshipService : IRelationshipService
                 result = await FromSqlServerAsync(ds);
             else if (QueryExecutionService.RestApiTypes.Contains(type))
                 result = await FromAiAsync(ds);
+            else if (QueryExecutionService.FileUrlTypes.Contains(type))
+                result = await FromAiAsync(ds);
 
             // If native introspection returned nothing, try AI as a last resort
             if (result.Count == 0)
@@ -214,6 +216,22 @@ JOIN sys.columns cr ON fkc.referenced_column_id = cr.column_id AND fkc.reference
                 {
                     sb.Append("Table ").Append(ds.Name).Append(": ");
                     sb.Append(string.Join(", ", api.Data[0].Keys));
+                    sb.Append('\n');
+                }
+            }
+            catch { /* ignore */ }
+            return sb.ToString();
+        }
+
+        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        {
+            try
+            {
+                var file = await _queryService.ExecuteFileUrlAsync(ds, 5);
+                if (file.Success && file.Data.Count > 0)
+                {
+                    sb.Append("Table ").Append(ds.Name).Append(": ");
+                    sb.Append(string.Join(", ", file.Data[0].Keys));
                     sb.Append('\n');
                 }
             }

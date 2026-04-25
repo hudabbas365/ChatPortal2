@@ -167,6 +167,7 @@ public class AutoReportController : ControllerBase
     {
         var isPbi = QueryExecutionService.PowerBiTypes.Contains(dsType ?? "");
         var isRest = QueryExecutionService.RestApiTypes.Contains(dsType ?? "");
+        var isFile = QueryExecutionService.FileUrlTypes.Contains(dsType ?? "");
 
         string queryRules, kpiExample, chartExample;
 
@@ -175,6 +176,12 @@ public class AutoReportController : ControllerBase
             queryRules = "- For \"dataQuery\", set it to \"REST_API\" — the system fetches data automatically.\n- Do NOT generate SQL for REST API datasources.";
             kpiExample = "\"dataQuery\": \"REST_API\"";
             chartExample = "\"dataQuery\": \"REST_API\"";
+        }
+        else if (isFile)
+        {
+            queryRules = "- For \"dataQuery\", set it to \"FILE_URL\" — the system fetches and parses the file automatically.\n- Do NOT generate SQL for File URL datasources.";
+            kpiExample = "\"dataQuery\": \"FILE_URL\"";
+            chartExample = "\"dataQuery\": \"FILE_URL\"";
         }
         else if (isPbi)
         {
@@ -383,6 +390,7 @@ public class AutoReportController : ControllerBase
         var sb = new StringBuilder();
         var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
         var isRest = QueryExecutionService.RestApiTypes.Contains(ds.Type ?? "");
+        var isFile = QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? "");
 
         // ── REST API: get field names from sample data ──
         if (isRest)
@@ -412,6 +420,36 @@ public class AutoReportController : ControllerBase
             catch
             {
                 sb.AppendLine("- Could not retrieve API data for schema.");
+            }
+        }
+        // ── File URL (CSV/XLSX): get column names from parsed file ──
+        else if (isFile)
+        {
+            sb.AppendLine("## File Data Schema");
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds, 5);
+                if (fileResult.Success && fileResult.Data.Count > 0)
+                {
+                    var fields = fileResult.Data.First().Keys.ToList();
+                    var tableName = ds.Name?.Replace(" ", "_") ?? "file_data";
+                    sb.AppendLine($"- **{tableName}** (File): {string.Join(", ", fields)}");
+                    sb.AppendLine($"- Row count: {fileResult.Data.Count}");
+                    sb.AppendLine("### Sample Data:");
+                    foreach (var row in fileResult.Data.Take(3))
+                    {
+                        var vals = row.Select(kv => $"{kv.Key}={kv.Value}");
+                        sb.AppendLine($"  - {string.Join(", ", vals)}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("- Could not retrieve sample data from the file.");
+                }
+            }
+            catch
+            {
+                sb.AppendLine("- Could not retrieve file data for schema.");
             }
         }
         // ── Power BI: use DMV to get table/column info ──

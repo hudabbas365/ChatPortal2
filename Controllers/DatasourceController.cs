@@ -19,6 +19,7 @@ public class DatasourceController : ControllerBase
         "SQL Server",
         "Power BI",
         "REST API",
+        "File URL",
         // TODO: Additional datasource types are disabled pending SQL Server-first rollout
         // "PostgreSQL", "MySQL", "MariaDB", "Oracle", "MongoDB",
         // "Redis", "Cassandra", "CouchDB", "DynamoDB", "Firebase Realtime DB", "Firestore",
@@ -167,12 +168,21 @@ public class DatasourceController : ControllerBase
     {
         var type = req.Type ?? "SQL Server";
         var isRestApi = string.Equals(type, "REST API", StringComparison.OrdinalIgnoreCase);
+        var isFileUrl = QueryExecutionService.FileUrlTypes.Contains(type);
 
         if (isRestApi)
         {
             var (success, error) = await _queryService.TestRestApiAsync(req.ApiUrl, req.ApiKey, req.ApiMethod);
             if (!success)
                 return BadRequest(new { connected = false, error = error ?? "REST API connection failed." });
+            return Ok(new { connected = true });
+        }
+
+        if (isFileUrl)
+        {
+            var (success, error) = await _queryService.TestFileUrlAsync(req.ApiUrl);
+            if (!success)
+                return BadRequest(new { connected = false, error = error ?? "File URL connection failed." });
             return Ok(new { connected = true });
         }
 
@@ -270,6 +280,24 @@ public class DatasourceController : ControllerBase
             return Ok(new List<string> { "id", "name", "value", "status" });
         }
 
+        // File URL (CSV/XLSX): extract column names from a sample parse
+        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        {
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
+                if (fileResult.Success && fileResult.Data.Count > 0)
+                {
+                    var fields = fileResult.Data.First().Keys.ToList();
+                    if (fields.Count > 0) return Ok(fields);
+                }
+                if (!fileResult.Success)
+                    return Ok(new List<string> { "column1", "column2", "column3" });
+            }
+            catch { /* fall through */ }
+            return Ok(new List<string> { "column1", "column2", "column3" });
+        }
+
         var isPbiFields = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
         var hasConnFields = isPbiFields
             ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
@@ -353,6 +381,23 @@ public class DatasourceController : ControllerBase
             catch (Exception ex)
             {
                 return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", rowCount = 0, error = $"REST API connection failed: {ex.Message}" } });
+            }
+        }
+
+        // File URL (CSV/XLSX): return a single virtual "table" representing the file
+        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        {
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
+                var tableName = ds.Name.Replace(" ", "_");
+                if (fileResult.Success)
+                    return Ok(new[] { new { name = tableName, type = "File", rowCount = fileResult.RowCount } });
+                return Ok(new[] { new { name = tableName, type = "File", rowCount = 0, error = fileResult.Error ?? "File could not be parsed." } });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "File", rowCount = 0, error = $"File URL connection failed: {ex.Message}" } });
             }
         }
 
@@ -475,6 +520,30 @@ public class DatasourceController : ControllerBase
                     schema = new List<object>
                     {
                         new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", columns }
+                    };
+                }
+            }
+            catch { /* fall through */ }
+            schema ??= new List<object>();
+        }
+        // File URL (CSV/XLSX): build schema from column headers in the parsed file
+        else if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        {
+            try
+            {
+                var fileResult = await _queryService.ExecuteFileUrlAsync(ds, 5);
+                if (fileResult.Success && fileResult.Data.Count > 0)
+                {
+                    var firstRow = fileResult.Data.First();
+                    var columns = firstRow.Select(kv => (object)new
+                    {
+                        name = kv.Key,
+                        dataType = InferJsonType(kv.Value),
+                        isPrimaryKey = false
+                    }).ToList();
+                    schema = new List<object>
+                    {
+                        new { name = ds.Name.Replace(" ", "_"), type = "File", columns }
                     };
                 }
             }
