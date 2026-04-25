@@ -13,6 +13,8 @@ public interface IQueryExecutionService
     Task<(bool Success, string? Error)> TestConnectionAsync(string type, string connectionString, string? dbUser = null, string? dbPassword = null, string? xmlaEndpoint = null, string? tenantId = null);
     Task<(bool Success, string? Error)> TestRestApiAsync(string? apiUrl, string? apiKey, string? apiMethod = null);
     Task<QueryExecutionResult> ExecuteRestApiAsync(Datasource ds, int maxRows = 1000);
+    Task<(bool Success, string? Error)> TestFileUrlAsync(string? url);
+    Task<QueryExecutionResult> ExecuteFileUrlAsync(Datasource ds, int maxRows = 1000);
 }
 
 public class QueryExecutionResult
@@ -28,12 +30,14 @@ public class QueryExecutionService : IQueryExecutionService
     private readonly IEncryptionService _encryption;
     private readonly IPowerBiService _powerBi;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IFileDatasourceService _fileDs;
 
-    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi, IHttpClientFactory httpClientFactory)
+    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi, IHttpClientFactory httpClientFactory, IFileDatasourceService fileDs)
     {
         _encryption = encryption;
         _powerBi = powerBi;
         _httpClientFactory = httpClientFactory;
+        _fileDs = fileDs;
     }
 
     private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -49,6 +53,11 @@ public class QueryExecutionService : IQueryExecutionService
     public static readonly HashSet<string> RestApiTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "REST API", "RestApi"
+    };
+
+    public static readonly HashSet<string> FileUrlTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "File URL", "FileURL", "FileUrl"
     };
 
     private static readonly HashSet<string> PgTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -506,6 +515,16 @@ public class QueryExecutionService : IQueryExecutionService
             return new QueryExecutionResult { Success = false, Error = $"REST API call failed: {ex.Message}" };
         }
     }
+
+    public Task<(bool Success, string? Error)> TestFileUrlAsync(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return Task.FromResult<(bool, string?)>((false, "File URL is required."));
+        return _fileDs.TestAsync(url);
+    }
+
+    public Task<QueryExecutionResult> ExecuteFileUrlAsync(Datasource ds, int maxRows = 1000)
+        => _fileDs.ExecuteAsync(ds, maxRows);
 
     private static List<Dictionary<string, object>> ParseJsonToRows(string json, int maxRows)
     {
