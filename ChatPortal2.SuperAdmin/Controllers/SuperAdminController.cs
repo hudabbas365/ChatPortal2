@@ -10,6 +10,7 @@ using System.Text;
 namespace AIInsights.SuperAdmin.Controllers;
 
 [Authorize]
+[AutoValidateAntiforgeryToken]
 public class SuperAdminController : Controller
 {
     private readonly AppDbContext _db;
@@ -45,10 +46,15 @@ public class SuperAdminController : Controller
         ViewBag.TotalUsers = stats.TotalUsers;
         ViewBag.TotalWorkspaces = stats.TotalWorkspaces;
         ViewBag.TotalMessages = stats.TotalMessages;
-        ViewBag.ProUsers = stats.ProUsers;
-        ViewBag.EnterpriseUsers = stats.EnterpriseUsers;
+        ViewBag.ProUsers = stats.ProSubscriptions;
+        ViewBag.EnterpriseUsers = stats.EnterpriseSubscriptions;
         ViewBag.TotalIncome = stats.TotalIncome;
         ViewBag.ActiveTrials = stats.ActiveTrials;
+        ViewBag.ActiveNow = stats.ActiveNow;
+        ViewBag.ActiveToday = stats.ActiveToday;
+        ViewBag.Dau = stats.Dau;
+        ViewBag.Wau = stats.Wau;
+        ViewBag.Mau = stats.Mau;
 
         return View("~/Views/Admin/Index.cshtml");
     }
@@ -68,9 +74,32 @@ public class SuperAdminController : Controller
         var totalWorkspaces = await _db.Workspaces.CountAsync();
         var totalMessages = await _db.ChatMessages.CountAsync();
 
-        var plans = await _db.SubscriptionPlans.ToListAsync();
-        var proCount = plans.Count(p => p.Plan == PlanType.Professional);
-        var enterpriseCount = plans.Count(p => p.Plan == PlanType.Enterprise);
+        var proCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Professional);
+        var enterpriseCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Enterprise);
+        var activeTrials = await _db.SubscriptionPlans.CountAsync(p => p.IsTrialActive);
+
+        var now = DateTime.UtcNow;
+        var activeNow = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.AddMinutes(-5));
+        var activeToday = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.Date);
+
+        // Single pass over ActivityLogs: compute DAU/WAU/MAU thresholds and count distinct users per band
+        var mauCutoff = now.AddDays(-30);
+        var wauCutoff = now.AddDays(-7);
+        var dauCutoff = now.AddDays(-1);
+
+        var activityCounts = await _db.ActivityLogs
+            .Where(l => l.CreatedAt >= mauCutoff)
+            .GroupBy(l => l.UserId)
+            .Select(g => new
+            {
+                UserId = g.Key,
+                MaxDate = g.Max(l => l.CreatedAt)
+            })
+            .ToListAsync();
+
+        var mau = activityCounts.Count;
+        var wau = activityCounts.Count(g => g.MaxDate >= wauCutoff);
+        var dau = activityCounts.Count(g => g.MaxDate >= dauCutoff);
 
         return new DashboardStatsDto
         {
@@ -78,10 +107,15 @@ public class SuperAdminController : Controller
             TotalUsers = totalUsers,
             TotalWorkspaces = totalWorkspaces,
             TotalMessages = totalMessages,
-            ProUsers = proCount,
-            EnterpriseUsers = enterpriseCount,
+            ProSubscriptions = proCount,
+            EnterpriseSubscriptions = enterpriseCount,
             TotalIncome = proCount * PlanPricing.ProPricePerUser + enterpriseCount * PlanPricing.EnterprisePricePerUser,
-            ActiveTrials = plans.Count(p => p.IsTrialActive)
+            ActiveTrials = activeTrials,
+            ActiveNow = activeNow,
+            ActiveToday = activeToday,
+            Dau = dau,
+            Wau = wau,
+            Mau = mau
         };
     }
 
@@ -91,10 +125,18 @@ public class SuperAdminController : Controller
         public int TotalUsers { get; set; }
         public int TotalWorkspaces { get; set; }
         public int TotalMessages { get; set; }
-        public int ProUsers { get; set; }
-        public int EnterpriseUsers { get; set; }
+        // Kept for JSON backward-compat; also exposed via new names below
+        [Newtonsoft.Json.JsonProperty("proUsers")]
+        public int ProSubscriptions { get; set; }
+        [Newtonsoft.Json.JsonProperty("enterpriseUsers")]
+        public int EnterpriseSubscriptions { get; set; }
         public decimal TotalIncome { get; set; }
         public int ActiveTrials { get; set; }
+        public int ActiveNow { get; set; }
+        public int ActiveToday { get; set; }
+        public int Dau { get; set; }
+        public int Wau { get; set; }
+        public int Mau { get; set; }
     }
 
     [HttpGet("/superadmin/organizations")]
@@ -136,6 +178,13 @@ public class SuperAdminController : Controller
         if (!Enum.TryParse<PlanType>(req.Plan, true, out var plan))
             return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
 
+        var callerId = GetCurrentUserId();
+        var callerEmail = User.FindFirstValue(System.Security.Claims.ClaimTypes.Email)
+                          ?? User.FindFirstValue("email");
+
+        var fromPlan = org.Plan;
+        var fromLicenses = org.PurchasedLicenses;
+
         org.Plan = plan;
 
         // SuperAdmin grants a number of paid licenses to the organization.
@@ -163,6 +212,31 @@ public class SuperAdminController : Controller
             // Downgrading to a non-paid plan clears the license pool.
             org.PurchasedLicenses = 0;
         }
+
+        var now = DateTime.UtcNow;
+        _db.PlanChangeLogs.Add(new PlanChangeLog
+        {
+            OrganizationId = id,
+            FromPlan = fromPlan.ToString(),
+            ToPlan = org.Plan.ToString(),
+            FromPurchasedLicenses = fromLicenses,
+            ToPurchasedLicenses = org.PurchasedLicenses,
+            FromLicenseEndsAt = org.LicenseEndsAt,
+            ToLicenseEndsAt = org.LicenseEndsAt,
+            ChangeType = "PlanChange",
+            ChangedByUserId = callerId,
+            ChangedByEmail = callerEmail,
+            CreatedAt = now
+        });
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.PlanChange",
+            Description = $"Plan changed for {org.Name}: {fromPlan} → {org.Plan}, licenses {fromLicenses} → {org.PurchasedLicenses}",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
 
         await _db.SaveChangesAsync();
         return Ok(new
@@ -642,12 +716,14 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             CreatedAt = now
         };
 
+        int sentCount;
         if (scope.Equals("All", StringComparison.OrdinalIgnoreCase))
         {
             var n = Build(null);
             _db.Notifications.Add(n);
             await _db.SaveChangesAsync();
             created.Add(n.Id);
+            sentCount = 1;
         }
         else
         {
@@ -659,9 +735,19 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 _db.Notifications.Add(n);
             }
             await _db.SaveChangesAsync();
+            sentCount = dto.OrganizationIds.Count;
         }
 
-        return Ok(new { success = true, count = scope == "All" ? 1 : dto.OrganizationIds!.Count });
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Notification.Broadcast",
+            Description = $"Broadcast notification \"{dto.Title!.Trim()}\" (scope: {scope}, count: {sentCount})",
+            UserId = callerId ?? "",
+            CreatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, count = sentCount });
     }
 
     [HttpDelete("/api/superadmin/notifications/{id:int}")]
@@ -670,7 +756,20 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var n = await _db.Notifications.FindAsync(id);
         if (n == null) return NotFound();
+
+        var callerId = GetCurrentUserId();
+        var title = n.Title;
+
         _db.Notifications.Remove(n);
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Notification.Delete",
+            Description = $"Deleted notification \"{title}\" (id: {id})",
+            UserId = callerId ?? "",
+            CreatedAt = DateTime.UtcNow
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
@@ -747,9 +846,22 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
+        var callerId = GetCurrentUserId();
+        var now = DateTime.UtcNow;
+
         org.IsBlocked = true;
         org.BlockedReason = req.Reason;
-        org.BlockedAt = DateTime.UtcNow;
+        org.BlockedAt = now;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.Block",
+            Description = $"Blocked organization {org.Name}. Reason: {req.Reason ?? "—"}",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
@@ -761,9 +873,22 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
+        var callerId = GetCurrentUserId();
+        var now = DateTime.UtcNow;
+
         org.IsBlocked = false;
         org.BlockedReason = null;
         org.BlockedAt = null;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.Unblock",
+            Description = $"Unblocked organization {org.Name}.",
+            UserId = callerId ?? "",
+            OrganizationId = id,
+            CreatedAt = now
+        });
+
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
@@ -771,5 +896,12 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public class BlockOrgRequest
     {
         public string? Reason { get; set; }
+    }
+
+    [HttpGet("/superadmin/error")]
+    [AllowAnonymous]
+    public IActionResult Error()
+    {
+        return Content("An unexpected error occurred. Please try again later.", "text/plain");
     }
 }

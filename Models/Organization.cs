@@ -37,6 +37,12 @@ public class Organization
     public string? EmailVerificationToken { get; set; }
     public DateTime? EmailVerificationTokenExpiry { get; set; }
 
+    // ── License Terms ──
+    public DateTime? LicenseStartsAt { get; set; }
+    public DateTime? LicenseEndsAt { get; set; }
+    public bool AutoRenew { get; set; } = false;
+    public string? LicenseNotes { get; set; }
+
     // ── Blocking ──
     public bool IsBlocked { get; set; } = false;
     public string? BlockedReason { get; set; }

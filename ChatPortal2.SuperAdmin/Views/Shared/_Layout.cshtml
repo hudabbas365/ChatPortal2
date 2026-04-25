@@ -207,6 +207,7 @@
     </style>
 </head>
 <body>
+    @Html.AntiForgeryToken()
     <div class="mobile-bar">
         <div class="sb-brand">
             <div class="sb-brand-icon"><i class="bi bi-shield-lock-fill"></i></div>
@@ -233,6 +234,7 @@
             <nav class="sb-nav">
                 <a href="/superadmin" class="sb-link @(ViewData["ActivePage"]?.ToString() == "dashboard" ? "active" : "")"><i class="bi bi-grid-1x2-fill"></i>Dashboard</a>
                 <a href="/superadmin/organizations" class="sb-link @(ViewData["ActivePage"]?.ToString() == "orgs" ? "active" : "")"><i class="bi bi-building"></i>Organizations</a>
+                <a href="/superadmin/licenses" class="sb-link @(ViewData["ActivePage"]?.ToString() == "licenses" ? "active" : "")"><i class="bi bi-key"></i>Licenses</a>
                 <a href="/superadmin/activity" class="sb-link @(ViewData["ActivePage"]?.ToString() == "activity" ? "active" : "")"><i class="bi bi-activity"></i>Activity Logs</a>
                 <a href="/superadmin/revenue" class="sb-link @(ViewData["ActivePage"]?.ToString() == "revenue" ? "active" : "")"><i class="bi bi-wallet2"></i>Revenue</a>
                 <a href="/superadmin/payments" class="sb-link @(ViewData["ActivePage"]?.ToString() == "payments" ? "active" : "")"><i class="bi bi-credit-card"></i>Payments</a>
@@ -280,6 +282,20 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     @RenderSection("Scripts", required: false)
     <script>
+    // CSRF: attach X-CSRF-TOKEN header to all state-changing fetch calls
+    (function() {
+        var csrfToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        if (!csrfToken) return;
+        var origFetch = window.fetch;
+        window.fetch = function(input, init) {
+            init = init || {};
+            var method = (init.method || 'GET').toUpperCase();
+            if (method !== 'GET' && method !== 'HEAD') {
+                init.headers = Object.assign({}, init.headers, { 'X-CSRF-TOKEN': csrfToken });
+            }
+            return origFetch.call(this, input, init);
+        };
+    })();
     function logout() {
         fetch('/api/superadmin/logout', { method: 'POST' })
             .then(function() { window.location.href = '/superadmin/login'; });
