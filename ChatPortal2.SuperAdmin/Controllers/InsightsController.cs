@@ -36,11 +36,14 @@ public class InsightsController : Controller
         return user?.Role == "SuperAdmin";
     }
 
-    private double GetCostPer1kTokens() =>
-        _config.GetValue<double>("AiPricing:default:costPer1k", 0.002);
-
-    private double ComputeCost(long tokens) =>
-        (tokens / 1000.0) * GetCostPer1kTokens();
+    private double GetCostPer1kTokens(string? model = null)
+    {
+        const double defaultCostPer1k = 0.002;
+        var defaultRate = _config.GetValue<double>("AiPricing:default:costPer1k", defaultCostPer1k);
+        if (string.IsNullOrWhiteSpace(model)) return defaultRate;
+        var modelRate = _config.GetValue<double?>($"AiPricing:{model}:costPer1k");
+        return modelRate ?? defaultRate;
+    }
 
     private (DateTime from, DateTime to) ParseRange(string range)
     {
@@ -67,7 +70,7 @@ public class InsightsController : Controller
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().ToLower();
-            query = query.Where(u => u.Email!.ToLower().Contains(s) || u.FullName.ToLower().Contains(s));
+            query = query.Where(u => (u.Email ?? "").ToLower().Contains(s) || (u.FullName ?? "").ToLower().Contains(s));
         }
 
         var users = await query
@@ -116,12 +119,24 @@ public class InsightsController : Controller
         if (user == null) return NotFound();
 
         const int pageSize = 50;
+        page = Math.Max(1, page);
         var now = DateTime.UtcNow;
         var fromDate = from ?? now.AddDays(-30);
         var toDate   = to   ?? now;
 
         var logQuery    = _db.ActivityLogs.AsNoTracking().Where(l => l.UserId == id);
-        var windowQuery = logQuery.Where(l => l.CreatedAt >= fromDate && l.CreatedAt <= toDate);
+
+        // Normalise "to" to end-of-day when a date (midnight) is supplied from the UI
+        IQueryable<ActivityLog> windowQuery;
+        if (to.HasValue && to.Value.TimeOfDay == TimeSpan.Zero)
+        {
+            var toExclusive = to.Value.Date.AddDays(1);
+            windowQuery = logQuery.Where(l => l.CreatedAt >= fromDate && l.CreatedAt < toExclusive);
+        }
+        else
+        {
+            windowQuery = logQuery.Where(l => l.CreatedAt >= fromDate && l.CreatedAt <= toDate);
+        }
 
         var totalCount  = await logQuery.CountAsync();
         var windowCount = await windowQuery.CountAsync();
@@ -132,7 +147,10 @@ public class InsightsController : Controller
             .Take(pageSize)
             .ToListAsync();
 
-        var lastSeen      = await logQuery.MaxAsync(l => (DateTime?)l.CreatedAt);
+        var lastSeen = await logQuery
+            .Select(l => (DateTime?)l.CreatedAt)
+            .DefaultIfEmpty()
+            .MaxAsync();
         var totalMessages = await _db.ChatMessages.AsNoTracking().CountAsync(m => m.UserId == id);
         var totalTokens   = await _db.TokenUsages.AsNoTracking()
                                 .Where(t => t.UserId == id)
@@ -207,60 +225,60 @@ public class InsightsController : Controller
 
         var query = _db.TokenUsages.AsNoTracking()
                        .Where(t => t.CreatedAt >= from && t.CreatedAt <= to);
-        if (orgId.HasValue)          query = query.Where(t => t.OrganizationId == orgId.Value);
+        if (orgId.HasValue)               query = query.Where(t => t.OrganizationId == orgId.Value);
         if (!string.IsNullOrEmpty(userId)) query = query.Where(t => t.UserId == userId);
 
-        var rows = await query
-            .Select(t => new { t.OrganizationId, t.UserId, t.TokensUsed, t.CreatedAt })
-            .ToListAsync();
-
-        long totalTokens = rows.Sum(r => (long)r.TokensUsed);
+        // Aggregate totals in SQL
+        long totalTokens = await query.SumAsync(t => (long?)t.TokensUsed) ?? 0L;
         double totalCost = (totalTokens / 1000.0) * costRate;
 
-        var daily = rows
-            .GroupBy(r => r.CreatedAt.Date)
-            .Select(g => new
-            {
-                date   = g.Key.ToString("yyyy-MM-dd"),
-                tokens = g.Sum(r => (long)r.TokensUsed),
-                cost   = Math.Round((g.Sum(r => (long)r.TokensUsed) / 1000.0) * costRate, 4)
-            })
-            .OrderBy(d => d.date)
-            .ToList();
+        var dailyData = await query
+            .GroupBy(t => t.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Tokens = g.Sum(t => (long)t.TokensUsed) })
+            .OrderBy(d => d.Date)
+            .ToListAsync();
+        var daily = dailyData.Select(d => new
+        {
+            date   = d.Date.ToString("yyyy-MM-dd"),
+            tokens = d.Tokens,
+            cost   = Math.Round((d.Tokens / 1000.0) * costRate, 4)
+        }).ToList();
 
-        var orgIds = rows.Select(r => r.OrganizationId).Distinct().ToList();
+        var topOrgData = await query
+            .GroupBy(t => t.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Tokens = g.Sum(t => (long)t.TokensUsed) })
+            .OrderByDescending(g => g.Tokens)
+            .Take(10)
+            .ToListAsync();
+        var topOrgIds = topOrgData.Select(g => g.OrgId).ToList();
         var orgNames = await _db.Organizations.AsNoTracking()
-                                .Where(o => orgIds.Contains(o.Id))
+                                .Where(o => topOrgIds.Contains(o.Id))
                                 .ToDictionaryAsync(o => o.Id, o => o.Name);
-        var topOrgs = rows
-            .GroupBy(r => r.OrganizationId)
-            .Select(g => new
-            {
-                orgId   = g.Key,
-                orgName = orgNames.TryGetValue(g.Key, out var n) ? n : $"Org #{g.Key}",
-                tokens  = g.Sum(r => (long)r.TokensUsed),
-                cost    = Math.Round((g.Sum(r => (long)r.TokensUsed) / 1000.0) * costRate, 4)
-            })
-            .OrderByDescending(g => g.tokens)
-            .Take(10)
-            .ToList();
+        var topOrgs = topOrgData.Select(g => new
+        {
+            orgId   = g.OrgId,
+            orgName = orgNames.TryGetValue(g.OrgId, out var n) ? n : $"Org #{g.OrgId}",
+            tokens  = g.Tokens,
+            cost    = Math.Round((g.Tokens / 1000.0) * costRate, 4)
+        }).ToList();
 
-        var userIds = rows.Select(r => r.UserId).Distinct().ToList();
-        var userEmails = await _db.Users.AsNoTracking()
-                                  .Where(u => userIds.Contains(u.Id))
-                                  .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.Id);
-        var topUsers = rows
-            .GroupBy(r => r.UserId)
-            .Select(g => new
-            {
-                userId    = g.Key,
-                userEmail = userEmails.TryGetValue(g.Key, out var e) ? e : g.Key,
-                tokens    = g.Sum(r => (long)r.TokensUsed),
-                cost      = Math.Round((g.Sum(r => (long)r.TokensUsed) / 1000.0) * costRate, 4)
-            })
-            .OrderByDescending(g => g.tokens)
+        var topUserData = await query
+            .GroupBy(t => t.UserId)
+            .Select(g => new { UserId = g.Key, Tokens = g.Sum(t => (long)t.TokensUsed) })
+            .OrderByDescending(g => g.Tokens)
             .Take(10)
-            .ToList();
+            .ToListAsync();
+        var topUserIds = topUserData.Select(g => g.UserId).ToList();
+        var userEmails = await _db.Users.AsNoTracking()
+                                  .Where(u => topUserIds.Contains(u.Id))
+                                  .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.Id);
+        var topUsers = topUserData.Select(g => new
+        {
+            userId    = g.UserId,
+            userEmail = userEmails.TryGetValue(g.UserId, out var e) ? e : g.UserId,
+            tokens    = g.Tokens,
+            cost      = Math.Round((g.Tokens / 1000.0) * costRate, 4)
+        }).ToList();
 
         var result = new
         {
@@ -303,31 +321,36 @@ public class InsightsController : Controller
         if (orgId.HasValue)               query = query.Where(t => t.OrganizationId == orgId.Value);
         if (!string.IsNullOrEmpty(userId)) query = query.Where(t => t.UserId == userId);
 
-        var rows = await query
-            .Select(t => new { t.OrganizationId, t.UserId, t.TokensUsed, t.CreatedAt })
+        var daily = await query
+            .GroupBy(t => t.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Tokens = g.Sum(t => (long)t.TokensUsed) })
+            .OrderBy(d => d.Date)
             .ToListAsync();
 
-        var daily = rows
-            .GroupBy(r => r.CreatedAt.Date)
-            .Select(g => new
-            {
-                Date   = g.Key.ToString("yyyy-MM-dd"),
-                Tokens = g.Sum(r => (long)r.TokensUsed),
-                Cost   = Math.Round((g.Sum(r => (long)r.TokensUsed) / 1000.0) * costRate, 4)
-            })
-            .OrderBy(d => d.Date);
+        Response.ContentType = "text/csv; charset=utf-8";
+        Response.Headers["Content-Disposition"] = "attachment; filename=token-usage.csv";
 
-        var sb = new StringBuilder();
-        sb.AppendLine("Date,Tokens,EstimatedCost");
+        await using var writer = new System.IO.StreamWriter(
+            Response.Body, new System.Text.UTF8Encoding(false), 1024, leaveOpen: true);
+        await writer.WriteLineAsync("Date,Tokens,EstimatedCost");
         foreach (var d in daily)
-            sb.AppendLine($"{d.Date},{d.Tokens},{d.Cost}");
-
-        return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "token-usage.csv");
+        {
+            var cost = Math.Round((d.Tokens / 1000.0) * costRate, 4);
+            await writer.WriteLineAsync($"{d.Date:yyyy-MM-dd},{d.Tokens},{cost}");
+        }
+        await writer.FlushAsync();
+        return new EmptyResult();
     }
 
-    // ──────────────────────────────────────────────────────────
-    // D16 — AI Spend vs Revenue (MVC view)
-    // ──────────────────────────────────────────────────────────
+    // Sanitises a string value for CSV: escapes double-quotes and prefixes
+    // formula-injection characters (=, +, -, @, TAB, CR) with a single quote.
+    private static string CsvSafe(string value)
+    {
+        var s = value.Replace("\"", "\"\"");
+        if (s.Length > 0 && "=+-@\t\r".Contains(s[0]))
+            s = "'" + s;
+        return s;
+    }
 
     [HttpGet("/superadmin/insights/margin")]
     public async Task<IActionResult> Margin([FromQuery] string range = "30d")
@@ -430,12 +453,11 @@ public class InsightsController : Controller
         sb.AppendLine("OrgId,OrgName,Plan,Spend,Revenue,Margin,MarginPct");
         foreach (var o in orgs)
         {
-            double spend   = spendByOrg.TryGetValue(o.Id, out var s) ? s : 0;
-            double revenue = revByOrg.TryGetValue(o.Id, out var r) ? r : 0;
-            double margin  = revenue - spend;
+            double spend     = spendByOrg.TryGetValue(o.Id, out var s) ? s : 0;
+            double revenue   = revByOrg.TryGetValue(o.Id, out var r) ? r : 0;
+            double margin    = revenue - spend;
             double marginPct = revenue > 0 ? Math.Round(margin / revenue * 100, 1) : 0;
-            var safeName   = o.Name.Replace("\"", "\"\""); // escape double-quotes
-            sb.AppendLine($"{o.Id},\"{safeName}\",{o.Plan},{Math.Round(spend, 4)},{Math.Round(revenue, 2)},{Math.Round(margin, 2)},{marginPct}");
+            sb.AppendLine($"{o.Id},\"{CsvSafe(o.Name)}\",{o.Plan},{Math.Round(spend, 4)},{Math.Round(revenue, 2)},{Math.Round(margin, 2)},{marginPct}");
         }
 
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "margin.csv");
@@ -449,7 +471,12 @@ public class InsightsController : Controller
     public async Task<IActionResult> ChurnRisk()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var items = await GetChurnRiskItemsAsync();
+        return View("~/Views/Admin/ChurnRisk.cshtml", items);
+    }
 
+    private async Task<List<ChurnRiskItem>> GetChurnRiskItemsAsync()
+    {
         var cutoff = DateTime.UtcNow.AddDays(-14);
         var now    = DateTime.UtcNow;
 
@@ -460,28 +487,29 @@ public class InsightsController : Controller
 
         var orgIds = paidOrgs.Select(o => o.Id).ToList();
 
-        var usersByOrg = await _db.Users.AsNoTracking()
+        var userIdsByOrg = await _db.Users.AsNoTracking()
             .Where(u => u.OrganizationId.HasValue && orgIds.Contains(u.OrganizationId.Value))
-            .Select(u => new { u.Id, u.OrganizationId })
-            .ToListAsync();
+            .Select(u => new { u.Id, OrgId = u.OrganizationId!.Value })
+            .GroupBy(u => u.OrgId)
+            .ToDictionaryAsync(g => g.Key, g => g.Select(u => u.Id).ToList());
 
-        var userIdsByOrg = usersByOrg
-            .GroupBy(u => u.OrganizationId!.Value)
-            .ToDictionary(g => g.Key, g => g.Select(u => u.Id).ToList());
-        var allUserIds = usersByOrg.Select(u => u.Id).ToList();
-
-        var lastActivityByUser = await _db.ActivityLogs.AsNoTracking()
-            .Where(l => allUserIds.Contains(l.UserId))
-            .GroupBy(l => l.UserId)
-            .Select(g => new { UserId = g.Key, LastAt = g.Max(l => l.CreatedAt) })
-            .ToListAsync();
+        // Use JOIN to avoid large IN (...) clauses on user IDs
+        var lastActivityByUser = await (
+            from l in _db.ActivityLogs.AsNoTracking()
+            join u in _db.Users.AsNoTracking() on l.UserId equals u.Id
+            where u.OrganizationId.HasValue && orgIds.Contains(u.OrganizationId.Value)
+            group l by l.UserId into g
+            select new { UserId = g.Key, LastAt = g.Max(l => l.CreatedAt) }
+        ).ToListAsync();
         var lastActDict = lastActivityByUser.ToDictionary(l => l.UserId, l => l.LastAt);
 
-        var lastMsgByUser = await _db.ChatMessages.AsNoTracking()
-            .Where(m => allUserIds.Contains(m.UserId))
-            .GroupBy(m => m.UserId)
-            .Select(g => new { UserId = g.Key, LastAt = g.Max(m => m.CreatedAt) })
-            .ToListAsync();
+        var lastMsgByUser = await (
+            from m in _db.ChatMessages.AsNoTracking()
+            join u in _db.Users.AsNoTracking() on m.UserId equals u.Id
+            where u.OrganizationId.HasValue && orgIds.Contains(u.OrganizationId.Value)
+            group m by m.UserId into g
+            select new { UserId = g.Key, LastAt = g.Max(m => m.CreatedAt) }
+        ).ToListAsync();
         var lastMsgDict = lastMsgByUser.ToDictionary(l => l.UserId, l => l.LastAt);
 
         var openTicketsByOrg = await _db.SupportTickets.AsNoTracking()
@@ -523,9 +551,16 @@ public class InsightsController : Controller
             bool noRecentActivity = !lastActivity.HasValue || lastActivity.Value < cutoff;
             bool noRecentMsg      = !lastMsg.HasValue      || lastMsg.Value < cutoff;
 
-            if (!noRecentActivity && !noRecentMsg) continue;
+            // Include only orgs where BOTH activity AND chat are inactive (AND logic)
+            if (!(noRecentActivity && noRecentMsg)) continue;
 
-            int daysSince   = lastActivity.HasValue ? (int)(now - lastActivity.Value).TotalDays : 999;
+            // daysSince based on most recent engagement across both signals
+            DateTime? lastEngagement =
+                lastActivity.HasValue && lastMsg.HasValue
+                    ? (lastActivity.Value >= lastMsg.Value ? lastActivity : lastMsg)
+                    : (lastActivity ?? lastMsg);
+
+            int daysSince   = lastEngagement.HasValue ? (int)(now - lastEngagement.Value).TotalDays : 999;
             int openTickets = ticketsByOrg.TryGetValue(org.Id, out var tc) ? tc : 0;
             int riskScore   = Math.Min(100, daysSince * 5 + openTickets * 10);
 
@@ -539,7 +574,7 @@ public class InsightsController : Controller
                 OrgId              = org.Id,
                 OrgName            = org.Name,
                 Plan               = org.Plan.ToString(),
-                LastActivityAt     = lastActivity,
+                LastActivityAt     = lastEngagement,
                 DaysSinceActivity  = daysSince,
                 LastPaymentAt      = payment?.LastAt,
                 MrrEstimate        = mrrEst,
@@ -548,8 +583,7 @@ public class InsightsController : Controller
             });
         }
 
-        return View("~/Views/Admin/ChurnRisk.cshtml",
-                    risks.OrderByDescending(r => r.RiskScore).ToList());
+        return risks.OrderByDescending(r => r.RiskScore).ToList();
     }
 
     // ──────────────────────────────────────────────────────────
@@ -561,16 +595,13 @@ public class InsightsController : Controller
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
 
-        var viewResult = await ChurnRisk();
-        if (viewResult is not ViewResult vr || vr.Model is not List<ChurnRiskItem> items)
-            return StatusCode(500);
+        var items = await GetChurnRiskItemsAsync();
 
         var sb = new StringBuilder();
         sb.AppendLine("OrgId,OrgName,Plan,RiskScore,DaysSinceActivity,LastActivityAt,LastPaymentAt,MrrEstimate,OpenTickets");
         foreach (var r in items)
         {
-            var safeName = r.OrgName.Replace("\"", "\"\"");
-            sb.AppendLine($"{r.OrgId},\"{safeName}\",{r.Plan},{r.RiskScore},{r.DaysSinceActivity}," +
+            sb.AppendLine($"{r.OrgId},\"{CsvSafe(r.OrgName)}\",{r.Plan},{r.RiskScore},{r.DaysSinceActivity}," +
                           $"{r.LastActivityAt?.ToString("yyyy-MM-dd") ?? ""},{r.LastPaymentAt?.ToString("yyyy-MM-dd") ?? ""},{r.MrrEstimate},{r.OpenSupportTickets}");
         }
 
@@ -614,8 +645,6 @@ public class InsightsController : Controller
     {
         var now          = DateTime.UtcNow;
         var sevenDaysAgo = now.AddDays(-7);
-        var thirtyDaysAgo = now.AddDays(-30);
-        var sixtyDaysAgo  = now.AddDays(-60);
 
         var orgs = await _db.Organizations.AsNoTracking()
             .Where(o => !o.IsBlocked)
@@ -629,22 +658,29 @@ public class InsightsController : Controller
             .Select(u => new { u.Id, OrgId = u.OrganizationId!.Value })
             .ToListAsync();
 
-        var userMap    = usersByOrg.GroupBy(u => u.OrgId)
-                                   .ToDictionary(g => g.Key, g => g.Select(u => u.Id).ToList());
-        var allUserIds = usersByOrg.Select(u => u.Id).ToList();
+        var userMap = usersByOrg.GroupBy(u => u.OrgId)
+                                .ToDictionary(g => g.Key, g => g.Select(u => u.Id).ToList());
 
-        var activeUsersLast7 = await _db.ActivityLogs.AsNoTracking()
-            .Where(l => allUserIds.Contains(l.UserId) && l.CreatedAt >= sevenDaysAgo)
-            .Select(l => l.UserId)
-            .Distinct()
-            .ToListAsync();
+        // JOIN-based queries avoid large IN(...) clauses and the SQL Server 2100-parameter limit
+        var activeUsersLast7 = await (
+            from l in _db.ActivityLogs.AsNoTracking()
+            join u in _db.Users.AsNoTracking() on l.UserId equals u.Id
+            where u.OrganizationId.HasValue
+                && orgIds.Contains(u.OrganizationId.Value)
+                && l.CreatedAt >= sevenDaysAgo
+            select l.UserId
+        ).Distinct().ToListAsync();
         var activeUserSet = new HashSet<string>(activeUsersLast7);
 
-        var msgsLast7 = await _db.ChatMessages.AsNoTracking()
-            .Where(m => allUserIds.Contains(m.UserId) && m.CreatedAt >= sevenDaysAgo)
-            .GroupBy(m => m.UserId)
-            .Select(g => new { UserId = g.Key, Count = g.Count() })
-            .ToListAsync();
+        var msgsLast7 = await (
+            from m in _db.ChatMessages.AsNoTracking()
+            join u in _db.Users.AsNoTracking() on m.UserId equals u.Id
+            where u.OrganizationId.HasValue
+                && orgIds.Contains(u.OrganizationId.Value)
+                && m.CreatedAt >= sevenDaysAgo
+            group m by m.UserId into g
+            select new { UserId = g.Key, Count = g.Count() }
+        ).ToListAsync();
         var msgsByUser = msgsLast7.ToDictionary(m => m.UserId, m => m.Count);
 
         var openTickets = await _db.SupportTickets.AsNoTracking()

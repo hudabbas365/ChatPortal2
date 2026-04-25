@@ -69,7 +69,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 (function() {
-    const range = '@range';
+    const range = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(range));
     let rows = [];
     let sortCol = 'margin', sortAsc = true;
 
@@ -87,19 +87,33 @@
                 : (sortAsc ? av - bv : bv - av);
         });
         const tbody = document.querySelector('#marginTable tbody');
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
         if (!sorted.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No data for this period.</td></tr>';
+            const tr = tbody.insertRow(); const td = tr.insertCell();
+            td.colSpan = 6; td.style.cssText = 'text-align:center;color:var(--text-muted)';
+            td.textContent = 'No data for this period.';
             return;
         }
-        tbody.innerHTML = sorted.map(r => `
-            <tr class="${r.margin < 0 ? 'loss' : ''}">
-                <td style="font-weight:600;color:#1e3a5f">${r.orgName}</td>
-                <td><span class="badge-sm badge-indigo">${r.plan}</span></td>
-                <td>${fmtUsd(r.revenue)}</td>
-                <td style="color:#fb7185">${fmtUsd(r.spend)}</td>
-                <td style="${r.margin < 0 ? 'color:#fb7185;font-weight:600' : 'color:#34d399;font-weight:600'}">${r.margin < 0 ? '-' : ''}${fmtUsd(r.margin)}</td>
-                <td>${pctBadge(r.marginPct)}</td>
-            </tr>`).join('');
+        sorted.forEach(r => {
+            const tr = tbody.insertRow();
+            if (r.margin < 0) tr.classList.add('loss');
+
+            const c0 = tr.insertCell(); c0.style.cssText = 'font-weight:600;color:#1e3a5f'; c0.textContent = r.orgName;
+
+            const c1 = tr.insertCell();
+            const badge = document.createElement('span');
+            badge.className = 'badge-sm badge-indigo'; badge.textContent = r.plan;
+            c1.appendChild(badge);
+
+            const c2 = tr.insertCell(); c2.textContent = fmtUsd(r.revenue);
+            const c3 = tr.insertCell(); c3.style.color = '#fb7185'; c3.textContent = fmtUsd(r.spend);
+
+            const c4 = tr.insertCell();
+            c4.style.cssText = r.margin < 0 ? 'color:#fb7185;font-weight:600' : 'color:#34d399;font-weight:600';
+            c4.textContent = (r.margin < 0 ? '-' : '') + fmtUsd(r.margin);
+
+            const c5 = tr.insertCell(); c5.innerHTML = pctBadge(r.marginPct);
+        });
     }
 
     ['org','plan','revenue','spend','margin','pct'].forEach(col => {

@@ -26,7 +26,7 @@
         <h1 class="page-title">Token Usage Dashboard</h1>
         <p class="page-desc">AI token consumption across orgs, users, and models.</p>
     </div>
-    <a href="/superadmin/insights/token-usage/export.csv?range=@range@(orgId.HasValue ? $"&orgId={orgId}" : "")@(!string.IsNullOrEmpty(userId) ? $"&userId={userId}" : "")"
+    <a href="@Url.Action("TokenUsageExport", "Insights", new { range = range, orgId = orgId, userId = userId })"
        class="btn-ghost-sm"><i class="bi bi-download"></i>Export CSV</a>
 </div>
 
@@ -109,9 +109,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 (function() {
-    const range  = '@range';
-    const orgId  = '@(orgId.HasValue ? orgId.Value.ToString() : "")';
-    const userId = '@(userId ?? "")';
+    const range  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(range));
+    const orgId  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(orgId.HasValue ? orgId.Value.ToString() : ""));
+    const userId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(userId ?? ""));
     let qs = '?range=' + range;
     if (orgId)  qs += '&orgId='  + orgId;
     if (userId) qs += '&userId=' + userId;
@@ -160,23 +160,40 @@
 
             // Top orgs table
             const orgTbody = document.querySelector('#topOrgsTable tbody');
-            orgTbody.innerHTML = data.topOrgs.length === 0
-                ? '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">No data.</td></tr>'
-                : data.topOrgs.map(o => `<tr>
-                    <td style="font-weight:500;color:#1e3a5f">${o.orgName}</td>
-                    <td>${fmtNum(o.tokens)}</td>
-                    <td>$${o.cost.toFixed(2)}</td></tr>`).join('');
+            while (orgTbody.firstChild) orgTbody.removeChild(orgTbody.firstChild);
+            if (!data.topOrgs.length) {
+                const tr = orgTbody.insertRow(); const td = tr.insertCell();
+                td.colSpan = 3; td.style.cssText = 'text-align:center;color:var(--text-muted)';
+                td.textContent = 'No data.';
+            } else {
+                data.topOrgs.forEach(o => {
+                    const tr = orgTbody.insertRow();
+                    const c0 = tr.insertCell(); c0.style.cssText = 'font-weight:500;color:#1e3a5f'; c0.textContent = o.orgName;
+                    const c1 = tr.insertCell(); c1.textContent = fmtNum(o.tokens);
+                    const c2 = tr.insertCell(); c2.textContent = '$' + o.cost.toFixed(2);
+                });
+            }
 
             // Top users table
             const userTbody = document.querySelector('#topUsersTable tbody');
-            userTbody.innerHTML = data.topUsers.length === 0
-                ? '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">No data.</td></tr>'
-                : data.topUsers.map(u => `<tr>
-                    <td style="font-size:.82rem;color:#1e3a5f">
-                        <a href="/superadmin/users/${u.userId}/timeline" style="color:var(--primary);text-decoration:none">${u.userEmail}</a>
-                    </td>
-                    <td>${fmtNum(u.tokens)}</td>
-                    <td>$${u.cost.toFixed(2)}</td></tr>`).join('');
+            while (userTbody.firstChild) userTbody.removeChild(userTbody.firstChild);
+            if (!data.topUsers.length) {
+                const tr = userTbody.insertRow(); const td = tr.insertCell();
+                td.colSpan = 3; td.style.cssText = 'text-align:center;color:var(--text-muted)';
+                td.textContent = 'No data.';
+            } else {
+                data.topUsers.forEach(u => {
+                    const tr = userTbody.insertRow();
+                    const c0 = tr.insertCell(); c0.style.cssText = 'font-size:.82rem;color:#1e3a5f';
+                    const a = document.createElement('a');
+                    a.href = '/superadmin/users/' + encodeURIComponent(u.userId) + '/timeline';
+                    a.style.cssText = 'color:var(--primary);text-decoration:none';
+                    a.textContent = u.userEmail;
+                    c0.appendChild(a);
+                    const c1 = tr.insertCell(); c1.textContent = fmtNum(u.tokens);
+                    const c2 = tr.insertCell(); c2.textContent = '$' + u.cost.toFixed(2);
+                });
+            }
         })
         .catch(() => console.warn('Failed to load token usage data'));
 })();
