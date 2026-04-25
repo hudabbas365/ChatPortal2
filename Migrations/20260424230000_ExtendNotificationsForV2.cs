@@ -109,11 +109,31 @@ namespace AIInsights.Migrations
                 {
                     table.PrimaryKey("PK_NotificationTemplates", x => x.Id);
                 });
+
+            // ── Unique index on (UserId, NotificationId) to prevent duplicate fan-out rows ──
+            // First remove any duplicates keeping the lowest Id
+            migrationBuilder.Sql(
+                @"WITH CTE AS (
+                    SELECT Id,
+                           ROW_NUMBER() OVER (PARTITION BY UserId, NotificationId ORDER BY Id) AS rn
+                    FROM UserNotifications
+                )
+                DELETE FROM CTE WHERE rn > 1;");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserNotifications_UserId_NotificationId",
+                table: "UserNotifications",
+                columns: new[] { "UserId", "NotificationId" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_UserNotifications_UserId_NotificationId",
+                table: "UserNotifications");
+
             migrationBuilder.DropTable(name: "NotificationTemplates");
 
             migrationBuilder.DropColumn(name: "TargetUserIdsCsv", table: "Notifications");

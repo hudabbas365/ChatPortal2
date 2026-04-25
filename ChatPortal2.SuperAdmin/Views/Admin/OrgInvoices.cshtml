@@ -1,0 +1,293 @@
+@model AIInsights.SuperAdmin.Controllers.OrgInvoicesViewModel
+@{
+    ViewData["Title"] = $"Invoices – {Model.Org.Name}";
+    ViewData["ActivePage"] = "orgs";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+
+#pragma warning disable CS8321
+    string QS(int? overridePage = null) {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(Model.FilterFrom))   parts.Add($"from={Uri.EscapeDataString(Model.FilterFrom)}");
+        if (!string.IsNullOrEmpty(Model.FilterTo))     parts.Add($"to={Uri.EscapeDataString(Model.FilterTo)}");
+        if (!string.IsNullOrEmpty(Model.FilterStatus)) parts.Add($"status={Uri.EscapeDataString(Model.FilterStatus)}");
+        if (!string.IsNullOrEmpty(Model.FilterSearch)) parts.Add($"search={Uri.EscapeDataString(Model.FilterSearch)}");
+        var p = overridePage ?? Model.Page;
+        if (p > 1) parts.Add($"page={p}");
+        return parts.Count > 0 ? "?" + string.Join("&", parts) : "";
+    }
+#pragma warning restore CS8321
+}
+
+<!-- Header -->
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <a href="/superadmin/organizations" class="btn-ghost-sm mb-2" style="font-size:.78rem">
+            <i class="bi bi-arrow-left"></i> Back to Organizations
+        </a>
+        <h1 class="page-title">@Model.Org.Name — Invoices</h1>
+        <p class="page-desc">@Model.TotalCount invoice record(s) matching current filters</p>
+    </div>
+    <a href="/superadmin/organizations/@Model.Org.Id/invoices/export.csv@QS()"
+       class="btn-ghost-sm">
+        <i class="bi bi-download"></i> Export CSV
+    </a>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-check-circle-fill"></i></div>
+            <div class="stat-val">$@Model.TotalPaid.ToString("N2")</div>
+            <div class="stat-label">Total Paid</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(244,63,94,.12);color:#fb7185"><i class="bi bi-exclamation-circle-fill"></i></div>
+            <div class="stat-val">$@Model.TotalOutstanding.ToString("N2")</div>
+            <div class="stat-label">Outstanding</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(14,165,233,.12);color:#38bdf8"><i class="bi bi-arrow-counterclockwise"></i></div>
+            <div class="stat-val">$@Model.TotalRefunded.ToString("N2")</div>
+            <div class="stat-label">Refunded</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-calendar-check"></i></div>
+            <div class="stat-val" style="font-size:1rem">
+                @(Model.LastPaymentAt.HasValue ? Model.LastPaymentAt.Value.ToString("MMM d, yy") : "—")
+            </div>
+            <div class="stat-label">Last Payment</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(245,158,11,.12);color:#fbbf24"><i class="bi bi-arrow-repeat"></i></div>
+            <div class="stat-val">$@Model.Mrr.ToString("N2")</div>
+            <div class="stat-label">MRR</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-2">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-currency-dollar"></i></div>
+            <div class="stat-val">$@Model.Lifetime.ToString("N2")</div>
+            <div class="stat-label">Lifetime Value</div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter bar -->
+<div class="card-panel mb-3">
+    <form method="get" action="/superadmin/organizations/@Model.Org.Id/invoices" class="d-flex flex-wrap gap-2 align-items-end">
+        <div>
+            <label class="d-block mb-1" style="font-size:.75rem;color:var(--text-muted);font-weight:600">From</label>
+            <input type="date" name="from" value="@Model.FilterFrom" class="form-control form-control-sm" style="min-width:140px" />
+        </div>
+        <div>
+            <label class="d-block mb-1" style="font-size:.75rem;color:var(--text-muted);font-weight:600">To</label>
+            <input type="date" name="to" value="@Model.FilterTo" class="form-control form-control-sm" style="min-width:140px" />
+        </div>
+        <div>
+            <label class="d-block mb-1" style="font-size:.75rem;color:var(--text-muted);font-weight:600">Status</label>
+            <select name="status" class="form-select form-select-sm" style="min-width:130px">
+                <option value="" selected="@(string.IsNullOrEmpty(Model.FilterStatus))">All</option>
+                <option value="succeeded" selected="@(Model.FilterStatus == "succeeded")">Paid</option>
+                <option value="failed"    selected="@(Model.FilterStatus == "failed")">Failed</option>
+                <option value="pending"   selected="@(Model.FilterStatus == "pending")">Pending</option>
+                <option value="refunded"  selected="@(Model.FilterStatus == "refunded")">Refunded</option>
+            </select>
+        </div>
+        <div>
+            <label class="d-block mb-1" style="font-size:.75rem;color:var(--text-muted);font-weight:600">Search</label>
+            <input type="text" name="search" value="@Model.FilterSearch" placeholder="Invoice #, description…"
+                   class="form-control form-control-sm" style="min-width:200px" />
+        </div>
+        <button type="submit" class="btn-primary-sm"><i class="bi bi-funnel"></i> Filter</button>
+        @if (!string.IsNullOrEmpty(Model.FilterFrom) || !string.IsNullOrEmpty(Model.FilterTo) ||
+             !string.IsNullOrEmpty(Model.FilterStatus) || !string.IsNullOrEmpty(Model.FilterSearch))
+        {
+            <a href="/superadmin/organizations/@Model.Org.Id/invoices" class="btn-ghost-sm">Clear</a>
+        }
+    </form>
+</div>
+
+<!-- Invoices table -->
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>Invoice #</th>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Records.Count == 0)
+            {
+                <tr>
+                    <td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem">
+                        No invoice records found.
+                    </td>
+                </tr>
+            }
+            @foreach (var r in Model.Records)
+            {
+                var invNum = r.InvoiceNumber ?? $"INV-{r.CreatedAt:yyyyMM}-{r.Id:D6}";
+                var statusClass = r.Status switch
+                {
+                    "succeeded" => "badge-emerald",
+                    "failed"    => "badge-rose",
+                    "pending"   => "badge-amber",
+                    "refunded"  => "badge-sky",
+                    _           => "badge-indigo"
+                };
+                <tr>
+                    <td style="font-weight:600;color:#1e3a5f;font-family:monospace">@invNum</td>
+                    <td style="color:var(--text-muted)">@r.CreatedAt.ToString("MMM d, yyyy HH:mm")</td>
+                    <td><span class="badge-sm badge-indigo">@r.PaymentType</span></td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                        title="@r.Description">@(r.Description ?? "—")</td>
+                    <td style="font-weight:600">@r.Amount.ToString("C2")</td>
+                    <td><span class="badge-sm @statusClass">@r.Status</span></td>
+                    <td>
+                        <div class="d-flex gap-1">
+                            <a href="/api/superadmin/invoices/@r.Id/pdf" target="_blank"
+                               class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem"
+                               title="Download PDF">
+                                <i class="bi bi-file-earmark-pdf"></i> PDF
+                            </a>
+                            <button type="button"
+                                    class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem"
+                                    data-invoice-id="@r.Id"
+                                    data-invoice-number="@invNum"
+                                    onclick="resendEmail(this)"
+                                    title="Resend Invoice Email">
+                                <i class="bi bi-envelope-arrow-up"></i> Resend
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+@if (Model.TotalPages > 1)
+{
+    <nav class="d-flex justify-content-center mt-3 gap-2">
+        @if (Model.Page > 1)
+        {
+            <a href="/superadmin/organizations/@Model.Org.Id/invoices@QS(Model.Page - 1)" class="btn-ghost-sm">← Previous</a>
+        }
+        <span class="d-flex align-items-center" style="font-size:.85rem;color:var(--text-muted)">
+            Page @Model.Page of @Model.TotalPages
+        </span>
+        @if (Model.Page < Model.TotalPages)
+        {
+            <a href="/superadmin/organizations/@Model.Org.Id/invoices@QS(Model.Page + 1)" class="btn-ghost-sm">Next →</a>
+        }
+    </nav>
+}
+
+<!-- Toast host -->
+<div id="toastHost" aria-live="polite" aria-atomic="true"
+     style="position:fixed;top:1.25rem;right:1.25rem;z-index:1080;display:flex;flex-direction:column;gap:.5rem;pointer-events:none"></div>
+
+<style>
+.app-toast {
+    display:flex;align-items:flex-start;gap:.65rem;
+    min-width:280px;max-width:380px;
+    padding:.75rem .9rem;border-radius:10px;
+    background:#fff;border:1px solid var(--border);
+    box-shadow:0 10px 25px -5px rgba(30,58,95,.18),0 4px 6px -2px rgba(30,58,95,.08);
+    font-size:.85rem;color:var(--text);
+    opacity:0;transform:translateY(-8px);
+    transition:opacity .2s ease,transform .2s ease;
+    pointer-events:auto;
+}
+.app-toast.show { opacity:1;transform:translateY(0); }
+.app-toast .app-toast-icon {
+    width:28px;height:28px;border-radius:8px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:.95rem;
+}
+.app-toast-success .app-toast-icon { background:rgba(52,211,153,.15);color:#059669; }
+.app-toast-error   .app-toast-icon { background:rgba(244,63,94,.15);color:#e11d48; }
+.app-toast-title { font-weight:600;color:#1e3a5f;line-height:1.2; }
+.app-toast-msg   { color:var(--text-dim);font-size:.8rem;margin-top:.15rem; }
+.app-toast-close {
+    background:transparent;border:none;color:var(--text-muted);
+    font-size:1.05rem;line-height:1;cursor:pointer;padding:0 .1rem;margin-left:auto;
+}
+.app-toast-close:hover { color:var(--text); }
+</style>
+
+<script>
+function showToast(message, type = 'success', title = null) {
+    const host = document.getElementById('toastHost');
+    if (!host) return;
+    const icon = type === 'error' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
+    const el = document.createElement('div');
+    el.className = 'app-toast app-toast-' + type;
+    el.innerHTML =
+        '<div class="app-toast-icon"><i class="bi ' + icon + '"></i></div>' +
+        '<div style="flex:1;min-width:0"><div class="app-toast-title"></div><div class="app-toast-msg"></div></div>' +
+        '<button type="button" class="app-toast-close" aria-label="Close">&times;</button>';
+    el.querySelector('.app-toast-title').textContent = title || (type === 'error' ? 'Error' : 'Success');
+    el.querySelector('.app-toast-msg').textContent = message;
+    host.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    const dismiss = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 220); };
+    el.querySelector('.app-toast-close').addEventListener('click', dismiss);
+    setTimeout(dismiss, type === 'error' ? 5000 : 3500);
+}
+
+async function resendEmail(btn) {
+    const invoiceId = btn.dataset.invoiceId;
+    const invoiceNumber = btn.dataset.invoiceNumber;
+    const override = prompt(
+        'Resend invoice ' + invoiceNumber + '\n\nEnter an override email address, or leave blank to use the org admin email:',
+        ''
+    );
+    if (override === null) return; // cancelled
+
+    // Get CSRF token from the antiforgery cookie or meta tag
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+               ?? getCookieValue('XSRF-TOKEN')
+               ?? '';
+
+    try {
+        const resp = await fetch('/api/superadmin/invoices/' + invoiceId + '/resend-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': token,
+                'X-XSRF-TOKEN': token
+            },
+            body: JSON.stringify({ toEmail: override.trim() || null })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            showToast(data.error || 'Failed to resend email.', 'error', 'Send Failed');
+        } else {
+            showToast('Invoice sent to ' + (data.sentTo || 'recipient'), 'success', 'Email Sent');
+        }
+    } catch (e) {
+        showToast('Network error: ' + e.message, 'error', 'Error');
+    }
+}
+
+function getCookieValue(name) {
+    const m = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return m ? decodeURIComponent(m[2]) : '';
+}
+</script>

@@ -31,6 +31,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
+    public DbSet<PlanChangeLog> PlanChangeLogs => Set<PlanChangeLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -214,5 +215,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<ReportRevision>()
             .HasIndex(rr => new { rr.ReportId, rr.Kind, rr.CreatedAt });
+
+        builder.Entity<PlanChangeLog>()
+            .HasOne(p => p.Organization)
+            .WithMany()
+            .HasForeignKey(p => p.OrganizationId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

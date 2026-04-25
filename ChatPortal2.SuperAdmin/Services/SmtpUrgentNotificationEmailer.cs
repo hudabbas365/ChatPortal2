@@ -46,7 +46,7 @@ public class SmtpUrgentNotificationEmailer : IUrgentNotificationEmailer
                 EnableSsl = useSsl
             };
 
-            var msg = new MailMessage
+            using var msg = new MailMessage
             {
                 From = new MailAddress(from),
                 Subject = subject,

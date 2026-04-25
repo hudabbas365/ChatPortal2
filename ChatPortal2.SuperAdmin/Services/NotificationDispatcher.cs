@@ -48,7 +48,7 @@ public class NotificationDispatcher : BackgroundService
         var now = DateTime.UtcNow;
 
         var due = await db.Notifications
-            .Where(n => n.DeliveryStatus == "Scheduled" && n.ScheduleAt <= now)
+            .Where(n => n.DeliveryStatus == "Scheduled" && n.ScheduleAt <= now && !n.IsRecalled)
             .ToListAsync(ct);
 
         if (due.Count == 0) return;
@@ -82,6 +82,14 @@ public class NotificationDispatcher : BackgroundService
     {
         try
         {
+            // Re-check status inside a fresh read to guard against race with cancel/recall
+            var fresh = await db.Notifications.FindAsync(new object[] { notification.Id }, ct);
+            if (fresh == null || fresh.DeliveryStatus != "Scheduled" || fresh.IsRecalled)
+            {
+                logger?.LogInformation("Skipping notification {Id}: status={Status} recalled={Recalled}.",
+                    notification.Id, fresh?.DeliveryStatus ?? "missing", fresh?.IsRecalled ?? false);
+                return;
+            }
             var recipients = await ResolveRecipientsAsync(db, notification, ct);
 
             // De-duplicate

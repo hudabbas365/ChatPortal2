@@ -42,5 +42,6 @@ public class PaymentRecord
     public string? CaptureId { get; set; }           // PayPal capture id
     public string? PdfPath { get; set; }             // if we stash a generated PDF
     public DateTime? PaidAt { get; set; }
+    public DateTime? DueDate { get; set; }
 }
 

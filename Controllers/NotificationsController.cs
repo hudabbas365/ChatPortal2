@@ -220,7 +220,11 @@ public class NotificationsController : ControllerBase
         await _db.SaveChangesAsync();
 
         var link = un.Notification?.Link;
-        return Redirect(string.IsNullOrWhiteSpace(link) ? "/" : link);
+        var redirectTarget = !string.IsNullOrWhiteSpace(link) && Url.IsLocalUrl(link)
+            ? link
+            : "/";
+
+        return Redirect(redirectTarget);
     }
 
     private async Task UpsertStateAsync(string userId, int notificationId, bool read, bool dismissed)

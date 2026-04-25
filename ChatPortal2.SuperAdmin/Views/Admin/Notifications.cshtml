@@ -422,17 +422,8 @@
     function sc(s) { var m = {Delivered:'success',Scheduled:'primary',Cancelled:'secondary',Failed:'danger'}; return m[s] || 'secondary'; }
     function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-    document.querySelectorAll('tr[data-status="Delivered"]').forEach(async function(tr) {
-        var id = tr.dataset.id;
-        try {
-            var r = await fetch('/api/superadmin/notifications/' + id + '/metrics', { credentials: 'same-origin' });
-            var m = await r.json();
-            var q = function(cls) { return document.querySelector('.' + cls + '[data-id="' + id + '"]'); };
-            if (q('metrics-recipients')) q('metrics-recipients').textContent = m.totalRecipients;
-            if (q('metrics-read')) q('metrics-read').textContent = Math.round((m.readRate||0)*100) + '%';
-            if (q('metrics-click')) q('metrics-click').textContent = Math.round((m.clickRate||0)*100) + '%';
-        } catch(ex) { /* silent */ }
-    });
+    // Metrics are lazy-loaded only when the Metrics drawer is opened (not on page load)
+    // The openMetrics function already calls loadMetrics lazily — no N+1 on load.
 
     var tmplForm = document.getElementById('tmplCreateForm');
     tmplForm && tmplForm.addEventListener('submit', async function(e) {
