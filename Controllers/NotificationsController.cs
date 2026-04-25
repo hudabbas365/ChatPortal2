@@ -47,10 +47,16 @@ public class NotificationsController : ControllerBase
         return _db.Notifications
             .AsNoTracking()
             .Where(n =>
-                (n.Scope == "All"
-                 || (n.Scope == "Org" && n.OrganizationId != null && n.OrganizationId == orgId)
-                 || (n.Scope == "User" && n.TargetUserId == uid))
+                !n.IsRecalled
+                && n.DeliveryStatus == "Delivered"
                 && (n.ExpiresAt == null || n.ExpiresAt > now)
+                && (
+                    n.Scope == "All"
+                    || (n.Scope == "Org" && n.OrganizationId != null && n.OrganizationId == orgId)
+                    || (n.Scope == "User" && n.TargetUserId == uid)
+                    || ((n.Scope == "User" || n.Scope == "Role") &&
+                        _db.UserNotifications.Any(un => un.UserId == uid && un.NotificationId == n.Id))
+                )
                 // Exclude dismissed
                 && !_db.UserNotifications.Any(un =>
                         un.UserId == uid && un.NotificationId == n.Id && un.DismissedAt != null));
@@ -186,6 +192,39 @@ public class NotificationsController : ControllerBase
 
         await UpsertStateAsync(user.Id, id, read: true, dismissed: true);
         return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Click-tracking redirect. Sets IsClicked=true, ReadAt, then redirects to the notification's link.
+    /// GET /n/{userNotificationId}/click
+    /// </summary>
+    [HttpGet("/n/{userNotificationId:int}/click")]
+    public async Task<IActionResult> ClickRedirect(int userNotificationId)
+    {
+        var user = await GetUserAsync();
+        if (user == null) return Unauthorized();
+
+        var un = await _db.UserNotifications
+            .Include(x => x.Notification)
+            .FirstOrDefaultAsync(x => x.Id == userNotificationId && x.UserId == user.Id);
+
+        if (un == null) return NotFound();
+
+        var now = DateTime.UtcNow;
+        if (!un.IsClicked)
+        {
+            un.IsClicked = true;
+            un.ClickedAt = now;
+        }
+        if (un.ReadAt == null) un.ReadAt = now;
+        await _db.SaveChangesAsync();
+
+        var link = un.Notification?.Link;
+        var redirectTarget = !string.IsNullOrWhiteSpace(link) && Url.IsLocalUrl(link)
+            ? link
+            : "/";
+
+        return Redirect(redirectTarget);
     }
 
     private async Task UpsertStateAsync(string userId, int notificationId, bool read, bool dismissed)

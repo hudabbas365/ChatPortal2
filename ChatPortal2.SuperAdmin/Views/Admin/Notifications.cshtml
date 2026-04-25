@@ -1,163 +1,461 @@
 @model List<AIInsights.Models.Notification>
+@using AIInsights.Models
 @{
-    ViewData["Title"] = "Broadcast Notifications";
+    ViewData["Title"] = "Notifications";
     var orgs = ViewBag.Orgs as IEnumerable<dynamic> ?? new List<dynamic>();
+    var templates = ViewBag.Templates as List<NotificationTemplate> ?? new List<NotificationTemplate>();
 }
 
-<div class="admin-page container">
+<div class="admin-page container-fluid">
     <div class="admin-header">
-        <h1 class="admin-title">Broadcast Notifications</h1>
-        <p class="admin-subtitle">Push a notification to every organization, or target specific organizations. Delivered to all users via the bell icon.</p>
+        <h1 class="admin-title">Notification Platform</h1>
+        <p class="admin-subtitle">Target users by scope, schedule delivery, manage templates, and track engagement.</p>
     </div>
 
-    <div class="content-card mb-4">
-        <h5 class="mb-3"><i class="bi bi-broadcast me-2"></i>New Broadcast</h5>
-        <form id="saBroadcastForm" class="row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Audience</label>
-                <select class="form-select" id="bc-scope">
-                    <option value="All" selected>All organizations</option>
-                    <option value="SpecificOrgs">Specific organizations…</option>
-                </select>
-            </div>
-            <div class="col-md-8" id="bc-orgs-wrap" style="display:none;">
-                <label class="form-label">Organizations</label>
-                <select class="form-select" id="bc-orgs" multiple size="4">
-                    @foreach (var o in orgs)
-                    {
-                        <option value="@o.Id">@o.Name</option>
-                    }
-                </select>
-                <small class="text-muted">Hold Ctrl/Cmd to select multiple.</small>
-            </div>
-            <div class="col-md-8">
-                <label class="form-label">Title *</label>
-                <input class="form-control" id="bc-title" maxlength="120" required />
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Severity</label>
-                <select class="form-select" id="bc-severity">
-                    <option value="low">Low</option>
-                    <option value="normal" selected>Normal</option>
-                    <option value="high">High</option>
-                </select>
-            </div>
-            <div class="col-12">
-                <label class="form-label">Body *</label>
-                <textarea class="form-control" id="bc-body" rows="3" maxlength="800" required></textarea>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Type</label>
-                <select class="form-select" id="bc-type">
-                    <option value="Announcement" selected>Announcement</option>
-                    <option value="Info">Info</option>
-                    <option value="Warning">Warning</option>
-                    <option value="Success">Success</option>
-                    <option value="System">System</option>
-                </select>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Link (optional)</label>
-                <input class="form-control" id="bc-link" placeholder="/pricing" />
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Expires At (optional)</label>
-                <input type="datetime-local" class="form-control" id="bc-expires" />
-            </div>
-            <div class="col-12 d-flex justify-content-end gap-2">
-                <button type="reset" class="btn btn-outline-secondary">Clear</button>
-                <button type="submit" class="cp-btn-gradient"><i class="bi bi-send me-1"></i>Broadcast</button>
-            </div>
-        </form>
-        <div id="bc-result" class="mt-3 small"></div>
-    </div>
+    <ul class="nav nav-tabs mb-4" id="notifTabs">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-compose">Compose</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-list">Broadcasts</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-templates">Templates</a></li>
+    </ul>
 
-    <div class="content-card">
-        <h5 class="mb-3"><i class="bi bi-clock-history me-2"></i>Recent Broadcasts</h5>
-        <div class="dr-table-scroll">
-            <table class="cp-table">
-                <thead class="cp-table-head">
-                    <tr>
-                        <th>Title</th>
-                        <th>Scope</th>
-                        <th>Org</th>
-                        <th>Type</th>
-                        <th>Severity</th>
-                        <th>Created</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="bc-tbody">
-                    @if (Model == null || Model.Count == 0)
+    <div class="tab-content">
+
+        <!-- COMPOSE TAB -->
+        <div class="tab-pane fade show active" id="tab-compose">
+            <div class="content-card">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0"><i class="bi bi-broadcast me-2"></i>New Notification</h5>
+                    @if (templates.Count > 0)
                     {
-                        <tr><td colspan="7" class="text-center text-muted py-4">No broadcasts yet.</td></tr>
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="mb-0 small text-muted">Load template:</label>
+                            <select class="form-select form-select-sm" id="bc-template-picker" style="width:auto;">
+                                <option value="">— choose —</option>
+                                @foreach (var t in templates)
+                                {
+                                    <option value="@t.Id" data-title="@t.Title" data-body="@t.Body"
+                                            data-type="@t.Type" data-severity="@t.Severity"
+                                            data-link="@(t.Link ?? "")">@t.Name</option>
+                                }
+                            </select>
+                        </div>
                     }
-                    else
-                    {
-                        foreach (var n in Model)
-                        {
-                            <tr data-id="@n.Id">
-                                <td><strong>@n.Title</strong><div class="text-muted small">@n.Body</div></td>
-                                <td>@n.Scope</td>
-                                <td>@(n.OrganizationId?.ToString() ?? "—")</td>
-                                <td>@n.Type</td>
-                                <td>@n.Severity</td>
-                                <td>@n.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                                <td><button class="btn btn-sm btn-outline-danger bc-del" data-id="@n.Id"><i class="bi bi-trash"></i></button></td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
+                </div>
+                <form id="saBroadcastForm" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Audience</label>
+                        <select class="form-select" id="bc-scope">
+                            <option value="All" selected>All organizations</option>
+                            <option value="SpecificOrgs">Specific organizations...</option>
+                            <option value="User">Specific users...</option>
+                            <option value="Role">By role...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8" id="bc-orgs-wrap" style="display:none;">
+                        <label class="form-label">Organizations</label>
+                        <select class="form-select" id="bc-orgs" multiple size="4">
+                            @foreach (var o in orgs) { <option value="@o.Id">@o.Name</option> }
+                        </select>
+                        <small class="text-muted">Hold Ctrl/Cmd to select multiple.</small>
+                    </div>
+                    <div class="col-md-8" id="bc-users-wrap" style="display:none;">
+                        <label class="form-label">User IDs (comma-separated)</label>
+                        <input class="form-control" id="bc-userids" placeholder="userId1, userId2, ..." />
+                    </div>
+                    <div class="col-md-8" id="bc-roles-wrap" style="display:none;">
+                        <label class="form-label">Roles (comma-separated)</label>
+                        <input class="form-control" id="bc-roles" placeholder="OrgAdmin, User, SuperAdmin" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Title *</label>
+                        <input class="form-control" id="bc-title" maxlength="120" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Severity</label>
+                        <select class="form-select" id="bc-severity">
+                            <option value="low">Low</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent (sends email)</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Body *</label>
+                        <textarea class="form-control" id="bc-body" rows="3" maxlength="800" required></textarea>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="bc-type">
+                            <option value="Announcement" selected>Announcement</option>
+                            <option value="Info">Info</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Success">Success</option>
+                            <option value="System">System</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Link (optional)</label>
+                        <input class="form-control" id="bc-link" placeholder="/pricing" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Expires At (optional)</label>
+                        <input type="datetime-local" class="form-control" id="bc-expires" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Schedule At (optional)</label>
+                        <input type="datetime-local" class="form-control" id="bc-schedule" />
+                        <small class="text-muted">Leave blank to send immediately.</small>
+                    </div>
+                    <div class="col-12">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="bc-preview-btn">
+                            <i class="bi bi-eye me-1"></i>Preview
+                        </button>
+                    </div>
+                    <div class="col-12" id="bc-preview-wrap" style="display:none;">
+                        <div class="border rounded p-3 bg-light">
+                            <div class="d-flex align-items-start gap-2">
+                                <span id="pv-icon">&#128276;</span>
+                                <div>
+                                    <strong id="pv-title"></strong>
+                                    <div class="text-muted small" id="pv-body"></div>
+                                    <span class="badge mt-1" id="pv-severity"></span>
+                                    <span class="badge bg-secondary ms-1" id="pv-type"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex justify-content-end gap-2">
+                        <button type="reset" class="btn btn-outline-secondary">Clear</button>
+                        <button type="submit" class="cp-btn-gradient"><i class="bi bi-send me-1"></i>Send</button>
+                    </div>
+                </form>
+                <div id="bc-result" class="mt-3 small"></div>
+            </div>
         </div>
+
+        <!-- BROADCASTS LIST TAB -->
+        <div class="tab-pane fade" id="tab-list">
+            <div class="content-card">
+                <h5 class="mb-3"><i class="bi bi-clock-history me-2"></i>Recent Broadcasts</h5>
+                <div class="dr-table-scroll">
+                    <table class="cp-table">
+                        <thead class="cp-table-head">
+                            <tr>
+                                <th>Title</th><th>Scope</th><th>Status</th><th>Severity</th>
+                                <th>Created</th><th>Recipients</th><th>Read %</th><th>Click %</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="bc-tbody">
+                            @if (Model == null || Model.Count == 0)
+                            {
+                                <tr><td colspan="9" class="text-center text-muted py-4">No broadcasts yet.</td></tr>
+                            }
+                            else
+                            {
+                                foreach (var n in Model)
+                                {
+                                    var statusBadge = n.DeliveryStatus switch {
+                                        "Delivered" => "bg-success",
+                                        "Scheduled" => "bg-primary",
+                                        "Cancelled" => "bg-secondary",
+                                        "Failed" => "bg-danger",
+                                        _ => "bg-secondary"
+                                    };
+                                    <tr data-id="@n.Id" data-status="@n.DeliveryStatus">
+                                        <td>
+                                            <strong>@n.Title</strong>
+                                            @if (n.IsRecalled) { <span class="badge bg-warning ms-1">Recalled</span> }
+                                            <div class="text-muted small">@(n.Body.Length > 60 ? n.Body[..60] + "..." : n.Body)</div>
+                                        </td>
+                                        <td>
+                                            @n.Scope
+                                            @if (!string.IsNullOrWhiteSpace(n.TargetRolesCsv)) {
+                                                <span class="text-muted small d-block">(@n.TargetRolesCsv)</span>
+                                            }
+                                        </td>
+                                        <td><span class="badge @statusBadge">@n.DeliveryStatus</span></td>
+                                        <td>@n.Severity</td>
+                                        <td>@n.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td class="text-center metrics-recipients" data-id="@n.Id">-</td>
+                                        <td class="text-center metrics-read" data-id="@n.Id">-</td>
+                                        <td class="text-center metrics-click" data-id="@n.Id">-</td>
+                                        <td class="text-nowrap">
+                                            <button class="btn btn-sm btn-outline-info me-1 bc-metrics" data-id="@n.Id" title="Metrics">
+                                                <i class="bi bi-bar-chart"></i>
+                                            </button>
+                                            @if (n.DeliveryStatus == "Scheduled" && !n.IsRecalled) {
+                                                <button class="btn btn-sm btn-outline-warning me-1 bc-cancel" data-id="@n.Id" title="Cancel">
+                                                    <i class="bi bi-x-circle"></i>
+                                                </button>
+                                            }
+                                            @if (n.DeliveryStatus == "Delivered" && !n.IsRecalled) {
+                                                <button class="btn btn-sm btn-outline-secondary me-1 bc-recall" data-id="@n.Id" title="Recall">
+                                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-danger bc-del" data-id="@n.Id" title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TEMPLATES TAB -->
+        <div class="tab-pane fade" id="tab-templates">
+            <div class="content-card mb-4">
+                <h5 class="mb-3"><i class="bi bi-layout-text-window me-2"></i>Create Template</h5>
+                <form id="tmplCreateForm" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Template Name *</label>
+                        <input class="form-control" id="tmpl-name" maxlength="120" required />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Title *</label>
+                        <input class="form-control" id="tmpl-title" maxlength="200" required />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Body *</label>
+                        <textarea class="form-control" id="tmpl-body" rows="3" maxlength="800" required></textarea>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="tmpl-type">
+                            <option value="Announcement" selected>Announcement</option>
+                            <option value="Info">Info</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Success">Success</option>
+                            <option value="System">System</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Severity</label>
+                        <select class="form-select" id="tmpl-severity">
+                            <option value="low">Low</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Link (optional)</label>
+                        <input class="form-control" id="tmpl-link" placeholder="/pricing" />
+                    </div>
+                    <div class="col-12 d-flex justify-content-end gap-2">
+                        <button type="reset" class="btn btn-outline-secondary">Clear</button>
+                        <button type="submit" class="cp-btn-gradient"><i class="bi bi-plus-circle me-1"></i>Create Template</button>
+                    </div>
+                </form>
+                <div id="tmpl-create-result" class="mt-2 small"></div>
+            </div>
+            <div class="content-card">
+                <h5 class="mb-3"><i class="bi bi-collection me-2"></i>Saved Templates</h5>
+                <div class="dr-table-scroll">
+                    <table class="cp-table">
+                        <thead class="cp-table-head">
+                            <tr><th>Name</th><th>Title</th><th>Type</th><th>Severity</th><th>Created</th><th></th></tr>
+                        </thead>
+                        <tbody id="tmpl-tbody">
+                            @if (!templates.Any()) {
+                                <tr><td colspan="6" class="text-center text-muted py-3">No templates yet.</td></tr>
+                            }
+                            @foreach (var t in templates) {
+                                <tr>
+                                    <td><strong>@t.Name</strong></td>
+                                    <td>@t.Title</td>
+                                    <td>@t.Type</td>
+                                    <td>@t.Severity</td>
+                                    <td>@t.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger tmpl-del" data-id="@t.Id">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Metrics Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="metricsDrawer" style="width:420px;">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title">Notification Metrics</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body" id="metrics-body">
+        <div class="text-center text-muted py-5">Loading...</div>
     </div>
 </div>
 
 <script>
-(function() {
-    const scopeEl = document.getElementById('bc-scope');
-    const orgsWrap = document.getElementById('bc-orgs-wrap');
-    scopeEl.addEventListener('change', () => {
-        orgsWrap.style.display = scopeEl.value === 'SpecificOrgs' ? '' : 'none';
+(function () {
+    var scopeEl = document.getElementById('bc-scope');
+    scopeEl && scopeEl.addEventListener('change', function() {
+        document.getElementById('bc-orgs-wrap').style.display = scopeEl.value === 'SpecificOrgs' ? '' : 'none';
+        document.getElementById('bc-users-wrap').style.display = scopeEl.value === 'User' ? '' : 'none';
+        document.getElementById('bc-roles-wrap').style.display = scopeEl.value === 'Role' ? '' : 'none';
     });
 
-    document.getElementById('saBroadcastForm').addEventListener('submit', async function(e) {
+    var tmplPicker = document.getElementById('bc-template-picker');
+    tmplPicker && tmplPicker.addEventListener('change', function() {
+        var opt = this.options[this.selectedIndex];
+        if (!opt.value) return;
+        document.getElementById('bc-title').value = opt.dataset.title || '';
+        document.getElementById('bc-body').value = opt.dataset.body || '';
+        document.getElementById('bc-type').value = opt.dataset.type || 'Announcement';
+        document.getElementById('bc-severity').value = opt.dataset.severity || 'normal';
+        document.getElementById('bc-link').value = opt.dataset.link || '';
+    });
+
+    var previewBtn = document.getElementById('bc-preview-btn');
+    previewBtn && previewBtn.addEventListener('click', function() {
+        var wrap = document.getElementById('bc-preview-wrap');
+        if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
+        var severity = document.getElementById('bc-severity').value;
+        document.getElementById('pv-title').textContent = document.getElementById('bc-title').value || '(no title)';
+        document.getElementById('pv-body').textContent = document.getElementById('bc-body').value || '(no body)';
+        var sevEl = document.getElementById('pv-severity');
+        sevEl.textContent = severity;
+        sevEl.className = 'badge mt-1 ' + (severity === 'urgent' ? 'bg-danger' : severity === 'high' ? 'bg-warning text-dark' : 'bg-info text-dark');
+        document.getElementById('pv-type').textContent = document.getElementById('bc-type').value;
+        document.getElementById('pv-icon').textContent = severity === 'urgent' ? '[!]' : severity === 'high' ? '[!]' : '[n]';
+        wrap.style.display = '';
+    });
+
+    var broadcastForm = document.getElementById('saBroadcastForm');
+    broadcastForm && broadcastForm.addEventListener('submit', async function(e) {
         e.preventDefault();
-        const result = document.getElementById('bc-result');
-        result.textContent = 'Sending…';
-        const selected = Array.from(document.getElementById('bc-orgs').selectedOptions).map(o => parseInt(o.value, 10));
-        const body = {
-            scope: scopeEl.value,
-            organizationIds: selected,
+        var result = document.getElementById('bc-result');
+        result.textContent = 'Sending...';
+        var scope = scopeEl.value;
+        var selected = Array.from(document.getElementById('bc-orgs').selectedOptions).map(function(o) { return parseInt(o.value, 10); });
+        var userIds = (document.getElementById('bc-userids').value || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        var roles = (document.getElementById('bc-roles').value || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        var schedVal = document.getElementById('bc-schedule').value;
+        var payload = {
+            scope: scope, organizationIds: selected, userIds: userIds, roles: roles,
             title: document.getElementById('bc-title').value.trim(),
             body: document.getElementById('bc-body').value.trim(),
             type: document.getElementById('bc-type').value,
             severity: document.getElementById('bc-severity').value,
             link: document.getElementById('bc-link').value.trim() || null,
-            expiresAt: document.getElementById('bc-expires').value || null
+            expiresAt: document.getElementById('bc-expires').value || null,
+            scheduleAt: schedVal ? new Date(schedVal).toISOString() : null
         };
         try {
-            const r = await fetch('/api/superadmin/notifications/broadcast', {
-                method: 'POST',
-                credentials: 'same-origin',
+            var r = await fetch('/api/superadmin/notifications/broadcast', {
+                method: 'POST', credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: JSON.stringify(payload)
             });
-            if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || 'Failed'); }
-            const data = await r.json();
-            result.innerHTML = '<span class="text-success">✓ Broadcast sent (' + data.count + ' row(s)). Reloading…</span>';
-            setTimeout(() => location.reload(), 900);
-        } catch (err) {
-            result.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-        }
+            if (!r.ok) { var err = await r.json().catch(function() { return {}; }); throw new Error(err.error || 'Failed'); }
+            var data = await r.json();
+            result.innerHTML = '<span class="text-success">' + (data.scheduled ? 'Scheduled' : 'Sent') + ' (' + data.count + '). Reloading...</span>';
+            setTimeout(function() { location.reload(); }, 1000);
+        } catch(err) { result.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
     });
 
-    document.getElementById('bc-tbody').addEventListener('click', async function(e) {
-        const btn = e.target.closest('.bc-del');
+    var tbody = document.getElementById('bc-tbody');
+    tbody && tbody.addEventListener('click', async function(e) {
+        var del = e.target.closest('.bc-del');
+        var cancel = e.target.closest('.bc-cancel');
+        var recall = e.target.closest('.bc-recall');
+        var metrics = e.target.closest('.bc-metrics');
+        if (del) {
+            if (!confirm('Delete this notification?')) return;
+            var r = await fetch('/api/superadmin/notifications/' + del.dataset.id, { method: 'DELETE', credentials: 'same-origin' });
+            if (r.ok) del.closest('tr').remove();
+        }
+        if (cancel) {
+            if (!confirm('Cancel this scheduled notification?')) return;
+            var r = await fetch('/api/superadmin/notifications/' + cancel.dataset.id + '/cancel', { method: 'POST', credentials: 'same-origin' });
+            if (r.ok) location.reload();
+            else { var err = await r.json().catch(function() { return {}; }); alert(err.error || 'Failed'); }
+        }
+        if (recall) {
+            if (!confirm('Recall? It will be hidden from all users.')) return;
+            var r = await fetch('/api/superadmin/notifications/' + recall.dataset.id + '/recall', { method: 'POST', credentials: 'same-origin' });
+            if (r.ok) location.reload();
+            else { var err = await r.json().catch(function() { return {}; }); alert(err.error || 'Failed'); }
+        }
+        if (metrics) showMetrics(metrics.dataset.id);
+    });
+
+    async function showMetrics(id) {
+        var oc = new bootstrap.Offcanvas(document.getElementById('metricsDrawer'));
+        oc.show();
+        var body = document.getElementById('metrics-body');
+        body.innerHTML = '<div class="text-center text-muted py-5">Loading...</div>';
+        try {
+            var r = await fetch('/api/superadmin/notifications/' + id + '/metrics', { credentials: 'same-origin' });
+            var m = await r.json();
+            var rp = Math.round((m.readRate || 0) * 100), cp = Math.round((m.clickRate || 0) * 100);
+            var emailedHtml = (typeof m.emailed !== 'undefined') ? '<div class="col"><div class="fs-4 fw-bold text-warning">' + m.emailed + '</div><div class="small text-muted">Emailed</div></div>' : '';
+            body.innerHTML = '<h6>' + esc(m.title) + '</h6>'
+                + '<p class="text-muted small mb-3">Status: <span class="badge bg-' + sc(m.deliveryStatus) + '">' + m.deliveryStatus + '</span>'
+                + (m.deliveredAt ? ' &middot; Delivered: ' + new Date(m.deliveredAt).toLocaleString() : '')
+                + (m.scheduledAt ? ' &middot; Scheduled: ' + new Date(m.scheduledAt).toLocaleString() : '') + '</p>'
+                + '<div class="row text-center mb-3">'
+                + '<div class="col"><div class="fs-4 fw-bold">' + m.totalRecipients + '</div><div class="small text-muted">Recipients</div></div>'
+                + '<div class="col"><div class="fs-4 fw-bold text-success">' + m.read + '</div><div class="small text-muted">Read</div></div>'
+                + '<div class="col"><div class="fs-4 fw-bold text-secondary">' + m.unread + '</div><div class="small text-muted">Unread</div></div>'
+                + '<div class="col"><div class="fs-4 fw-bold text-primary">' + m.clicked + '</div><div class="small text-muted">Clicked</div></div>'
+                + emailedHtml + '</div>'
+                + '<label class="form-label small">Read rate - ' + rp + '%</label>'
+                + '<div class="progress mb-3" style="height:18px;"><div class="progress-bar bg-success" style="width:' + rp + '%">' + rp + '%</div></div>'
+                + '<label class="form-label small">Click-through rate - ' + cp + '%</label>'
+                + '<div class="progress" style="height:18px;"><div class="progress-bar bg-primary" style="width:' + cp + '%">' + cp + '%</div></div>';
+        } catch(ex) { body.innerHTML = '<div class="text-danger">Failed to load metrics.</div>'; }
+    }
+
+    function sc(s) { var m = {Delivered:'success',Scheduled:'primary',Cancelled:'secondary',Failed:'danger'}; return m[s] || 'secondary'; }
+    function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // Metrics are lazy-loaded only when the Metrics drawer is opened (not on page load)
+    // The openMetrics function already calls loadMetrics lazily — no N+1 on load.
+
+    var tmplForm = document.getElementById('tmplCreateForm');
+    tmplForm && tmplForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var result = document.getElementById('tmpl-create-result');
+        result.textContent = 'Saving...';
+        var payload = {
+            name: document.getElementById('tmpl-name').value.trim(),
+            title: document.getElementById('tmpl-title').value.trim(),
+            body: document.getElementById('tmpl-body').value.trim(),
+            type: document.getElementById('tmpl-type').value,
+            severity: document.getElementById('tmpl-severity').value,
+            link: document.getElementById('tmpl-link').value.trim() || null
+        };
+        try {
+            var r = await fetch('/api/superadmin/notification-templates', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!r.ok) { var err = await r.json().catch(function() { return {}; }); throw new Error(err.error || 'Failed'); }
+            result.innerHTML = '<span class="text-success">Template created. Reloading...</span>';
+            setTimeout(function() { location.reload(); }, 900);
+        } catch(err) { result.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
+    });
+
+    var tmplTbody = document.getElementById('tmpl-tbody');
+    tmplTbody && tmplTbody.addEventListener('click', async function(e) {
+        var btn = e.target.closest('.tmpl-del');
         if (!btn) return;
-        if (!confirm('Delete this notification?')) return;
-        const id = btn.dataset.id;
-        const r = await fetch('/api/superadmin/notifications/' + id, { method: 'DELETE', credentials: 'same-origin' });
+        if (!confirm('Delete this template?')) return;
+        var r = await fetch('/api/superadmin/notification-templates/' + btn.dataset.id, { method: 'DELETE', credentials: 'same-origin' });
         if (r.ok) btn.closest('tr').remove();
     });
 })();

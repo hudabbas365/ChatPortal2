@@ -95,6 +95,11 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
+builder.Services.AddScoped<AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer,
+    AIInsights.SuperAdmin.Services.SmtpUrgentNotificationEmailer>();
+builder.Services.AddHostedService<AIInsights.SuperAdmin.Services.NotificationDispatcher>();
+builder.Services.AddScoped<InvoicePdfService>();
+builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddHostedService<IntegrationHealthService>();
 builder.Services.AddHostedService<WeeklyDigestService>();
 builder.Services.AddHttpClient();

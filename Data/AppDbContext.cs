@@ -30,6 +30,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
     public DbSet<IntegrationHealthCheck> IntegrationHealthChecks => Set<IntegrationHealthCheck>();
     public DbSet<DigestRun> DigestRuns => Set<DigestRun>();
     public DbSet<PlanChangeLog> PlanChangeLogs => Set<PlanChangeLog>();
