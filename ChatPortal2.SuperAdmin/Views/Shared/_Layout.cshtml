@@ -243,8 +243,20 @@
 
             <div class="sb-section">System</div>
             <nav class="sb-nav">
+                <a href="/superadmin/security/logins" class="sb-link @(ViewData["ActivePage"]?.ToString() == "security-logins" ? "active" : "")"><i class="bi bi-shield-exclamation"></i>Failed Logins</a>
+                <a href="/superadmin/security/integrations" class="sb-link @(ViewData["ActivePage"]?.ToString() == "integrations" ? "active" : "")"><i class="bi bi-plug"></i>Integrations</a>
+                <a href="/superadmin/digest" class="sb-link @(ViewData["ActivePage"]?.ToString() == "digest" ? "active" : "")"><i class="bi bi-envelope-paper"></i>Weekly Digest</a>
                 <a href="/superadmin/aiconfig" class="sb-link @(ViewData["ActivePage"]?.ToString() == "aiconfig" ? "active" : "")"><i class="bi bi-cpu"></i>AI Config</a>
                 <a href="/superadmin/seo" class="sb-link @(ViewData["ActivePage"]?.ToString() == "seo" ? "active" : "")"><i class="bi bi-search"></i>SEO Manager</a>
+            </nav>
+
+            <div class="sb-section">Insights</div>
+            <nav class="sb-nav">
+                <a href="/superadmin/users" class="sb-link @(ViewData["ActivePage"]?.ToString() == "users" ? "active" : "")"><i class="bi bi-person-lines-fill"></i>User Search</a>
+                <a href="/superadmin/insights/token-usage" class="sb-link @(ViewData["ActivePage"]?.ToString() == "token-usage" ? "active" : "")"><i class="bi bi-cpu"></i>Token Usage</a>
+                <a href="/superadmin/insights/margin" class="sb-link @(ViewData["ActivePage"]?.ToString() == "margin" ? "active" : "")"><i class="bi bi-bar-chart-line"></i>AI Margin</a>
+                <a href="/superadmin/insights/churn-risk" class="sb-link @(ViewData["ActivePage"]?.ToString() == "churn-risk" ? "active" : "")"><i class="bi bi-exclamation-triangle"></i>Churn Risk</a>
+                <a href="/superadmin/insights/health" class="sb-link @(ViewData["ActivePage"]?.ToString() == "health" ? "active" : "")"><i class="bi bi-heart-pulse"></i>Org Health</a>
             </nav>
 
             <div class="sb-section">Content</div>

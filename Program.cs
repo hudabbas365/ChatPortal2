@@ -127,6 +127,12 @@ builder.Services.AddHttpClient("PayPal");
 builder.Services.AddScoped<IPayPalService, PayPalService>();
 builder.Services.AddHostedService<SubscriptionExpiryJob>();
 
+// GeoIP service (D25)
+builder.Services.AddHttpClient("geoip");
+builder.Services.AddScoped<GeoIpService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ActivityLogger>();
+
 // Session support
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -140,6 +146,12 @@ builder.Services.AddSession(options =>
 // MVC with views + Newtonsoft.Json
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson();
+
+// Configure antiforgery to accept tokens via request header (for AJAX/SPA calls)
+builder.Services.AddAntiforgery(opts =>
+{
+    opts.HeaderName = "RequestVerificationToken";
+});
 
 var app = builder.Build();
 
@@ -206,7 +218,75 @@ app.Use(async (context, next) =>
 app.UseCors();
 app.UseSession();
 app.UseAuthentication();
+
+// Impersonation middleware (D23): if imp_jwt cookie is present and valid,
+// override the current principal with the impersonated user's identity.
+// Must run AFTER UseAuthentication() and BEFORE UseAuthorization() so
+// authorization decisions are made against the impersonated principal.
+app.Use(async (context, next) =>
+{
+    var impCookie = context.Request.Cookies["imp_jwt"];
+    if (!string.IsNullOrEmpty(impCookie))
+    {
+        var jwtKey = context.RequestServices.GetRequiredService<IConfiguration>()["Jwt:Key"];
+        if (!string.IsNullOrEmpty(jwtKey))
+        {
+            try
+            {
+                var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                    System.Text.Encoding.UTF8.GetBytes(jwtKey));
+                var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                handler.MapInboundClaims = false;
+                var principal = handler.ValidateToken(impCookie, new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = key,
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                }, out _);
+
+                // Only override if this is actually an impersonation token (has act:sub claim)
+                if (principal.FindFirst("act:sub") != null)
+                {
+                    context.User = principal;
+                    // Store impersonation info in Items for banner rendering
+                    var targetEmail = principal.FindFirst("email")?.Value
+                                     ?? principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+                    var actorEmail = principal.FindFirst("act:email")?.Value;
+                    var impExpClaim = principal.FindFirst("imp_exp")?.Value;
+                    if (long.TryParse(impExpClaim, out var impExpUnix))
+                    {
+                        var impEnd = DateTimeOffset.FromUnixTimeSeconds(impExpUnix).UtcDateTime;
+                        context.Items["ImpersonationBanner"] = $"⚠️ Impersonating {targetEmail}. Started by {actorEmail}. Ends at {impEnd:HH:mm} UTC.";
+                        context.Items["ImpersonationActive"] = true;
+                    }
+                }
+            }
+            catch { /* invalid or expired imp_jwt — ignore */ }
+        }
+    }
+    await next();
+});
+
 app.UseAuthorization();
+
+// Issue XSRF-TOKEN cookie so JS can read and send it in fetch calls for CSRF-protected API endpoints
+app.Use(async (context, next) =>
+{
+    var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    // HttpOnly=false is intentional: JS needs to read this cookie to send the header
+    context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
+    {
+        HttpOnly = false,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/"
+    });
+    await next();
+});
 
 // Redirect 401/403 to the Access Denied page for browser requests
 app.UseStatusCodePages(async context =>

@@ -1,0 +1,189 @@
+@model AIInsights.SuperAdmin.Controllers.InsightsController.UserTimelineViewModel
+@{
+    ViewData["Title"] = $"Timeline — {Model.User.FullName}";
+    ViewData["ActivePage"] = "users";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+
+    var initials = ((Model.User.FullName ?? "?").Length > 0 ? (Model.User.FullName ?? "?")[0].ToString() : "?").ToUpper();
+    var totalPages = (int)Math.Ceiling((double)Model.TotalActionsInWindow / Model.PageSize);
+
+    string RelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return dt.ToString("MMM d, yyyy");
+    }
+
+    string DayLabel(DateTime dt)
+    {
+        var today = DateTime.UtcNow.Date;
+        if (dt.Date == today) return "Today";
+        if (dt.Date == today.AddDays(-1)) return "Yesterday";
+        return dt.ToString("ddd, MMM d");
+    }
+
+    string ActionIcon(string action) => action.ToLower() switch
+    {
+        var a when a.Contains("login")    => "bi-box-arrow-in-right",
+        var a when a.Contains("logout")   => "bi-box-arrow-right",
+        var a when a.Contains("chat") || a.Contains("message") => "bi-chat-dots",
+        var a when a.Contains("agent")    => "bi-robot",
+        var a when a.Contains("data")     => "bi-database",
+        var a when a.Contains("workspace") => "bi-folder",
+        var a when a.Contains("report")   => "bi-file-earmark-bar-graph",
+        _ => "bi-circle"
+    };
+}
+
+<style>
+    .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+    .timeline-day { font-size:.72rem; font-weight:600; color:var(--text-muted); text-transform:uppercase;
+                    letter-spacing:.07em; padding:.5rem 0; margin-top:1rem; border-bottom:1px solid var(--border); }
+    .tl-item { display:flex; gap:.85rem; padding:.75rem 0; border-bottom:1px solid var(--border-light); align-items:flex-start; }
+    .tl-item:last-child { border-bottom:none; }
+    .tl-icon { width:32px;height:32px;border-radius:50%;background:rgba(74,142,201,.12);color:var(--primary);
+               display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0;margin-top:.1rem }
+    .tl-action { font-size:.82rem;font-weight:600;color:#1e3a5f }
+    .tl-desc { font-size:.8rem;color:var(--text-muted);margin-top:.15rem }
+    .tl-time { font-size:.74rem;color:var(--text-muted);margin-left:auto;white-space:nowrap;padding-top:.1rem }
+    .filter-row { display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end; }
+    .filter-label { font-size:.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem }
+    .cp-input { border:1px solid var(--border);border-radius:8px;padding:.4rem .7rem;font-size:.84rem;
+                font-family:inherit;outline:none;background:var(--surface);color:var(--text) }
+    .plan-badge { display:inline-flex;align-items:center;gap:.25rem;padding:.2em .6em;border-radius:6px;font-size:.75rem;font-weight:600 }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div style="display:flex;align-items:center;gap:1rem">
+        <div style="width:52px;height:52px;border-radius:14px;background:rgba(74,142,201,.15);color:var(--primary);
+                    font-size:1.2rem;font-weight:700;display:flex;align-items:center;justify-content:center">@initials</div>
+        <div>
+            <h1 class="page-title" style="margin:0">@Model.User.FullName</h1>
+            <div style="font-size:.82rem;color:var(--text-muted)">
+                @Model.User.Email &nbsp;·&nbsp;
+                @if (Model.OrgId.HasValue)
+                {
+                    <a href="/superadmin/organizations" style="color:var(--primary);text-decoration:none">@Model.OrgName</a>
+                }
+                else { <span>No Org</span> }
+                &nbsp;·&nbsp;
+                <span class="plan-badge @(Model.Plan.ToLower() switch { "enterprise" => "badge-indigo", "professional" => "badge-emerald", "freetrial" => "badge-amber", _ => "badge-sm" })">@Model.Plan</span>
+                &nbsp;·&nbsp;
+                <span class="badge-sm @(Model.User.Role == "SuperAdmin" ? "badge-rose" : Model.User.Role == "OrgAdmin" ? "badge-amber" : "badge-sky")">@Model.User.Role</span>
+            </div>
+        </div>
+    </div>
+    <a href="/superadmin/users" class="btn-ghost-sm"><i class="bi bi-arrow-left"></i>All Users</a>
+</div>
+
+<div class="summary-grid">
+    <div class="stat">
+        <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-activity"></i></div>
+        <div class="stat-val">@Model.TotalActionsAllTime.ToString("N0")</div>
+        <div class="stat-label">Total Actions (all-time)</div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-calendar-range"></i></div>
+        <div class="stat-val">@Model.TotalActionsInWindow.ToString("N0")</div>
+        <div class="stat-label">Actions in Window</div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24"><i class="bi bi-clock-history"></i></div>
+        <div class="stat-val">@(Model.LastSeen.HasValue ? RelativeTime(Model.LastSeen.Value) : "—")</div>
+        <div class="stat-label">Last Seen</div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon" style="background:rgba(14,165,233,.1);color:#38bdf8"><i class="bi bi-chat-dots"></i></div>
+        <div class="stat-val">@Model.TotalMessages.ToString("N0")</div>
+        <div class="stat-label">Total Messages</div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon" style="background:rgba(167,139,250,.1);color:#a78bfa"><i class="bi bi-cpu"></i></div>
+        <div class="stat-val">@(Model.TotalTokens >= 1_000_000 ? $"{Model.TotalTokens / 1_000_000.0:F1}M" : Model.TotalTokens >= 1_000 ? $"{Model.TotalTokens / 1000.0:F0}K" : Model.TotalTokens.ToString())</div>
+        <div class="stat-label">Total Tokens Used</div>
+    </div>
+</div>
+
+<!-- Date-range filter -->
+<div class="card-panel" style="margin-bottom:1rem">
+    <form method="get" action="/superadmin/users/@Model.User.Id/timeline" class="filter-row">
+        <div>
+            <div class="filter-label">From</div>
+            <input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" class="cp-input" />
+        </div>
+        <div>
+            <div class="filter-label">To</div>
+            <input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" class="cp-input" />
+        </div>
+        <button type="submit" class="btn-primary-sm" style="margin-top:auto"><i class="bi bi-filter"></i>Apply</button>
+        <a href="/superadmin/users/@Model.User.Id/timeline" class="btn-ghost-sm" style="margin-top:auto">Reset</a>
+    </form>
+</div>
+
+<!-- Timeline -->
+<div class="card-panel">
+    <div class="card-panel-title">Activity Timeline
+        <span style="font-weight:400;margin-left:.5rem;color:var(--text-muted)">
+            @Model.From.ToString("MMM d") – @Model.To.ToString("MMM d, yyyy")
+        </span>
+    </div>
+
+    @if (!Model.Logs.Any())
+    {
+        <div style="text-align:center;padding:2.5rem 0;color:var(--text-muted)">
+            <i class="bi bi-hourglass" style="font-size:2rem;opacity:.4;display:block;margin-bottom:.5rem"></i>
+            No activity in the selected date range.
+        </div>
+    }
+    else
+    {
+        var grouped = Model.Logs.GroupBy(l => l.CreatedAt.Date).OrderByDescending(g => g.Key);
+        foreach (var day in grouped)
+        {
+            <div class="timeline-day">@DayLabel(day.Key)</div>
+            foreach (var log in day.OrderByDescending(l => l.CreatedAt))
+            {
+                <div class="tl-item">
+                    <div class="tl-icon"><i class="bi @ActionIcon(log.Action)"></i></div>
+                    <div style="flex:1;min-width:0">
+                        <div class="tl-action">@log.Action</div>
+                        <div class="tl-desc">@log.Description</div>
+                    </div>
+                    <div class="tl-time" title="@log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                        @RelativeTime(log.CreatedAt)
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+<!-- Pager -->
+@if (totalPages > 1)
+{
+    <div style="display:flex;justify-content:center;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
+        @if (Model.Page > 1)
+        {
+            <a href="?from=@Model.From.ToString("yyyy-MM-dd")&to=@Model.To.ToString("yyyy-MM-dd")&page=@(Model.Page - 1)" class="btn-ghost-sm">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        }
+        @for (int p = Math.Max(1, Model.Page - 2); p <= Math.Min(totalPages, Model.Page + 2); p++)
+        {
+            <a href="?from=@Model.From.ToString("yyyy-MM-dd")&to=@Model.To.ToString("yyyy-MM-dd")&page=@p"
+               class="@(p == Model.Page ? "btn-primary-sm" : "btn-ghost-sm")" style="min-width:36px;justify-content:center">@p</a>
+        }
+        @if (Model.Page < totalPages)
+        {
+            <a href="?from=@Model.From.ToString("yyyy-MM-dd")&to=@Model.To.ToString("yyyy-MM-dd")&page=@(Model.Page + 1)" class="btn-ghost-sm">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        }
+    </div>
+    <p style="text-align:center;font-size:.78rem;color:var(--text-muted);margin-top:.5rem">
+        Page @Model.Page of @totalPages &nbsp;·&nbsp; @Model.TotalActionsInWindow total in window
+    </p>
+}

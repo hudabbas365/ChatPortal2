@@ -23,6 +23,8 @@
                 <a href="/superadmin/activity" class="btn-ghost-sm" style="padding:.4rem .65rem;font-size:.78rem"><i class="bi bi-x-lg"></i> Clear</a>
             }
         </form>
+        <a href="/superadmin/activity/export.csv?from=@DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-dd")&to=@DateTime.UtcNow.ToString("yyyy-MM-dd")@(string.IsNullOrEmpty(search) ? "" : "&search=" + Uri.EscapeDataString(search))" class="btn-ghost-sm" style="padding:.4rem .65rem;font-size:.78rem"><i class="bi bi-filetype-csv"></i> Export CSV</a>
+        <a href="/superadmin/activity/export.xlsx?from=@DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-dd")&to=@DateTime.UtcNow.ToString("yyyy-MM-dd")@(string.IsNullOrEmpty(search) ? "" : "&search=" + Uri.EscapeDataString(search))" class="btn-ghost-sm" style="padding:.4rem .65rem;font-size:.78rem"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
         <a href="?page=@(page + 1)@(string.IsNullOrEmpty(search) ? "" : "&search=" + Uri.EscapeDataString(search))" class="btn-primary-sm"><i class="bi bi-arrow-right"></i> Next</a>
     </div>
 </div>
@@ -41,7 +43,7 @@
         <tbody>
             @foreach (var log in Model)
             {
-                <tr>
+            <tr>
                     <td style="white-space:nowrap;color:var(--text-muted)">@log.CreatedAt.ToString("MMM d HH:mm")</td>
                     <td><span class="badge-sm badge-indigo">@log.Action</span></td>
                     <td>@log.Description</td>
@@ -55,6 +57,11 @@
                         {
                             <span style="font-size:.75rem;color:var(--text-muted)">@(log.UserId.Length > 12 ? log.UserId[..12] + "…" : log.UserId)</span>
                         }
+                        <div style="margin-top:.25rem">
+                            <a href="/superadmin/users/@log.UserId/timeline" class="btn-ghost-sm" style="padding:.2rem .5rem;font-size:.72rem">
+                                <i class="bi bi-clock-history"></i>Timeline
+                            </a>
+                        </div>
                     </td>
                     <td>
                         @if (!string.IsNullOrEmpty(log.OrganizationName))

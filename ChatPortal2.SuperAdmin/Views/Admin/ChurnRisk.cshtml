@@ -1,0 +1,102 @@
+@model List<AIInsights.SuperAdmin.Controllers.InsightsController.ChurnRiskItem>
+@{
+    ViewData["Title"] = "Churn Risk";
+    ViewData["ActivePage"] = "churn-risk";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<style>
+    .risk-high  { background:rgba(244,63,94,.08) !important; }
+    .risk-med   { background:rgba(245,158,11,.06) !important; }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1 class="page-title">Churn Risk</h1>
+        <p class="page-desc">Paid organizations with no activity and no chat messages in the last 14 days.</p>
+    </div>
+    <div style="display:flex;gap:.5rem">
+        <a href="/superadmin/insights/churn-risk/export.csv" class="btn-ghost-sm"><i class="bi bi-download"></i>Export CSV</a>
+    </div>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="card-panel" style="text-align:center;padding:3rem">
+        <i class="bi bi-check-circle" style="font-size:2.5rem;color:#34d399;display:block;margin-bottom:.75rem"></i>
+        <div style="font-size:1rem;font-weight:600;color:#1e3a5f">No churn risk detected</div>
+        <p style="color:var(--text-muted);margin-top:.35rem">All paid organisations have had recent activity in the last 14 days.</p>
+    </div>
+}
+else
+{
+    <div class="card-panel" style="overflow-x:auto">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>Organization</th>
+                    <th>Plan</th>
+                    <th>Risk Score</th>
+                    <th>Days Inactive</th>
+                    <th>Last Activity</th>
+                    <th>Last Payment</th>
+                    <th>MRR Est.</th>
+                    <th>Open Tickets</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    var riskClass  = r.RiskScore >= 70 ? "risk-high" : r.RiskScore >= 40 ? "risk-med" : "";
+                    var scoreColor = r.RiskScore >= 70 ? "#fb7185" : r.RiskScore >= 40 ? "#fbbf24" : "#34d399";
+                    var scoreBadge = r.RiskScore >= 70 ? "badge-rose" : r.RiskScore >= 40 ? "badge-amber" : "badge-emerald";
+                    <tr class="@riskClass">
+                        <td style="font-weight:600;color:#1e3a5f">@r.OrgName</td>
+                        <td><span class="badge-sm badge-indigo">@r.Plan</span></td>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:.5rem">
+                                <span class="badge-sm @scoreBadge">@r.RiskScore</span>
+                                <div style="flex:1;background:rgba(0,0,0,.08);border-radius:4px;height:5px;min-width:60px">
+                                    <div style="width:@(r.RiskScore)%;background:@scoreColor;height:5px;border-radius:4px;transition:width .3s"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            @if (r.DaysSinceActivity >= 999)
+                            { <span class="badge-sm badge-rose">Never</span> }
+                            else
+                            { <span>@r.DaysSinceActivity d</span> }
+                        </td>
+                        <td style="color:var(--text-muted);font-size:.8rem">
+                            @(r.LastActivityAt.HasValue ? r.LastActivityAt.Value.ToString("MMM d, yyyy") : "—")
+                        </td>
+                        <td style="color:var(--text-muted);font-size:.8rem">
+                            @(r.LastPaymentAt.HasValue ? r.LastPaymentAt.Value.ToString("MMM d, yyyy") : "—")
+                        </td>
+                        <td>$@r.MrrEstimate.ToString("F0")</td>
+                        <td>
+                            @if (r.OpenSupportTickets > 0)
+                            { <span class="badge-sm badge-amber">@r.OpenSupportTickets open</span> }
+                            else { <span style="color:var(--text-muted)">0</span> }
+                        </td>
+                        <td>
+                            <a href="/superadmin/notifications?orgId=@r.OrgId&template=churn-save"
+                               class="btn-ghost-sm" style="padding:.3rem .65rem;font-size:.78rem">
+                                <i class="bi bi-megaphone"></i>Notify
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <p style="font-size:.78rem;color:var(--text-muted);margin-top:.6rem">
+        <i class="bi bi-info-circle"></i>&nbsp;
+        Risk score = min(100, days_inactive × 5 + open_tickets × 10). &nbsp;
+        <span class="badge-sm badge-rose" style="font-size:.7rem">Red ≥ 70</span> &nbsp;
+        <span class="badge-sm badge-amber" style="font-size:.7rem">Amber 40–69</span> &nbsp;
+        <span class="badge-sm badge-emerald" style="font-size:.7rem">Green &lt; 40</span>
+    </p>
+}

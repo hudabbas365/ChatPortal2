@@ -128,11 +128,23 @@
                 <a href="/superadmin/organizations" class="btn-primary-sm"><i class="bi bi-building"></i>Manage Organizations</a>
                 <a href="/superadmin/activity" class="btn-ghost-sm"><i class="bi bi-activity"></i>View Activity Logs</a>
                 <a href="/superadmin/revenue" class="btn-ghost-sm"><i class="bi bi-wallet2"></i>Revenue Report</a>
+                <a href="/superadmin/security/logins" class="btn-ghost-sm"><i class="bi bi-shield-exclamation"></i>Failed Logins</a>
+                <a href="/superadmin/security/integrations" class="btn-ghost-sm"><i class="bi bi-plug"></i>Integration Health</a>
                 <a href="/superadmin/seo" class="btn-ghost-sm"><i class="bi bi-search"></i>SEO Manager</a>
             </div>
         </div>
     </div>
     <div class="col-lg-8">
+        <!-- Integration health strip (D27) -->
+        <div class="card-panel mb-3">
+            <div class="card-panel-title" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Integration Health</span>
+                <a href="/superadmin/security/integrations" style="font-size:.75rem;color:var(--primary)">View details →</a>
+            </div>
+            <div id="intHealthStrip" style="display:flex;gap:.75rem;flex-wrap:wrap;padding:.25rem 0">
+                <span style="font-size:.8rem;color:var(--text-muted)">Loading…</span>
+            </div>
+        </div>
         <div class="card-panel">
             <div class="card-panel-title">System Status</div>
             <table class="tbl">
@@ -240,6 +252,27 @@ function refreshDashboard() {
 updateStatus('Updated ' + formatTime(new Date()));
 startCountdown();
 timerId = setInterval(refreshDashboard, refreshInterval);
+
+// Load integration health strip
+function loadIntHealth() {
+    fetch('/api/superadmin/security/integrations')
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d) {
+            if (!d) return;
+            var strip = document.getElementById('intHealthStrip');
+            if (!strip) return;
+            var html = '';
+            d.providers.forEach(function(p) {
+                var bg = p.status === 'Up' ? '#dcfce7' : p.status === 'Down' ? '#fee2e2' : '#fef9c3';
+                var fg = p.status === 'Up' ? '#166534' : p.status === 'Down' ? '#991b1b' : '#713f12';
+                var icon = p.status === 'Up' ? '✅' : p.status === 'Down' ? '❌' : '⚠️';
+                html += '<span style="background:' + bg + ';color:' + fg + ';border-radius:6px;padding:.3rem .75rem;font-size:.8rem;font-weight:600">' + icon + ' ' + p.provider + ' — ' + p.status + '</span>';
+            });
+            strip.innerHTML = html || '<span style="font-size:.8rem;color:var(--text-muted)">No health data yet.</span>';
+        })
+        .catch(function(){});
+}
+loadIntHealth();
 </script>
 <style>
     @@keyframes spin { to { transform: rotate(360deg); } }

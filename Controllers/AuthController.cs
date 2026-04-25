@@ -18,6 +18,7 @@ public class AuthController : Controller
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
     private readonly IEmailService _emailService;
+    private readonly GeoIpService _geoIpService;
 
     // In-memory store for captcha answers: captchaId -> (answer, expiry)
     private static readonly ConcurrentDictionary<string, (string Answer, DateTime Expiry)> _captchaStore = new();
@@ -29,7 +30,8 @@ public class AuthController : Controller
         AppDbContext db,
         IConfiguration config,
         ILogger<AuthController> logger,
-        IEmailService emailService)
+        IEmailService emailService,
+        GeoIpService geoIpService)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -38,6 +40,7 @@ public class AuthController : Controller
         _config = config;
         _logger = logger;
         _emailService = emailService;
+        _geoIpService = geoIpService;
     }
 
     [HttpGet("/auth/login")]
@@ -210,6 +213,10 @@ public class AuthController : Controller
         if (user == null)
         {
             _logger.LogWarning("Login failed: no user found for '{Identifier}'.", req.Email);
+            // Log failed attempt (D22)
+            var failIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.LoginFailed", Description = $"Email={req.Email} IP={failIp}", UserId = "", OrganizationId = null, CreatedAt = DateTime.UtcNow });
+            await _db.SaveChangesAsync();
             return Unauthorized(new { error = "Invalid credentials." });
         }
 
@@ -219,6 +226,9 @@ public class AuthController : Controller
             var lockoutEnd = await _userManager.GetLockoutEndDateAsync(user);
             var remaining = lockoutEnd.HasValue ? (int)Math.Ceiling((lockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes) : 0;
             _logger.LogWarning("Login failed: account '{Email}' is locked out for {Minutes} more minutes.", user.Email, remaining);
+            var lockIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.LoginFailed", Description = $"Email={req.Email} IP={lockIp} Reason=Locked", UserId = user.Id, OrganizationId = user.OrganizationId, CreatedAt = DateTime.UtcNow });
+            await _db.SaveChangesAsync();
             return Unauthorized(new { error = $"Account is locked. Please try again in {remaining} minute(s)." });
         }
 
@@ -226,11 +236,17 @@ public class AuthController : Controller
         if (result.IsLockedOut)
         {
             _logger.LogWarning("Login failed: account '{Email}' just became locked out.", user.Email);
+            var lockIp2 = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.LoginFailed", Description = $"Email={req.Email} IP={lockIp2} Reason=JustLocked", UserId = user.Id, OrganizationId = user.OrganizationId, CreatedAt = DateTime.UtcNow });
+            await _db.SaveChangesAsync();
             return Unauthorized(new { error = "Too many failed attempts. Account is locked for 15 minutes." });
         }
         if (!result.Succeeded)
         {
             _logger.LogWarning("Login failed: invalid password for '{Email}'.", user.Email);
+            var badPwIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.LoginFailed", Description = $"Email={req.Email} IP={badPwIp} Reason=BadPassword", UserId = user.Id, OrganizationId = user.OrganizationId, CreatedAt = DateTime.UtcNow });
+            await _db.SaveChangesAsync();
             return Unauthorized(new { error = "Invalid credentials." });
         }
 
@@ -248,8 +264,23 @@ public class AuthController : Controller
         var token = _jwtService.GenerateToken(user);
         SetJwtCookie(token);
 
+        // Update last-login geo info (D25)
+        var loginIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (country, city) = await _geoIpService.LookupAsync(loginIp);
+        user.LastLoginIp = loginIp;
+        user.LastLoginCountry = country;
+        user.LastLoginCity = city;
+        user.LastLoginAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
         _db.ActivityLogs.Add(new ActivityLog { Action = "login", Description = $"{user.Email} signed in.", UserId = user.Id, OrganizationId = user.OrganizationId });
         await _db.SaveChangesAsync();
+
+        // If MustChangePassword is set, redirect to change-password page (D22)
+        if (user.MustChangePassword)
+        {
+            return Ok(new { token, redirectUrl = "/auth/change-password", user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, mustChangePassword = true } });
+        }
 
         var comingSoon = _config.GetValue<bool>("App:ComingSoon");
         var redirectUrl = comingSoon ? "/" : "/chat";
@@ -416,6 +447,60 @@ public class AuthController : Controller
         return Ok(new { success = true, message = "Password has been reset. You can now sign in." });
     }
 
+    [HttpGet("/auth/change-password")]
+    [Authorize]
+    public IActionResult ChangePassword() => View("ChangePassword");
+
+    [HttpPost("/api/auth/change-password")]
+    [Authorize]
+    [IgnoreAntiforgeryToken] // JWT Bearer + SameSite=Strict cookie provides CSRF protection
+    public async Task<IActionResult> ChangePasswordApi([FromBody] ChangePasswordRequest req)
+    {
+        if (string.IsNullOrEmpty(req.CurrentPassword) || string.IsNullOrEmpty(req.NewPassword))
+            return BadRequest(new { error = "All fields are required." });
+
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                     ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return Unauthorized();
+
+        var result = await _userManager.ChangePasswordAsync(user, req.CurrentPassword, req.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        // Clear the MustChangePassword flag
+        user.MustChangePassword = false;
+        var updateResult = await _userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+            _logger.LogWarning("Failed to clear MustChangePassword for user {UserId}: {Errors}",
+                user.Id, string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+
+        _db.ActivityLogs.Add(new ActivityLog { Action = "Auth.PasswordChanged", Description = "User changed password.", UserId = user.Id, OrganizationId = user.OrganizationId });
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, redirectUrl = "/chat" });
+    }
+
+    /// <summary>
+    /// Clears the impersonation cookie in the main app context and redirects back to SuperAdmin.
+    /// This endpoint is in the main app so the banner can call it without cross-origin issues.
+    /// </summary>
+    [HttpPost("/api/auth/impersonate/stop")]
+    [ValidateAntiForgeryToken]
+    public IActionResult StopImpersonation()
+    {
+        Response.Cookies.Delete("imp_jwt", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/"
+        });
+        return Ok(new { success = true, redirectUrl = "/superadmin" });
+    }
+
     private void SetJwtCookie(string token)
     {
         Response.Cookies.Append("jwt", token, new CookieOptions
@@ -462,5 +547,11 @@ public class AuthResetPasswordRequest
 {
     public string? Email { get; set; }
     public string? Token { get; set; }
+    public string? NewPassword { get; set; }
+}
+
+public class ChangePasswordRequest
+{
+    public string? CurrentPassword { get; set; }
     public string? NewPassword { get; set; }
 }
