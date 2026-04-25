@@ -48,7 +48,7 @@ public class NotificationsController : ControllerBase
             .AsNoTracking()
             .Where(n =>
                 !n.IsRecalled
-                && (n.DeliveryStatus == "Delivered" || n.DeliveryStatus == null || n.DeliveryStatus == "")
+                && n.DeliveryStatus == "Delivered"
                 && (n.ExpiresAt == null || n.ExpiresAt > now)
                 && (
                     n.Scope == "All"

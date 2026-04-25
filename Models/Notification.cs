@@ -59,7 +59,7 @@ public class Notification
     public DateTime? DeliveredAt { get; set; }
 
     /// <summary>"Pending" | "Scheduled" | "Delivered" | "Cancelled" | "Failed".</summary>
-    public string DeliveryStatus { get; set; } = "Delivered";
+    public string DeliveryStatus { get; set; } = "Pending";
 
     // ── Recall (D12) ────────────────────────────────────────────────────────
 

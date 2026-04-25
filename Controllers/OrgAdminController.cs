@@ -473,7 +473,9 @@ public class OrgAdminController : Controller
             ExpiresAt = dto.ExpiresAt,
             CreatedByUserId = caller.Id,
             CreatedByRole = "OrgAdmin",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            DeliveryStatus = "Delivered",
+            DeliveredAt = DateTime.UtcNow
         };
         _db.Notifications.Add(n);
         await _db.SaveChangesAsync();
