@@ -70,6 +70,30 @@
             <button onclick="closeForm()" style="background:none;border:none;font-size:1.2rem;color:var(--text-muted);cursor:pointer;"><i class="bi bi-x-lg"></i></button>
         </div>
         <input type="hidden" id="postId" value="0" />
+
+        <!-- AI SEO Assistant -->
+        <div style="background:linear-gradient(135deg,#eef4ff 0%,#f4ecff 100%);border:1px solid #d6def0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem;">
+                <div style="font-size:.82rem;font-weight:700;color:#3b3380;display:flex;align-items:center;gap:.4rem;">
+                    <i class="bi bi-stars"></i>AI SEO Assistant
+                </div>
+                <span id="aiStatus" style="font-size:.72rem;color:var(--text-muted);"></span>
+            </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem;">
+                <input id="aiTopic" type="text" placeholder="Topic / angle (optional, e.g. 'Power BI vs SQL for retail dashboards')"
+                       style="flex:1;min-width:220px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
+                <input id="aiKeywords" type="text" placeholder="Seed keywords (comma-separated)"
+                       style="flex:1;min-width:200px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
+            </div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+                <button type="button" class="btn-primary-sm" style="background:#5b3df0;border-color:#5b3df0;" onclick="aiGenerate('all')"><i class="bi bi-magic"></i>Generate Everything (~2000 words)</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('slug')"><i class="bi bi-stars"></i>Slug</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('summary')"><i class="bi bi-stars"></i>Summary / Meta</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('content')"><i class="bi bi-stars"></i>Content</button>
+            </div>
+            <div id="aiPreview" style="display:none;margin-top:.6rem;padding:.55rem .7rem;background:#fff;border:1px dashed #c8d1e8;border-radius:7px;font-size:.74rem;color:#3b3380;line-height:1.5;"></div>
+        </div>
+
         <div style="margin-bottom:.85rem;">
             <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Title</label>
             <input id="postTitle" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="My Awesome Post" />
@@ -109,7 +133,10 @@
 
 @section Scripts {
 <script>
+    var editingPostId = 0;
+
     function openForm() {
+        editingPostId = 0;
         document.getElementById('postId').value = '0';
         document.getElementById('postTitle').value = '';
         document.getElementById('postSlug').value = '';
@@ -119,27 +146,91 @@
         document.getElementById('postContent').value = '';
         document.getElementById('postPublished').checked = true;
         document.getElementById('formTitle').textContent = 'New Post';
+        resetAiPanel();
         document.getElementById('blogModal').style.display = 'flex';
     }
 
     function editPost(post) {
-        document.getElementById('postId').value = post.id;
-        document.getElementById('postTitle').value = post.title;
-        document.getElementById('postSlug').value = post.slug;
+        editingPostId = Number(post && post.id) || 0;
+        document.getElementById('postId').value = String(editingPostId);
+        document.getElementById('postTitle').value = post.title || '';
+        document.getElementById('postSlug').value = post.slug || '';
         document.getElementById('postAuthor').value = post.author || '';
         document.getElementById('postImage').value = post.imageUrl || '';
-        document.getElementById('postSummary').value = post.summary;
-        document.getElementById('postContent').value = post.content;
-        document.getElementById('postPublished').checked = post.isPublished;
+        document.getElementById('postSummary').value = post.summary || '';
+        document.getElementById('postContent').value = post.content || '';
+        document.getElementById('postPublished').checked = !!post.isPublished;
         document.getElementById('formTitle').textContent = 'Edit Post';
+        resetAiPanel();
         document.getElementById('blogModal').style.display = 'flex';
     }
 
     function closeForm() { document.getElementById('blogModal').style.display = 'none'; }
 
+    function resetAiPanel() {
+        document.getElementById('aiTopic').value = '';
+        document.getElementById('aiKeywords').value = '';
+        document.getElementById('aiStatus').textContent = '';
+        var p = document.getElementById('aiPreview'); p.style.display = 'none'; p.innerHTML = '';
+    }
+
+    async function aiGenerate(mode) {
+        var title = document.getElementById('postTitle').value.trim();
+        var topic = document.getElementById('aiTopic').value.trim();
+        var keywords = document.getElementById('aiKeywords').value.trim();
+        if (!title && !topic) { alert('Enter a Title or a Topic for the AI to work with.'); return; }
+
+        var status = document.getElementById('aiStatus');
+        status.textContent = 'Generating with AI… this can take 20–40s for full articles.';
+        var buttons = document.querySelectorAll('#blogModal .btn-primary-sm, #blogModal .btn-ghost-sm');
+        buttons.forEach(b => b.disabled = true);
+
+        try {
+            var resp = await fetch('/api/superadmin/ai/generate-content', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind: 'blog', title: title, topic: topic, keywords: keywords, mode: mode })
+            });
+            var data = await resp.json();
+            if (!resp.ok || !data.success) { alert(data.error || 'AI generation failed.'); return; }
+
+            if (mode === 'all') {
+                if (!title && data.title) document.getElementById('postTitle').value = data.title;
+                if (data.slug) document.getElementById('postSlug').value = data.slug;
+                if (data.summary) document.getElementById('postSummary').value = data.summary;
+                if (data.content) document.getElementById('postContent').value = data.content;
+            } else if (mode === 'slug' && data.slug) {
+                document.getElementById('postSlug').value = data.slug;
+            } else if (mode === 'summary' && data.summary) {
+                document.getElementById('postSummary').value = data.summary;
+            } else if (mode === 'content' && data.content) {
+                document.getElementById('postContent').value = data.content;
+            }
+
+            var preview = document.getElementById('aiPreview');
+            preview.style.display = 'block';
+            preview.innerHTML =
+                '<div><strong>Word count:</strong> ' + (data.wordCount || 0) +
+                (data.meetsLengthTarget ? ' ✅ meets 2000-word target' : ' ⚠ below 2000-word target — regenerate or expand') + '</div>' +
+                '<div style="margin-top:.25rem;"><strong>Meta description:</strong> ' + escapeHtml(data.metaDescription || '') + '</div>' +
+                '<div style="margin-top:.25rem;"><strong>Meta keywords:</strong> ' + escapeHtml(data.metaKeywords || '') + '</div>';
+            status.textContent = 'Done.';
+        } catch (e) {
+            alert('AI request failed: ' + e);
+        } finally {
+            buttons.forEach(b => b.disabled = false);
+        }
+    }
+
+    function escapeHtml(s) {
+        return (s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
     function savePost() {
+        var idFromField = parseInt(document.getElementById('postId').value, 10);
+        if (isNaN(idFromField)) idFromField = 0;
         var payload = {
-            id: parseInt(document.getElementById('postId').value),
+            id: editingPostId > 0 ? editingPostId : idFromField,
             title: document.getElementById('postTitle').value,
             slug: document.getElementById('postSlug').value,
             summary: document.getElementById('postSummary').value,

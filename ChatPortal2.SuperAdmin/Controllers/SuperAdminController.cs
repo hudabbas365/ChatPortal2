@@ -612,6 +612,122 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         return Ok(new { success = true });
     }
 
+    // ──── AI content generation (Blog & Docs SEO assistant) ────
+    public class AiContentRequest
+    {
+        public string Kind { get; set; } = "blog"; // "blog" or "doc"
+        public string Title { get; set; } = "";
+        public string? Topic { get; set; }
+        public string? Keywords { get; set; }
+        public string Mode { get; set; } = "all"; // all|slug|summary|keywords|content
+    }
+
+    [HttpPost("/api/superadmin/ai/generate-content")]
+    public async Task<IActionResult> GenerateAiContent([FromBody] AiContentRequest req)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (req == null) return BadRequest(new { error = "Missing payload." });
+
+        var title = (req.Title ?? "").Trim();
+        var topic = (req.Topic ?? "").Trim();
+        var seedKeywords = (req.Keywords ?? "").Trim();
+        if (string.IsNullOrEmpty(title) && string.IsNullOrEmpty(topic))
+            return BadRequest(new { error = "Provide a title or a topic to generate content." });
+
+        var kind = string.Equals(req.Kind, "doc", StringComparison.OrdinalIgnoreCase) ? "doc" : "blog";
+        var contentTypeLabel = kind == "doc" ? "documentation article" : "blog post";
+
+        var system =
+            "You are an expert SEO content strategist and technical writer for AIInsights365, " +
+            "an AI-powered analytics platform (chat-with-your-data, AI agents, dashboards, " +
+            "Power BI / SQL / REST connectors). You produce content that follows on-page SEO " +
+            "best practices: a single focused primary keyword, semantic LSI keywords, " +
+            "scannable HTML structure (H2/H3, short paragraphs, bullet lists), natural " +
+            "keyword density (~1-2%), descriptive subheadings, and an FAQ section. " +
+            "Always respond with a SINGLE valid JSON object only — no markdown fences, " +
+            "no commentary, no leading or trailing text.";
+
+        var userPrompt = new StringBuilder();
+        userPrompt.AppendLine($"Generate SEO assets for a new {contentTypeLabel} on AIInsights365.net.");
+        if (!string.IsNullOrEmpty(title)) userPrompt.AppendLine($"Working title: \"{title}\"");
+        if (!string.IsNullOrEmpty(topic)) userPrompt.AppendLine($"Topic / angle: {topic}");
+        if (!string.IsNullOrEmpty(seedKeywords)) userPrompt.AppendLine($"Seed keywords (use and expand): {seedKeywords}");
+        userPrompt.AppendLine();
+        userPrompt.AppendLine("Return a JSON object with EXACTLY these string keys:");
+        userPrompt.AppendLine("- \"title\": SEO-optimised title, 50-60 chars, primary keyword near the start.");
+        userPrompt.AppendLine("- \"slug\": lowercase URL slug, hyphenated, 3-6 words, ASCII only, no stop words.");
+        userPrompt.AppendLine("- \"summary\": 140-180 char card summary, compelling, includes primary keyword.");
+        userPrompt.AppendLine("- \"metaDescription\": 150-160 char meta description, action-oriented, primary keyword.");
+        userPrompt.AppendLine("- \"metaKeywords\": 8-12 comma-separated SEO keywords (primary + LSI variations).");
+        userPrompt.AppendLine("- \"content\": ~2000-word HTML body. Use <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <a>. " +
+                              "Do NOT include <h1>, <html>, <head>, or <body> — the title is rendered separately. " +
+                              "Open with a hook paragraph, then 5-8 <h2> sections (with <h3> sub-points where useful), " +
+                              "include a bulleted list, an FAQ block of 3 questions as <h3>+<p>, and a conclusion <h2>. " +
+                              "Use the primary keyword naturally. Do not keyword-stuff.");
+        userPrompt.AppendLine();
+        userPrompt.AppendLine("HARD REQUIREMENT: the \"content\" field MUST be at least 1900 words of plain readable copy " +
+                              "(excluding HTML tags). If shorter, expand sections until it meets the threshold.");
+
+        var sb = new StringBuilder();
+        try
+        {
+            await foreach (var chunk in _cohere.StreamChatAsync(userPrompt.ToString(), new List<(string, string)>(), system))
+            {
+                sb.Append(chunk);
+            }
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "AI generation failed: " + ex.Message });
+        }
+
+        var raw = sb.ToString().Trim();
+        // Strip optional ```json … ``` fences the model may emit despite instructions.
+        if (raw.StartsWith("```"))
+        {
+            var firstNl = raw.IndexOf('\n');
+            if (firstNl >= 0) raw = raw[(firstNl + 1)..];
+            if (raw.EndsWith("```")) raw = raw[..^3];
+            raw = raw.Trim();
+        }
+
+        Dictionary<string, string>? parsed = null;
+        try
+        {
+            parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(raw);
+        }
+        catch { /* fall through */ }
+
+        if (parsed == null)
+            return StatusCode(502, new { error = "AI returned non-JSON content. Try again.", raw });
+
+        string Get(string k) => parsed.TryGetValue(k, out var v) ? (v ?? "") : "";
+        var content = Get("content");
+        var wordCount = CountPlainTextWords(content);
+
+        return Ok(new
+        {
+            success = true,
+            title = Get("title"),
+            slug = Get("slug"),
+            summary = Get("summary"),
+            metaDescription = Get("metaDescription"),
+            metaKeywords = Get("metaKeywords"),
+            content,
+            wordCount,
+            meetsLengthTarget = wordCount >= 1900
+        });
+    }
+
+    private static int CountPlainTextWords(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return 0;
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        var words = text.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        return words.Length;
+    }
+
     // ── SEO helpers for content CRUD ──────────────────────────
     private async Task UpsertSeoForContentAsync(string newUrl, string? oldUrl, string title,
         string description, string keywords, decimal priority, string changeFreq, bool includeInSitemap)
