@@ -84,7 +84,7 @@
     async function restore(revId) {
         const g = reportGuid();
         if (!g) return;
-        if (!confirm('Restore this revision? The current canvas will be auto-saved before replacing it.')) return;
+        var __ok = await (window.cpConfirm ? window.cpConfirm({ title: 'Restore revision', message: 'Restore this revision?', subMessage: 'The current canvas will be auto-saved before being replaced.', confirmText: 'Restore', variant: 'primary', icon: 'bi-arrow-counterclockwise' }) : Promise.resolve(confirm('Restore this revision?'))); if (!__ok) return;
         try {
             const resp = await fetch('/api/reports/' + encodeURIComponent(g) + '/revisions/' + revId + '/restore', { method: 'POST' });
             if (!resp.ok) { alert('Failed to restore revision.'); return; }

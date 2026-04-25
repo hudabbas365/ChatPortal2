@@ -120,7 +120,7 @@
     async function restore(revId) {
         const g = reportGuid();
         if (!g) return;
-        if (!confirm('Restore this snapshot? The current canvas will be auto-saved before replacing it.')) return;
+        var __ok = await (window.cpConfirm ? window.cpConfirm({ title: 'Restore snapshot', message: 'Restore this snapshot?', subMessage: 'The current canvas will be auto-saved before being replaced.', confirmText: 'Restore', variant: 'primary', icon: 'bi-arrow-counterclockwise' }) : Promise.resolve(confirm('Restore this snapshot?'))); if (!__ok) return;
         try {
             const resp = await fetch('/api/reports/' + encodeURIComponent(g) + '/revisions/' + revId + '/restore', { method: 'POST' });
             if (!resp.ok) { alert('Failed to restore snapshot.'); return; }
@@ -144,7 +144,7 @@
     async function remove(revId) {
         const g = reportGuid();
         if (!g) return;
-        if (!confirm('Delete this snapshot permanently?')) return;
+        var __ok = await (window.cpConfirm ? window.cpConfirm({ title: 'Delete snapshot', message: 'Delete this snapshot permanently?', subMessage: 'This action cannot be undone.', confirmText: 'Delete', variant: 'danger', icon: 'bi-trash3-fill' }) : Promise.resolve(confirm('Delete this snapshot permanently?'))); if (!__ok) return;
         try {
             const resp = await fetch('/api/reports/' + encodeURIComponent(g) + '/revisions/' + revId, { method: 'DELETE' });
             if (!resp.ok) { alert('Failed to delete snapshot.'); return; }

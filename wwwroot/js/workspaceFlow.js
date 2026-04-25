@@ -15,24 +15,45 @@
             this._wireViewToggle();
 
             // Auto-select workspace from URL hash (?workspace='GUID) or query param (?workspace=GUID)
+            // Also restore agent chat context (?agent=GUID) so a page refresh keeps the user
+            // on the same chat instead of bouncing back to the workspace home/landing.
             var wsGuid = null;
+            var agentGuid = null;
             var hash = window.location.hash;
             if (hash) {
                 var m = hash.match(/[#&]ws=([^&]+)/);
                 if (m) wsGuid = decodeURIComponent(m[1]);
+                var ma = hash.match(/[#&]agent=([^&]+)/);
+                if (ma) agentGuid = decodeURIComponent(ma[1]);
             }
-            if (!wsGuid) {
-                var params = new URLSearchParams(window.location.search);
-                wsGuid = params.get('workspace');
+            var params = new URLSearchParams(window.location.search);
+            if (!wsGuid) wsGuid = params.get('workspace');
+            if (!agentGuid) agentGuid = params.get('agent');
+
+            // Fallback to last-visited chat persisted in localStorage when URL has nothing.
+            if (!wsGuid && !agentGuid) {
+                try {
+                    var last = JSON.parse(localStorage.getItem('cp_last_chat') || 'null');
+                    if (last && last.wsGuid) {
+                        wsGuid = last.wsGuid;
+                        agentGuid = last.agentGuid || null;
+                    }
+                } catch { /* ignore */ }
             }
+
+            var self = this;
             if (wsGuid) {
-                this._selectWorkspace(wsGuid);
+                var p = this._selectWorkspace(wsGuid);
+                if (agentGuid && p && typeof p.then === 'function') {
+                    p.then(function () { self._startChat(wsGuid, agentGuid); });
+                } else if (agentGuid) {
+                    this._startChat(wsGuid, agentGuid);
+                }
             } else {
                 this._showLanding();
             }
 
             // Handle hash changes while on the page
-            var self = this;
             window.addEventListener('hashchange', function () {
                 var h = window.location.hash;
                 var match = h.match(/[#&]ws=([^&]+)/);
@@ -185,6 +206,16 @@
             const chatWs = document.getElementById('chatWorkspace');
             if (chatWs) chatWs.style.display = 'none';
 
+            // Drop any stale ?agent= from the URL — caller (e.g. _startChat) will
+            // re-add it if a chat is opened. Keeps refresh-on-home on home.
+            try {
+                var u = new URL(window.location.href);
+                if (u.searchParams.has('agent')) {
+                    u.searchParams.delete('agent');
+                    window.history.replaceState({ wsGuid: guid }, '', u.toString());
+                }
+            } catch { /* ignore */ }
+
             // Reset wizard state to prevent leaking data between workspaces
             const isSameWorkspace = this._selectedWsId === guid;
             this._resetWizardState(isSameWorkspace);
@@ -218,6 +249,15 @@
 
         // ── Reset wizard state between workspace switches ───
         _resetWizardState(keepAgentContext) {
+            // If a wizard run was in-progress and never reached the final step,
+            // delete any orphan server-side artifacts that were created during
+            // earlier phases (e.g. the datasource created at "Test Connection")
+            // so cancelling/abandoning the wizard doesn't leave dangling rows.
+            if (this._setupStep > 0 && !this._wizardCompleted &&
+                (this._createdDsId || this._createdAgentGuid)) {
+                this._cleanupOrphanWizardArtifacts();
+            }
+            this._wizardCompleted = false;
             this._setupStep = 0;
             this._createdDsId = null;
             this._createdDsGuid = null;
@@ -234,6 +274,49 @@
                 window.currentDatasourceId = null;
                 window.currentDatasourceName = null;
                 window.currentDatasourceType = null;
+            }
+        },
+
+        // Fire-and-forget DELETE of any partially-created wizard artifacts.
+        _cleanupOrphanWizardArtifacts() {
+            try {
+                if (this._createdAgentGuid) {
+                    fetch('/api/agents/' + encodeURIComponent(this._createdAgentGuid),
+                          { method: 'DELETE' }).catch(() => {});
+                }
+                if (this._createdDsId) {
+                    fetch('/api/datasources/' + encodeURIComponent(this._createdDsId),
+                          { method: 'DELETE' }).catch(() => {});
+                }
+            } catch { /* best-effort */ }
+        },
+
+        // Cancel the in-progress setup wizard, deleting any partial artifacts
+        // and returning to the workspace home view.
+        async _cancelWizard(wsData) {
+            var ok = await (window.cpConfirm ? window.cpConfirm({
+                title: 'Cancel setup',
+                message: 'Cancel the AI Insights setup?',
+                subMessage: 'Any partially configured datasource or agent will be discarded.',
+                confirmText: 'Cancel setup',
+                cancelText: 'Keep editing',
+                variant: 'warning',
+                icon: 'bi-x-octagon-fill'
+            }) : Promise.resolve(confirm('Cancel setup? Any partially configured datasource will be discarded.')));
+            if (!ok) return;
+            this._cleanupOrphanWizardArtifacts();
+            this._setupStep = 0;
+            this._createdDsId = null;
+            this._createdDsGuid = null;
+            this._createdDsName = null;
+            this._createdDsType = null;
+            this._createdAgentGuid = null;
+            this._selectedTables = null;
+            this._generatedPrompt = null;
+            this._wizardCompleted = false;
+            // Re-render the workspace home (will show empty-state or existing artifacts).
+            if (wsData && wsData.guid) {
+                await this._selectWorkspace(wsData.guid);
             }
         },
 
@@ -528,6 +611,8 @@
             modal.id = 'dsDetailModal';
             modal.className = 'modal fade';
             modal.tabIndex = -1;
+            const isRest = /rest\s*api/i.test(ds.type || '');
+            const isPbi = /power\s*bi/i.test(ds.type || '');
             modal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content" style="background:white;color:var(--cp-text)">
@@ -540,7 +625,7 @@
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Type</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.type || 'Unknown')}" />
                             </div>
-                            ${/rest\s*api/i.test(ds.type) ? `
+                            ${isRest ? `
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">API URL</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '')}" style="font-family:monospace;font-size:0.78rem" />
@@ -553,6 +638,33 @@
                                 <label class="form-label fw-bold" style="font-size:0.8rem">HTTP Method</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiMethod || 'GET')}" />
                             </div>
+                            ` : isPbi ? `
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">XMLA Endpoint</label>
+                                <input type="text" class="form-control form-control-sm" id="dsPbiXmla" placeholder="powerbi://api.powerbi.com/v1.0/myorg/<workspace>" value="" style="font-family:monospace;font-size:0.78rem" />
+                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Semantic Model (Catalog)</label>
+                                <input type="text" class="form-control form-control-sm" id="dsPbiCatalog" placeholder="Dataset / semantic model name" value="" />
+                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Tenant ID</label>
+                                <input type="text" class="form-control form-control-sm" id="dsPbiTenant" placeholder="••••••" value="" autocomplete="off" />
+                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Client ID</label>
+                                <input type="text" class="form-control form-control-sm" id="dsPbiClientId" placeholder="••••••" value="" autocomplete="off" />
+                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Client Secret</label>
+                                <input type="password" class="form-control form-control-sm" id="dsPbiClientSecret" placeholder="••••••" value="" autocomplete="new-password" />
+                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                            </div>
+                            <div id="dsPbiSaveStatus" class="small" style="min-height:1rem"></div>
                             ` : `
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>
@@ -564,7 +676,10 @@
                             <button type="button" class="btn btn-sm btn-outline-primary" id="dsRefreshCacheBtn" title="Flush cached query results for this datasource so the next request hits the live database.">
                                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh Cache
                             </button>
-                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <div class="d-flex gap-2">
+                                ${isPbi ? `<button type="button" class="btn btn-sm btn-primary" id="dsPbiSaveBtn"><i class="bi bi-save me-1"></i>Save changes</button>` : ``}
+                                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
                         </div>
                     </div>
                 </div>`;
@@ -602,6 +717,55 @@
                             refreshBtn.classList.add('btn-outline-primary');
                             refreshBtn.innerHTML = original;
                         }, 1800);
+                    }
+                });
+            }
+            const pbiSaveBtn = modal.querySelector('#dsPbiSaveBtn');
+            if (pbiSaveBtn) {
+                pbiSaveBtn.addEventListener('click', async () => {
+                    const status = modal.querySelector('#dsPbiSaveStatus');
+                    const xmla = (modal.querySelector('#dsPbiXmla')?.value || '').trim();
+                    const catalog = (modal.querySelector('#dsPbiCatalog')?.value || '').trim();
+                    const tenant = (modal.querySelector('#dsPbiTenant')?.value || '').trim();
+                    const clientId = (modal.querySelector('#dsPbiClientId')?.value || '').trim();
+                    const clientSecret = (modal.querySelector('#dsPbiClientSecret')?.value || '').trim();
+                    const body = {};
+                    if (xmla) body.xmlaEndpoint = xmla;
+                    if (catalog) body.connectionString = catalog;
+                    if (tenant) body.microsoftAccountTenantId = tenant;
+                    if (clientId) body.dbUser = clientId;
+                    if (clientSecret) body.dbPassword = clientSecret;
+                    if (Object.keys(body).length === 0) {
+                        if (status) status.innerHTML = '<span class="text-muted"><i class="bi bi-info-circle me-1"></i>Nothing to update — all fields are blank.</span>';
+                        return;
+                    }
+                    const original = pbiSaveBtn.innerHTML;
+                    pbiSaveBtn.disabled = true;
+                    pbiSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                    if (status) status.innerHTML = '';
+                    try {
+                        const resp = await fetch('/api/datasources/' + encodeURIComponent(dsGuid), {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'same-origin',
+                            body: JSON.stringify(body)
+                        });
+                        if (resp.ok) {
+                            if (status) status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Saved.</span>';
+                            // Clear secret fields after a successful save
+                            ['#dsPbiXmla','#dsPbiCatalog','#dsPbiTenant','#dsPbiClientId','#dsPbiClientSecret'].forEach(sel => {
+                                const el = modal.querySelector(sel); if (el) el.value = '';
+                            });
+                        } else {
+                            let msg = 'Save failed.';
+                            try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+                            if (status) status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + this._esc(msg) + '</span>';
+                        }
+                    } catch (e) {
+                        if (status) status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + this._esc(e?.message || 'Save failed.') + '</span>';
+                    } finally {
+                        pbiSaveBtn.disabled = false;
+                        pbiSaveBtn.innerHTML = original;
                     }
                 });
             }
@@ -992,6 +1156,16 @@
             const chatWs = document.getElementById('chatWorkspace');
             if (panel) panel.classList.add('hidden');
             if (chatWs) chatWs.style.display = '';
+
+            // Persist chat context in URL so a page refresh restores the same agent chat
+            // instead of dropping the user back at the workspace home/landing.
+            try {
+                var url = new URL(window.location.href);
+                url.searchParams.set('workspace', wsGuid);
+                url.searchParams.set('agent', agentGuid);
+                window.history.replaceState({ wsGuid: wsGuid, agentGuid: agentGuid }, '', url.toString());
+                localStorage.setItem('cp_last_chat', JSON.stringify({ wsGuid: wsGuid, agentGuid: agentGuid }));
+            } catch { /* best-effort */ }
 
             // Set the chat module's workspace context
             window.currentWorkspaceGuid = wsGuid;

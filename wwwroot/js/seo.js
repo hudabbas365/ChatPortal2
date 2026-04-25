@@ -124,7 +124,7 @@ const seoManager = {
     },
 
     async deleteEntry(id) {
-        if (!confirm('Delete this SEO entry?')) return;
+        var __ok = await (window.cpConfirm ? window.cpConfirm({ title: 'Delete SEO entry', message: 'Delete this SEO entry?', subMessage: 'This action cannot be undone.', confirmText: 'Delete', variant: 'danger', icon: 'bi-trash3-fill' }) : Promise.resolve(confirm('Delete this SEO entry?'))); if (!__ok) return;
         try {
             await fetch(`/api/seo/${id}`, { method: 'DELETE' });
             this.loadEntries();

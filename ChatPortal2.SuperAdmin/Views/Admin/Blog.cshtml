@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Blog";
     ViewData["ActivePage"] = "blog";
+    var jsonOpts = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
 }
 
 <div class="page-header d-flex justify-content-between align-items-center">
@@ -51,7 +52,7 @@
                         </td>
                         <td>@post.PublishedAt.ToString("MMM dd, yyyy")</td>
                         <td>
-                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;" onclick='editPost(@System.Text.Json.JsonSerializer.Serialize(post))'><i class="bi bi-pencil"></i></button>
+                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;" onclick='editPost(@System.Text.Json.JsonSerializer.Serialize(post, jsonOpts))'><i class="bi bi-pencil"></i></button>
                             <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;border-color:#ef4444;color:#ef4444;" onclick="deletePost(@post.Id)"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>

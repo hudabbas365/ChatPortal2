@@ -435,7 +435,7 @@ class WorkspaceSettings {
 
     async _deleteWorkspace() {
         if (!this._workspaceId) return;
-        if (!confirm('Delete this workspace and all its artifacts? This cannot be undone.')) return;
+        var __ok = await (window.cpConfirm ? window.cpConfirm({ title: 'Delete workspace', message: 'Delete this workspace and all its artifacts?', subMessage: 'This cannot be undone.', confirmText: 'Delete workspace', variant: 'danger', icon: 'bi-folder-x' }) : Promise.resolve(confirm('Delete this workspace and all its artifacts? This cannot be undone.'))); if (!__ok) return;
         const wsId = this._workspaceId;
         try {
             const r = await fetch(`/api/workspaces/${wsId}`, { method: 'DELETE' });

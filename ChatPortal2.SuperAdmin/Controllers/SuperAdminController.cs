@@ -77,7 +77,9 @@ public class SuperAdminController : Controller
 
         var proCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Professional);
         var enterpriseCount = await _db.SubscriptionPlans.CountAsync(p => p.Plan == PlanType.Enterprise);
-        var activeTrials = await _db.SubscriptionPlans.CountAsync(p => p.IsTrialActive);
+        var nowUtc = DateTime.UtcNow;
+        var activeTrials = await _db.SubscriptionPlans
+            .CountAsync(p => p.Plan == PlanType.FreeTrial && p.TrialEndDate != null && p.TrialEndDate >= nowUtc);
 
         var now = DateTime.UtcNow;
         var activeNow = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.AddMinutes(-5));
@@ -308,6 +310,35 @@ public class SuperAdminController : Controller
             .Select(u => new { u.Id, u.FullName, u.Email, u.CardBrand, u.CardLast4 })
             .ToListAsync();
         ViewBag.PaidUsers = paidUsers;
+
+        // Actual collected revenue from PaymentRecords (lifetime + this month) – not just current MRR.
+        var nowUtc = DateTime.UtcNow;
+        var monthStart = new DateTime(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var succeeded = _db.PaymentRecords.Where(p => p.Status == "succeeded");
+        ViewBag.PaymentsCollectedAll = await succeeded.SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        ViewBag.PaymentsCollectedThisMonth = await succeeded
+            .Where(p => p.CreatedAt >= monthStart)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        ViewBag.PaymentsCount = await succeeded.CountAsync();
+
+        ViewBag.RecentPayments = await _db.PaymentRecords
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(25)
+            .Select(p => new
+            {
+                p.Id,
+                p.InvoiceNumber,
+                p.CreatedAt,
+                p.PaymentType,
+                p.PaymentMethod,
+                p.Amount,
+                p.Currency,
+                p.Status,
+                p.PayerEmail,
+                p.Description
+            })
+            .ToListAsync();
 
         return View("~/Views/Admin/Revenue.cshtml");
     }

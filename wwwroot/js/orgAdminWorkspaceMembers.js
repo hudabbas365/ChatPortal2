@@ -151,8 +151,8 @@
             });
         },
 
-        removeMember: function (wsGuid, userId) {
-            if (!confirm('Remove this member from the workspace?')) return;
+        removeMember: async function (wsGuid, userId) {
+var __ok = await (window.cpConfirm
             fetch('/api/workspaces/' + encodeURIComponent(wsGuid) + '/users/' + encodeURIComponent(userId), {
                 method: 'DELETE'
             })

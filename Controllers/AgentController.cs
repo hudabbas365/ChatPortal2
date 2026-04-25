@@ -123,10 +123,17 @@ public class AgentController : ControllerBase
                 return StatusCode(403, new { error = "Workspace does not belong to your organization." });
         }
 
+        // SECURITY: never trust a client-supplied SystemPrompt. Rebuild it server-side
+        // from the bound datasource + workspace + its SelectedTables so a tampered
+        // wizard (or a direct API call) cannot inject hostile instructions into the
+        // model's system prompt. The agent name is sanitised before being interpolated.
+        var safeName = SanitiseShortText(req.Name, fallback: "New Agent", maxLen: 80);
+        var systemPrompt = await BuildSystemPromptForAgentAsync(safeName, req.DatasourceId, req.WorkspaceId);
+
         var agent = new Agent
         {
-            Name = req.Name ?? "New Agent",
-            SystemPrompt = req.SystemPrompt ?? "You are a helpful data assistant.",
+            Name = safeName,
+            SystemPrompt = systemPrompt,
             DatasourceId = req.DatasourceId,
             WorkspaceId = req.WorkspaceId,
             OrganizationId = orgId
@@ -169,9 +176,13 @@ public class AgentController : ControllerBase
         if (!await _permissions.CanEditAsync(wsId.Value, userId))
             return StatusCode(403, new { error = "You need Editor or Admin role to update agents." });
 
-        if (req.Name != null) agent.Name = req.Name;
-        if (req.SystemPrompt != null) agent.SystemPrompt = req.SystemPrompt;
+        if (req.Name != null) agent.Name = SanitiseShortText(req.Name, fallback: agent.Name ?? "Agent", maxLen: 80);
         if (req.DatasourceId.HasValue) agent.DatasourceId = req.DatasourceId;
+
+        // SECURITY: ignore any client-supplied SystemPrompt. Always rebuild it server-side
+        // from the (possibly newly-bound) datasource + selected tables so the prompt cannot
+        // be tampered with via DevTools or a hand-crafted PUT.
+        agent.SystemPrompt = await BuildSystemPromptForAgentAsync(agent.Name ?? "Agent", agent.DatasourceId, agent.WorkspaceId);
 
         await _db.SaveChangesAsync();
         return Ok(new { agent.Id, agent.Guid, agent.Name, agent.DatasourceId, agent.WorkspaceId });
@@ -228,21 +239,91 @@ public class AgentController : ControllerBase
                 return StatusCode(403, new { error = "Workspace does not belong to your organization." });
         }
 
-        var dsType = req.DatasourceType ?? "";
+        var prompt = BuildSystemPrompt(
+            SanitiseShortText(req.AgentName, fallback: "Data Assistant", maxLen: 80),
+            SanitiseShortText(req.WorkspaceName, fallback: "the workspace", maxLen: 120),
+            SanitiseShortText(req.DatasourceName, fallback: "", maxLen: 120),
+            SanitiseShortText(req.DatasourceType, fallback: "", maxLen: 60),
+            SanitiseShortText(req.SelectedTables, fallback: "", maxLen: 4000));
+
+        return Ok(new { prompt });
+    }
+
+    /// <summary>
+    /// Loads the bound datasource + workspace and rebuilds the canonical system prompt.
+    /// This is the only path that should ever set Agent.SystemPrompt — client-supplied
+    /// prompts are ignored on Create/Update for security (prompt-injection defence).
+    /// </summary>
+    private async Task<string> BuildSystemPromptForAgentAsync(string agentName, int? datasourceId, int? workspaceId)
+    {
+        string workspaceName = "the workspace";
+        string datasourceName = "";
+        string datasourceType = "";
+        string selectedTables = "";
+
+        if (workspaceId.HasValue && workspaceId.Value > 0)
+        {
+            var ws = await _db.Workspaces.FindAsync(workspaceId.Value);
+            if (ws != null) workspaceName = ws.Name ?? workspaceName;
+        }
+        if (datasourceId.HasValue && datasourceId.Value > 0)
+        {
+            var ds = await _db.Datasources.FindAsync(datasourceId.Value);
+            if (ds != null)
+            {
+                datasourceName = ds.Name ?? "";
+                datasourceType = ds.Type ?? "";
+                selectedTables = ds.SelectedTables ?? "";
+            }
+        }
+
+        return BuildSystemPrompt(
+            SanitiseShortText(agentName, fallback: "Data Assistant", maxLen: 80),
+            SanitiseShortText(workspaceName, fallback: "the workspace", maxLen: 120),
+            SanitiseShortText(datasourceName, fallback: "", maxLen: 120),
+            SanitiseShortText(datasourceType, fallback: "", maxLen: 60),
+            SanitiseShortText(selectedTables, fallback: "", maxLen: 4000));
+    }
+
+    /// <summary>
+    /// Strips control characters and newlines, trims, and caps length. Used to make
+    /// caller-supplied free-text safe to interpolate into the system prompt template
+    /// without enabling prompt-injection via the agent / workspace / datasource name.
+    /// </summary>
+    private static string SanitiseShortText(string? value, string fallback, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        // Drop control chars (incl. CR/LF) so a user can't inject "\n\nIGNORE PRIOR INSTRUCTIONS" via a name.
+        var cleaned = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (ch == '\r' || ch == '\n' || ch == '\t') { cleaned.Append(' '); continue; }
+            if (char.IsControl(ch)) continue;
+            cleaned.Append(ch);
+        }
+        var s = System.Text.RegularExpressions.Regex.Replace(cleaned.ToString(), @"\s+", " ").Trim();
+        if (string.IsNullOrEmpty(s)) return fallback;
+        if (s.Length > maxLen) s = s.Substring(0, maxLen);
+        return s;
+    }
+
+    private static string BuildSystemPrompt(string agentName, string workspaceName, string datasourceName, string datasourceType, string selectedTables)
+    {
+        var dsType = datasourceType ?? "";
         bool isPowerBi = Services.QueryExecutionService.PowerBiTypes.Contains(dsType);
         bool isRestApi = Services.QueryExecutionService.RestApiTypes.Contains(dsType);
         string queryLang = isRestApi ? "REST API" : isPowerBi ? "DAX" : "SQL";
 
         var sb = new System.Text.StringBuilder();
-        sb.Append($"You are {req.AgentName ?? "Data Assistant"}, an AI data assistant for the \"{req.WorkspaceName ?? "the workspace"}\" workspace. ");
+        sb.Append($"You are {agentName}, an AI data assistant for the \"{workspaceName}\" workspace. ");
 
-        if (!string.IsNullOrEmpty(req.DatasourceName))
-            sb.Append($"You are connected to the \"{req.DatasourceName}\" datasource ({dsType}). ");
+        if (!string.IsNullOrEmpty(datasourceName))
+            sb.Append($"You are connected to the \"{datasourceName}\" datasource ({dsType}). ");
 
-        if (!string.IsNullOrEmpty(req.SelectedTables))
+        if (!string.IsNullOrEmpty(selectedTables))
         {
             var tableLabel = isRestApi ? "Available API fields" : isPowerBi ? "Available tables/measures" : "Available tables and views";
-            sb.Append($"{tableLabel}: {req.SelectedTables}. ");
+            sb.Append($"{tableLabel}: {selectedTables}. ");
         }
 
         sb.AppendLine("Your responsibilities include:");
@@ -279,8 +360,7 @@ public class AgentController : ControllerBase
         }
 
         sb.Append("When suggesting visualizations, specify the recommended chart type and which fields to use.");
-
-        return Ok(new { prompt = sb.ToString() });
+        return sb.ToString();
     }
 }
 

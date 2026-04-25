@@ -176,7 +176,7 @@ class CanvasManager {
             aggregation: partial.aggregation || { function: isNavigation ? 'None' : 'SUM', enabled: isNavigation ? false : !partial.customJsonData },
             style: partial.style || { backgroundColor: '#4A90D9', borderColor: '#2C6FAC', showLegend: true, legendPosition: 'top', showTooltips: true, fillArea: false, colorPalette: 'default', showDataLabels: false, fontFamily: 'Inter, sans-serif', titleFontSize: 14, animated: true, responsive: true, borderRadius: '4' },
             customJsonData: partial.customJsonData || '',
-            rowLimit: partial.rowLimit || 100,
+            rowLimit: partial.rowLimit || 15,
             filterWhere: partial.filterWhere || '',
             shapeProps: partial.shapeProps || (isShape ? ShapeManager.getDefaultShapeProps(partial.chartType) : null),
             navigation: partial.navigation || (isNavigation ? {

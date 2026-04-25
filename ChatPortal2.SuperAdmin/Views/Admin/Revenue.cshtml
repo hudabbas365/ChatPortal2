@@ -12,11 +12,35 @@
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-lg-3">
         <div class="stat">
-            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-cash-stack"></i></div>
-            <div class="stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
-            <div class="stat-label">Total Monthly Revenue</div>
+            <div class="stat-icon" style="background:rgba(52,211,153,.1);color:#34d399"><i class="bi bi-cash-coin"></i></div>
+            <div class="stat-val">$@(((decimal)ViewBag.PaymentsCollectedAll).ToString("N2"))</div>
+            <div class="stat-label">Total Collected (all-time)</div>
         </div>
     </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-calendar-check"></i></div>
+            <div class="stat-val">$@(((decimal)ViewBag.PaymentsCollectedThisMonth).ToString("N2"))</div>
+            <div class="stat-label">Collected This Month</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(168,85,247,.1);color:#a855f7"><i class="bi bi-graph-up"></i></div>
+            <div class="stat-val">$@ViewBag.TotalIncome.ToString("N2")</div>
+            <div class="stat-label">Current MRR (active plans)</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24"><i class="bi bi-clock"></i></div>
+            <div class="stat-val">@ViewBag.ActiveTrials</div>
+            <div class="stat-label">Active Free Trials</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
     <div class="col-sm-6 col-lg-3">
         <div class="stat">
             <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-award"></i></div>
@@ -33,9 +57,9 @@
     </div>
     <div class="col-sm-6 col-lg-3">
         <div class="stat">
-            <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#fbbf24"><i class="bi bi-clock"></i></div>
-            <div class="stat-val">@ViewBag.ActiveTrials</div>
-            <div class="stat-label">Active Free Trials</div>
+            <div class="stat-icon" style="background:rgba(99,102,241,.1);color:#6366f1"><i class="bi bi-receipt"></i></div>
+            <div class="stat-val">@ViewBag.PaymentsCount</div>
+            <div class="stat-label">Successful Payments</div>
         </div>
     </div>
 </div>
@@ -117,6 +141,62 @@
                         <td>@user.Email</td>
                         <td><span class="badge-sm badge-indigo">@user.CardBrand</span></td>
                         <td>**** **** **** @user.CardLast4</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</div>
+
+<div class="card-panel">
+    <div class="card-panel-title">Recent Payments</div>
+    @{
+        var recent = ViewBag.RecentPayments as IEnumerable<dynamic>;
+    }
+    @if (recent == null || !recent.Any())
+    {
+        <p style="color:var(--text-muted);font-size:.85rem">No payments recorded yet.</p>
+    }
+    else
+    {
+        <div style="overflow-x:auto">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Invoice</th>
+                    <th>Type</th>
+                    <th>Method</th>
+                    <th>Payer</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in recent)
+                {
+                    <tr>
+                        <td>@(((DateTime)p.CreatedAt).ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td><code style="color:#4a8ec9">@(p.InvoiceNumber ?? "—")</code></td>
+                        <td>@p.PaymentType</td>
+                        <td>@p.PaymentMethod</td>
+                        <td>@(p.PayerEmail ?? "—")</td>
+                        <td>
+                            @if ((string)p.Status == "succeeded")
+                            {
+                                <span class="badge-sm badge-emerald">succeeded</span>
+                            }
+                            else if ((string)p.Status == "refunded")
+                            {
+                                <span class="badge-sm badge-amber">refunded</span>
+                            }
+                            else
+                            {
+                                <span class="badge-sm" style="background:rgba(239,68,68,.1);color:#ef4444">@p.Status</span>
+                            }
+                        </td>
+                        <td style="text-align:right;font-weight:600;color:#1e3a5f">@p.Currency $@(((decimal)p.Amount).ToString("N2"))</td>
                     </tr>
                 }
             </tbody>

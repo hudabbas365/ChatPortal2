@@ -146,7 +146,15 @@
         },
 
         async _deleteWorkspace(guid, item) {
-            if (!confirm('Delete this workspace and all its artifacts? This cannot be undone.')) return;
+            var ok = await (window.cpConfirm ? window.cpConfirm({
+                title: 'Delete workspace',
+                message: 'Delete this workspace and all its artifacts?',
+                subMessage: 'Datasources, agents, dashboards and reports inside this workspace will be permanently removed. This cannot be undone.',
+                confirmText: 'Delete workspace',
+                variant: 'danger',
+                icon: 'bi-folder-x'
+            }) : Promise.resolve(confirm('Delete this workspace and all its artifacts? This cannot be undone.')));
+            if (!ok) return;
             try {
                 var r = await fetch('/api/workspaces/' + guid, { method: 'DELETE' });
                 if (!r.ok) throw new Error();
@@ -182,13 +190,28 @@
                 row.appendChild(btn);
                 btn.addEventListener('click', async function (e) {
                     e.stopPropagation();
-                    if (!confirm('Delete this AI Insights group?\n\nThis will permanently remove the datasource, all bound agents, dashboards, and reports. This cannot be undone.')) return;
+                    var ok = await (window.cpConfirm ? window.cpConfirm({
+                        title: 'Delete AI Insights group',
+                        message: 'Delete this entire AI Insights group?',
+                        subMessage: 'The datasource, all bound agents, dashboards and reports will be permanently removed. This cannot be undone.',
+                        confirmText: 'Delete group',
+                        variant: 'danger',
+                        icon: 'bi-trash3-fill'
+                    }) : Promise.resolve(confirm('Delete this AI Insights group? This cannot be undone.')));
+                    if (!ok) return;
                     try {
                         btn.disabled = true;
                         btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Deleting...';
                         var r = await fetch('/api/workspaces/' + encodeURIComponent(data.guid) + '/insights/' + encodeURIComponent(dsGuid), { method: 'DELETE' });
-                        if (!r.ok) throw new Error();
-                        // Refresh workspace view
+                        // Treat 404 as "already gone" — the datasource may have
+                        // been cleaned up by an earlier wizard-cancel/orphan sweep.
+                        // Still refresh the UI so the stale lineage row disappears.
+                        if (!r.ok && r.status !== 404) throw new Error();
+                        // Optimistic UI: remove the lineage row immediately so the user
+                        // sees the deletion reflect without waiting on a full re-render.
+                        if (row && row.parentNode) row.remove();
+                        // Then refresh workspace view to reconcile the rest of the UI
+                        // (status badges, counts, empty-state setup wizard, etc.)
                         if (data.guid) await self._WF._selectWorkspace(data.guid);
                     } catch {
                         alert('Failed to delete AI Insights.');
@@ -218,13 +241,26 @@
 
             btn.addEventListener('click', async function (e) {
                 e.stopPropagation();
-                if (!confirm('Delete this ' + type + '? This cannot be undone.')) return;
+                var labelMap = { agent: 'AI agent', report: 'report', datasource: 'datasource' };
+                var label = labelMap[type] || type;
+                var ok = await (window.cpConfirm ? window.cpConfirm({
+                    title: 'Delete ' + label,
+                    message: 'Delete this ' + label + '?',
+                    subMessage: 'This action cannot be undone.',
+                    confirmText: 'Delete',
+                    variant: 'danger',
+                    icon: 'bi-trash3-fill'
+                }) : Promise.resolve(confirm('Delete this ' + type + '? This cannot be undone.')));
+                if (!ok) return;
                 try {
                     var url = type === 'agent' ? '/api/agents/' + guid
                         : type === 'report' ? '/api/reports/' + guid
                         : '/api/datasources/' + guid;
                     var r = await fetch(url, { method: 'DELETE' });
                     if (!r.ok) throw new Error();
+                    // Optimistic UI: remove the host element so the user sees
+                    // the change immediately, then reconcile via re-fetch.
+                    if (el && el.parentNode) el.remove();
                     if (wsData.guid) await self._WF._selectWorkspace(wsData.guid);
                 } catch {
                     alert('Failed to delete ' + type + '.');

@@ -297,6 +297,10 @@ public class DatasourceController : ControllerBase
             catch { /* fall through to placeholder */ }
         }
 
+        // Power BI: never serve the generic SQL-style placeholder fields —
+        // they belong to no real connection and look like a different datasource.
+        if (isPbiFields) return Ok(Array.Empty<string>());
+
         var placeholderFields = new List<string> { "id", "name", "region", "revenue", "date", "category", "quantity", "price", "status" };
         return Ok(placeholderFields);
     }
@@ -357,6 +361,7 @@ public class DatasourceController : ControllerBase
             ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
             : !string.IsNullOrWhiteSpace(ds.ConnectionString);
 
+        string? introspectionError = null;
         if (hasConnection)
         {
             try
@@ -382,9 +387,27 @@ public class DatasourceController : ControllerBase
                         }).Where(t => !string.IsNullOrEmpty(t.name)).ToList();
                         if (tables.Count > 0) return Ok(tables);
                     }
+                    else if (!result.Success)
+                    {
+                        introspectionError = result.Error;
+                    }
                 }
             }
-            catch { /* fall through to placeholder */ }
+            catch (Exception ex) { introspectionError = ex.Message; }
+        }
+
+        // Power BI / REST API: never substitute the SQL-Server-shaped placeholder
+        // (Customers / Orders / Products / ...). It looks like another connection's
+        // data and confuses users. Return an empty list with the real error instead.
+        if (isPbi)
+        {
+            return Ok(new
+            {
+                error = introspectionError
+                    ?? (hasConnection ? "Power BI returned no tables. Verify the XMLA endpoint, semantic model (catalog), tenant ID, client ID, and client secret."
+                                       : "Power BI datasource is missing the XMLA Endpoint."),
+                tables = Array.Empty<object>()
+            });
         }
 
         var placeholderTables = new List<object>
@@ -475,7 +498,14 @@ public class DatasourceController : ControllerBase
                 catch { /* fall through to placeholder */ }
             }
 
-            schema ??= BuildPlaceholderSchema(ds);
+            // For Power BI, do NOT substitute the SQL-Server-shaped placeholder
+            // (Customers/Orders/Products/...). Returning fake tables makes the
+            // datasource look like an unrelated connection. Return an empty
+            // schema so the UI surfaces the real problem instead.
+            if (schema == null)
+            {
+                schema = isPbiSchema ? new List<object>() : BuildPlaceholderSchema(ds);
+            }
         }
 
         return Ok(new

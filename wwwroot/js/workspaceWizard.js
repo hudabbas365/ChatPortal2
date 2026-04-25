@@ -384,6 +384,7 @@
                         </div>
                     </div>
                     <div class="wf-setup-actions">
+                        <button class="btn btn-outline-danger btn-sm" id="wfDsCancelBtn"><i class="bi bi-x-lg me-1"></i>Cancel</button>
                         <button class="btn btn-outline-primary btn-sm" id="wfDsTestBtn"><i class="bi bi-wifi me-1"></i>Test Connection</button>
                         <button class="btn cp-btn-gradient btn-sm" id="wfDsNextBtn" style="display:none"><i class="bi bi-arrow-right me-1"></i>Next: Select Tables</button>
                     </div>
@@ -444,6 +445,8 @@
             self._updateSteps();
             self._renderTableSelectionStep(wsData);
         });
+        var cancelBtn = document.getElementById('wfDsCancelBtn');
+        if (cancelBtn) cancelBtn.addEventListener('click', function () { self._cancelWizard(wsData); });
     };
 
     WF._testDatasourceConnection = async function (wsData) {
@@ -478,20 +481,48 @@
             payload.dbPassword = document.getElementById('wfDsPassword')?.value.trim() || null;
         }
 
-        // Disable button & show testing state
+        // Disable button & show testing state. Always hide Next while a test is
+        // in flight so the user cannot advance the wizard before validation completes.
+        var nextBtnEl = document.getElementById('wfDsNextBtn');
+        if (nextBtnEl) nextBtnEl.style.display = 'none';
         if (testBtn) { testBtn.disabled = true; testBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Testing...'; }
         if (alertEl) { alertEl.className = 'wf-setup-alert'; alertEl.textContent = 'Testing connection...'; }
 
+        // Helper: discard a previously-created datasource server-side so a
+        // failed re-test (e.g. user changed a wrong client secret) never leaves
+        // an orphan row that the cascade-delete later 404s on.
+        var self = this;
+        var discardStaleDatasource = async function () {
+            var staleId = self._createdDsGuid || self._createdDsId;
+            if (!staleId) return;
+            try {
+                await fetch('/api/datasources/' + encodeURIComponent(staleId), { method: 'DELETE' });
+            } catch { /* best-effort */ }
+            self._createdDsId = null;
+            self._createdDsGuid = null;
+            self._createdDsName = null;
+            self._createdDsType = null;
+        };
+
         try {
-            // Step 1: Test the connection first
+            // Step 1: Test the connection first. NEVER create a datasource
+            // unless this returns connected=true.
             var testR = await fetch('/api/datasources/test-connection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            var testResult = await testR.json();
-            if (!testR.ok || !testResult.connected) {
-                if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = testResult.error || 'Connection failed. Please check your credentials and try again.'; }
+            var testResult = null;
+            try { testResult = await testR.json(); } catch { /* non-JSON body */ }
+            if (!testR.ok || !testResult || !testResult.connected) {
+                // Connection failed — wipe any datasource we may have created on
+                // a previous successful attempt with different credentials so the
+                // wizard never moves forward referencing a stale/invalid one.
+                await discardStaleDatasource();
+                if (alertEl) {
+                    alertEl.className = 'wf-setup-alert error';
+                    alertEl.textContent = (testResult && testResult.error) || 'Connection failed. Please check your credentials and try again.';
+                }
                 return;
             }
 
@@ -502,7 +533,11 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                if (!r.ok) throw new Error();
+                if (!r.ok) {
+                    var createErr = null;
+                    try { var j = await r.json(); createErr = j && j.error; } catch { /* ignore */ }
+                    throw new Error(createErr || 'Failed to create datasource.');
+                }
                 var ds = await r.json();
                 this._createdDsId = ds.id;
                 this._createdDsGuid = ds.guid;
@@ -513,10 +548,16 @@
                     localStorage.setItem('cp_user', JSON.stringify(user));
                 }
             }
-            document.getElementById('wfDsNextBtn').style.display = '';
+            if (nextBtnEl) nextBtnEl.style.display = '';
             if (alertEl) { alertEl.className = 'wf-setup-alert success'; alertEl.textContent = 'Connected successfully.'; }
-        } catch {
-            if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Connection test failed. Please verify your connection string.'; }
+        } catch (e) {
+            // Surface the real error so the user can act on it, and make sure no
+            // half-created datasource is left behind.
+            await discardStaleDatasource();
+            if (alertEl) {
+                alertEl.className = 'wf-setup-alert error';
+                alertEl.textContent = (e && e.message) ? e.message : 'Connection test failed. Please verify your connection string.';
+            }
         } finally {
             if (testBtn) { testBtn.disabled = false; testBtn.innerHTML = '<i class="bi bi-wifi me-1"></i>Test Connection'; }
         }
@@ -541,6 +582,7 @@
                     <div style="color:var(--cp-text-muted);font-size:0.85rem;padding:12px 0;"><i class="bi bi-hourglass-split me-1"></i>Loading tables...</div>
                 </div>
                 <div class="wf-setup-actions">
+                    <button class="btn btn-outline-danger btn-sm" id="wfTableCancelBtn"><i class="bi bi-x-lg me-1"></i>Cancel</button>
                     <button class="btn btn-outline-secondary btn-sm" id="wfTableBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
                     <button class="btn cp-btn-gradient btn-sm" id="wfTableNextBtn"><i class="bi bi-arrow-right me-1"></i>Next: AI Prompt</button>
                 </div>
@@ -548,8 +590,32 @@
         `;
         try {
             var r = await fetch('/api/datasources/' + this._createdDsId + '/tables');
-            if (!r.ok) throw new Error();
-            var tables = await r.json();
+            var payload = await r.json().catch(function () { return null; });
+            if (!r.ok) {
+                throw new Error((payload && (payload.error || payload.message)) || 'Failed to load tables.');
+            }
+            // Power BI / REST API endpoints return { error, tables: [] } when
+            // introspection fails — surface that error to the user instead of
+            // silently falling back to the generic "Failed to load tables".
+            var tables;
+            var serverError = null;
+            if (Array.isArray(payload)) {
+                tables = payload;
+            } else if (payload && Array.isArray(payload.tables)) {
+                tables = payload.tables;
+                serverError = payload.error || null;
+            } else {
+                tables = [];
+                serverError = (payload && payload.error) || 'Failed to load tables.';
+            }
+            if (tables.length === 0 && serverError) {
+                throw new Error(serverError);
+            }
+            // Bubble up per-table errors (e.g. REST API row that includes an error field).
+            var tableLevelError = tables.find(function (t) { return t && t.error; });
+            if (tableLevelError) {
+                throw new Error(tableLevelError.error);
+            }
             var tc = document.getElementById('wfTableContent');
             if (tc) {
                 var html = '<div class="wfe-table-list">';
@@ -575,10 +641,11 @@
                     document.querySelectorAll('#wfTableContent input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
                 });
             }
-        } catch {
+        } catch (e) {
             var a = document.getElementById('wfTableAlert');
-            if (a) { a.className = 'wf-setup-alert error'; a.textContent = 'Failed to load tables.'; }
+            if (a) { a.className = 'wf-setup-alert error'; a.textContent = (e && e.message) ? e.message : 'Failed to load tables.'; }
         }
+        document.getElementById('wfTableCancelBtn')?.addEventListener('click', function () { self._cancelWizard(wsData); });
         document.getElementById('wfTableBackBtn')?.addEventListener('click', function () {
             self._setupStep = 1;
             self._updateSteps();
@@ -626,6 +693,7 @@
                     <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
+                    <button class="btn btn-outline-danger btn-sm" id="wfPromptCancelBtn"><i class="bi bi-x-lg me-1"></i>Cancel</button>
                     <button class="btn btn-outline-secondary btn-sm" id="wfPromptBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
                     <button class="btn cp-btn-gradient btn-sm" id="wfPromptNextBtn"><i class="bi bi-arrow-right me-1"></i>Next: Create Agent</button>
                 </div>
@@ -676,6 +744,7 @@
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-stars me-1"></i>Regenerate with AI';
         });
+        document.getElementById('wfPromptCancelBtn')?.addEventListener('click', function () { self._cancelWizard(wsData); });
         document.getElementById('wfPromptBackBtn')?.addEventListener('click', function () {
             self._setupStep = 2;
             self._updateSteps();
@@ -705,9 +774,9 @@
                 </div>
                 <div class="wf-setup-alert" id="wfAgentAlert"></div>
                 <div class="wf-setup-field">
-                    <label><i class="bi bi-lock-fill text-warning me-1"></i>Agent Name</label>
-                    <input type="text" id="wfAgentName" value="Data Assistant" readonly style="background:#f8f9fa;cursor:not-allowed;" />
-                    <small class="text-muted">This field is locked for safe usage.</small>
+                    <label>Agent Name</label>
+                    <input type="text" id="wfAgentName" value="Data Assistant" placeholder="e.g. Sales Assistant" />
+                    <small class="text-muted">You can rename your agent before creating it.</small>
                 </div>
                 <div class="wf-setup-field">
                     <label><i class="bi bi-lock-fill text-warning me-1"></i>Description</label>
@@ -720,11 +789,13 @@
                     <small class="text-muted">This field is locked for safe usage.</small>
                 </div>
                 <div class="wf-setup-actions">
+                    <button class="btn btn-outline-danger btn-sm" id="wfAgentCancelBtn"><i class="bi bi-x-lg me-1"></i>Cancel</button>
                     <button class="btn btn-outline-secondary btn-sm" id="wfAgentBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
                     <button class="btn cp-btn-gradient btn-sm" id="wfAgentSaveBtn"><i class="bi bi-check-lg me-1"></i>Create Agent & Finish</button>
                 </div>
             </div>
         `;
+        document.getElementById('wfAgentCancelBtn')?.addEventListener('click', function () { self._cancelWizard(wsData); });
         document.getElementById('wfAgentBackBtn')?.addEventListener('click', function () {
             self._setupStep = 3;
             self._updateSteps();
@@ -778,6 +849,7 @@
                 }
             }
             // Reload workspace to show lineage view
+            this._wizardCompleted = true;
             await this._selectWorkspace(wsData.guid);
         } catch {
             if (alertEl) { alertEl.className = 'wf-setup-alert error'; alertEl.textContent = 'Failed to create agent.'; }

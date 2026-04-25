@@ -1143,7 +1143,7 @@ class PropertiesPanel {
         const valueField = this.getVal('prop-value-field') || '';
         const aggFn = this.getVal('prop-value-field-agg') || 'None';
         const aggEnabled = aggFn !== 'None';
-        const rowLimit = this.getVal('prop-row-limit') || '100';
+        const rowLimit = this.getVal('prop-row-limit') || '15';
         const whereClause = this._collectConditionsSQL();
         const mvFields = this._collectMultiValueFields();
 
@@ -1427,9 +1427,78 @@ class PropertiesPanel {
             addBtn.addEventListener('click', () => this._addTableFieldRow({ fieldName: '', label: '', visible: true, width: '' }));
         }
         if (!fields || fields.length === 0) {
-            const firstField = Array.isArray(this.fields) && this.fields.length > 0 ? this.fields[0] : '';
-            this._addTableFieldRow({ fieldName: firstField, label: firstField, visible: true, width: '' });
+            // Auto-report-generator and AI-built tables don't populate mapping.tableFields,
+            // but the rendered table already displays every column returned by the SQL.
+            // Seed the Properties panel with those bound columns so the user sees and can
+            // tweak/reorder them instead of just one placeholder field.
+            const seeded = this._seedTableFieldsFromContext();
+            if (seeded.length > 0) {
+                seeded.forEach(name => this._addTableFieldRow({
+                    fieldName: name, label: name, visible: true, width: ''
+                }));
+            } else {
+                const firstField = Array.isArray(this.fields) && this.fields.length > 0 ? this.fields[0] : '';
+                this._addTableFieldRow({ fieldName: firstField, label: firstField, visible: true, width: '' });
+            }
         }
+    }
+
+    /**
+     * Derive the table chart's currently displayed columns when mapping.tableFields is empty.
+     * Order of resolution:
+     *   1. Read the rendered table's <thead> cells for the current chart card.
+     *   2. Fall back to parsing column names from the dataQuery SELECT list.
+     */
+    _seedTableFieldsFromContext() {
+        if (!this.currentChart || this.currentChart.chartType !== 'table') return [];
+
+        // 1) Rendered DOM is the most reliable source — works for SQL, DAX and REST API.
+        const chartId = this.currentChart.id;
+        if (chartId) {
+            const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
+            const headers = card ? card.querySelectorAll('table thead th') : null;
+            if (headers && headers.length > 0) {
+                const names = Array.from(headers)
+                    .map(th => (th.textContent || '').trim())
+                    .filter(Boolean);
+                if (names.length > 0) return names;
+            }
+        }
+
+        // 2) Best-effort parse of the SELECT clause.
+        const sql = (this.currentChart.dataQuery || '').trim();
+        if (!sql) return [];
+        const m = /^\s*select\s+(?:top\s+\d+\s+)?([\s\S]+?)\s+from\s/i.exec(sql);
+        if (!m) return [];
+
+        // Split on commas that aren't inside parentheses (so SUM([a],[b]) stays intact).
+        const parts = [];
+        let depth = 0, buf = '';
+        for (const ch of m[1]) {
+            if (ch === '(') { depth++; buf += ch; }
+            else if (ch === ')') { depth--; buf += ch; }
+            else if (ch === ',' && depth === 0) { parts.push(buf); buf = ''; }
+            else { buf += ch; }
+        }
+        if (buf.trim()) parts.push(buf);
+
+        return parts.map(part => {
+            let col = part.trim();
+            // "expr AS [Alias]" / "expr AS Alias"
+            const asMatch = /\s+as\s+\[?([^\]\s]+)\]?\s*$/i.exec(col);
+            if (asMatch) return asMatch[1];
+            // Trailing bracketed alias: "SUM([x]) [Alias]"
+            const trailingBracket = /\]\s*\[([^\]]+)\]\s*$/.exec(col);
+            if (trailingBracket) return trailingBracket[1];
+            // Standalone "[Column]"
+            const standalone = /^\[([^\]]+)\]$/.exec(col);
+            if (standalone) return standalone[1];
+            // Innermost bracketed identifier (e.g. SUM([Revenue]) → Revenue)
+            const inner = /\[([^\]]+)\]/.exec(col);
+            if (inner) return inner[1];
+            // Bare identifier (strip table prefix if any)
+            return col.replace(/^.*\./, '').trim();
+        }).filter(Boolean);
     }
 
     _addTableFieldRow(fieldDef) {

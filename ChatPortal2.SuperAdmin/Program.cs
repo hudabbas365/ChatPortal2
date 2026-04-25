@@ -146,6 +146,9 @@ app.Use(async (context, next) =>
         SameSite = SameSiteMode.Strict,
         Path = "/"
     });
+    await next();
+});
+
 // Middleware: update LastSeenAt for authenticated users (at most once every 5 minutes)
 app.Use(async (context, next) =>
 {

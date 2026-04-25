@@ -765,7 +765,29 @@ IMPORTANT RULES:
             catch { /* fall through to placeholder schema */ }
         }
 
-        // Fallback: placeholder schema based on selected tables
+        // Fallback: placeholder schema based on selected tables.
+        // For Power BI, never emit the SQL-typed Customers/Orders/... placeholder —
+        // those tables don't exist in the user's semantic model and make the AI
+        // generate queries that look like they're hitting a different datasource.
+        if (isPbi)
+        {
+            var pbiTables = string.IsNullOrEmpty(ds.SelectedTables)
+                ? Array.Empty<string>()
+                : ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (pbiTables.Length > 0)
+            {
+                foreach (var t in pbiTables)
+                    sb.AppendLine($"- '{t.Trim()}'");
+            }
+            else
+            {
+                sb.AppendLine("- Schema introspection unavailable. Use `EVALUATE INFO.TABLES()` and `EVALUATE INFO.COLUMNS()` to discover tables and columns before answering.");
+            }
+            sb.AppendLine();
+            sb.AppendLine("Generate DAX queries (not SQL) for this Power BI model.");
+            return sb.ToString();
+        }
+
         var tableNames = string.IsNullOrEmpty(ds.SelectedTables)
             ? new[] { "Customers", "Orders", "Products", "Sales", "Employees" }
             : ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries);

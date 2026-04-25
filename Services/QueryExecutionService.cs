@@ -112,6 +112,67 @@ public class QueryExecutionService : IQueryExecutionService
         return sql;
     }
 
+    /// <summary>
+    /// Defence-in-depth: ensures any table referenced after FROM/JOIN is in the
+    /// datasource's SelectedTables whitelist. Returns null when the query is allowed,
+    /// or an error message when it references a table outside the whitelist.
+    /// </summary>
+    private static string? ValidateTableWhitelist(Datasource ds, string sql)
+    {
+        if (ds == null || string.IsNullOrWhiteSpace(ds.SelectedTables)) return null;
+        // REST/PBI types don't use SQL parsing here.
+        if (RestApiTypes.Contains(ds.Type)) return null;
+        if (PowerBiTypes.Contains(ds.Type)) return null;
+        if (string.IsNullOrWhiteSpace(sql)) return null;
+
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var name = StripIdentifierWrappers(t);
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot >= 0) name = name[(lastDot + 1)..];
+            name = StripIdentifierWrappers(name);
+            if (!string.IsNullOrEmpty(name)) allowed.Add(name);
+        }
+        if (allowed.Count == 0) return null;
+
+        // Match any identifier following FROM or JOIN, including [bracketed], "quoted",
+        // `backticked`, and schema-qualified names.
+        var pattern = @"\b(?:FROM|JOIN)\s+([\[\""`]?[\w]+[\]\""`]?(?:\s*\.\s*[\[\""`]?[\w]+[\]\""`]?)*)";
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            sql, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in matches)
+        {
+            var raw = m.Groups[1].Value;
+            var name = raw;
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot >= 0) name = name[(lastDot + 1)..];
+            name = StripIdentifierWrappers(name);
+            if (string.IsNullOrEmpty(name)) continue;
+            if (!allowed.Contains(name))
+                return $"Query references table '{name}' which is not in the agent's allowed tables. Allowed: {string.Join(", ", allowed)}.";
+        }
+        return null;
+    }
+
+    private static string StripIdentifierWrappers(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        s = s.Trim();
+        if (s.Length >= 2)
+        {
+            var first = s[0];
+            var last = s[^1];
+            if ((first == '[' && last == ']') ||
+                (first == '"' && last == '"') ||
+                (first == '`' && last == '`'))
+            {
+                s = s.Substring(1, s.Length - 2);
+            }
+        }
+        return s.Trim();
+    }
+
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
         // Strip comments so AI-generated SQL with -- or /* */ annotations is not rejected
@@ -130,6 +191,14 @@ public class QueryExecutionService : IQueryExecutionService
                 ? await _powerBi.ExecuteDmvAsync(ds, sql, maxRows)
                 : await _powerBi.ExecuteDaxAsync(ds, sql, maxRows);
         }
+
+        // SECURITY: when the datasource has a SelectedTables whitelist, ensure the query
+        // only touches tables in that whitelist. Closes the door on a tampered system
+        // prompt (or a hand-crafted call) that asks the LLM to query tables the workspace
+        // owner never granted to the agent.
+        var whitelistError = ValidateTableWhitelist(ds, sql);
+        if (whitelistError != null)
+            return new QueryExecutionResult { Success = false, Error = whitelistError };
 
         DbConnection? conn = null;
         try
@@ -195,10 +264,14 @@ public class QueryExecutionService : IQueryExecutionService
     {
         if (PowerBiTypes.Contains(type))
         {
-            // For Power BI we can't easily open a raw connection without ADOMD; accept if endpoint is provided
-            if (string.IsNullOrWhiteSpace(xmlaEndpoint))
-                return (false, "XMLA Endpoint is required for Power BI datasources.");
-            return (true, null);
+            // Genuinely validate Power BI credentials by acquiring an MSAL token
+            // (clientId is stored in DbUser, clientSecret in DbPassword, catalog in connectionString)
+            return await _powerBi.TestCredentialsAsync(
+                tenantId ?? "",
+                dbUser ?? "",
+                dbPassword ?? "",
+                xmlaEndpoint ?? "",
+                connectionString);
         }
 
         if (string.IsNullOrWhiteSpace(connectionString))
