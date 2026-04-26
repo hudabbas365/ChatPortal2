@@ -51,6 +51,35 @@ public class ChatController : Controller
     [HttpPost("/api/chat/send")]
     public async Task SendMessage([FromBody] SendMessageRequest req)
     {
+        // ── Defense-in-depth: gate chart-explain calls on the server ──────────────
+        // If the client tagged this request as "chart_explain", enforce
+        // PlanFeatures.AllowsChartExplain before starting the SSE stream so that
+        // Professional-plan users cannot bypass the client-side gate by calling
+        // /api/chat/send directly.  Mirrors the AutoReportController.Generate gate.
+        if (string.Equals(req.Source, "chart_explain", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(req.UserId))
+        {
+            var userSub = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == req.UserId);
+            PlanType chartExplainPlan;
+            if (userSub != null)
+            {
+                chartExplainPlan = userSub.Plan;
+            }
+            else
+            {
+                var gateUser = await _db.Users.FindAsync(req.UserId);
+                var gateOrg = gateUser?.OrganizationId != null ? await _db.Organizations.FindAsync(gateUser.OrganizationId) : null;
+                chartExplainPlan = gateOrg?.Plan ?? PlanType.Free;
+            }
+            if (!PlanFeatures.AllowsChartExplain(chartExplainPlan))
+            {
+                Response.StatusCode = 403;
+                Response.ContentType = "application/json";
+                await Response.WriteAsync("{\"error\":\"\\\"Explain by AI\\\" is not available on your current plan. Upgrade to Enterprise to unlock this feature.\",\"code\":\"plan_gated\"}");
+                return;
+            }
+        }
+
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
@@ -1121,6 +1150,12 @@ public class SendMessageRequest
     public string? ReportGuid { get; set; }
     public string? Context { get; set; }
     public int? PageIndex { get; set; }
+    /// <summary>
+    /// Optional tag identifying the originating feature. Use "chart_explain" when
+    /// the request is made by the "Explain by AI" chart-insights flow so that the
+    /// server can enforce the AllowsChartExplain plan gate before streaming.
+    /// </summary>
+    public string? Source { get; set; }
 }
 
 public class PinRequest
