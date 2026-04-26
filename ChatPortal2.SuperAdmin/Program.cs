@@ -109,12 +109,19 @@ builder.Services.AddSingleton<DigestSenderService>();
 builder.Services.AddControllersWithViews()
     .AddNewtonsoftJson()
     .ConfigureApplicationPartManager(manager =>
-    { 
-        // Remove the main AIInsights assembly so its controllers are not discovered
-        var mainPart = manager.ApplicationParts
-            .FirstOrDefault(p => p.Name == "AIInsights");
-        if (mainPart != null)
-            manager.ApplicationParts.Remove(mainPart);
+    {
+        // Remove the main ChatPortal2 (AIInsights) assembly so its controllers
+        // are not discovered inside the SuperAdmin host. The main project's
+        // assembly name is "ChatPortal2" (csproj filename) — its root namespace
+        // is "AIInsights" but the ApplicationPart is named after the assembly,
+        // so filtering on "AIInsights" silently matched nothing and let every
+        // OrgAdmin / Auth / Billing controller leak in here, which broke action
+        // selection (POST /api/superadmin/login -> 405).
+        var partsToRemove = manager.ApplicationParts
+            .Where(p => p.Name == "ChatPortal2" || p.Name == "AIInsights")
+            .ToList();
+        foreach (var part in partsToRemove)
+            manager.ApplicationParts.Remove(part);
     });
 
 var app = builder.Build();

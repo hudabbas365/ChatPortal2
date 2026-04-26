@@ -293,11 +293,30 @@ class CanvasManager {
                     userId       : (JSON.parse(localStorage.getItem('cp_user') || 'null') || {}).id || '',
                     reportGuid   : window._currentReportGuid || null,
                     pageIndex    : this.activePageIndex ?? null,
-                    agentId      : window._dashboardWsData?.agentId || null
+                    agentId      : window._dashboardWsData?.agentId || null,
+                    source       : 'chart_explain'
                 })
             });
 
             if (!response.ok) {
+                if (response.status === 403) {
+                    try {
+                        const errJson = await response.json();
+                        if (errJson.code === 'plan_gated') {
+                            if (typeof window.cpToast === 'function') {
+                                window.cpToast({
+                                    title: 'Upgrade required',
+                                    message: '"Explain by AI" is available on Free Trial and Enterprise plans. Upgrade to Enterprise to unlock this feature.',
+                                    variant: 'warn',
+                                    duration: 6000
+                                });
+                            } else {
+                                alert('Explain by AI is not available on your current plan. Upgrade to Enterprise to unlock this feature.');
+                            }
+                            return;
+                        }
+                    } catch { /* JSON parse failed; fall through to generic error below */ }
+                }
                 bodyEl.innerHTML = '<div class="text-danger">AI request failed (HTTP ' + response.status + ').</div>';
                 return;
             }
