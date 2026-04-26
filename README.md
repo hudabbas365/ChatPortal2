@@ -22,7 +22,25 @@ dotnet restore
 dotnet run
 ```
 
-## Configuration
+## Subscription Gate (Read-Only Mode)
+
+When an organization's subscription ends (after the `SubscriptionNextBillingDate` passes following a cancellation), the `SubscriptionExpiryJob` sets `Plan = Free` and `SubscriptionStatus = EXPIRED`. At that point a server-side subscription gate activates for regular users (`Role = "User"`):
+
+- **OrgAdmin** and **SuperAdmin** retain full access so they can re-subscribe and manage users.
+- **Regular users** get a read-only experience: all `GET` endpoints remain accessible, but `POST`, `PUT`, and `DELETE` requests to workspace, dashboard, report, agent, datasource, and chat endpoints return HTTP 403 with:
+  ```json
+  { "error": "...", "code": "subscription_expired", "status": "EXPIRED", "plan": "Free" }
+  ```
+- The UI displays a dismissible banner and toast notifications explaining the restriction, with a different message for OrgAdmins (directing them to Settings → Billing).
+
+An org is considered gated when **any** of these is true:
+- `org.IsBlocked == true`
+- `org.SubscriptionStatus == "EXPIRED"`
+- `org.Plan == PlanType.Free` and `org.SubscriptionStatus != "APPROVAL_PENDING"`
+
+Implemented via `Filters/RequireActiveSubscriptionAttribute.cs` applied to write endpoints in `WorkspaceController`, `DashboardController`, `ReportController`, `AgentController`, `DatasourceController`, `ChatController`, and `AutoReportController`.
+
+
 
 **⚠️ Never commit real secrets to this repository.**
 

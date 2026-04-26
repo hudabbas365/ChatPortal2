@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -201,6 +202,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Create([FromBody] DatasourceRequest req)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
@@ -714,6 +716,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPut("{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Update(string guid, [FromBody] DatasourceRequest req)
     {
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
@@ -752,6 +755,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpDelete("{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Delete(string guid)
     {
         Datasource? ds = null;

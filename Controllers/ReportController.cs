@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -116,6 +117,7 @@ public class ReportController : Controller
     }
 
     [HttpPost("/api/reports/{guid}/share")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> GenerateShareToken(string guid)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
@@ -294,6 +296,7 @@ public class ReportController : Controller
     }
 
     [HttpPost("/api/reports")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Create([FromBody] CreateReportRequest? req)
     {
         if (req?.WorkspaceGuid == null) return BadRequest(new { error = "workspaceGuid is required." });
@@ -386,6 +389,7 @@ public class ReportController : Controller
     }
 
     [HttpPut("/api/reports/{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Update(string guid, [FromBody] UpdateReportRequest req)
     {
         var report = await _db.Reports.Include(r => r.Workspace).FirstOrDefaultAsync(r => r.Guid == guid);
@@ -438,6 +442,7 @@ public class ReportController : Controller
     }
 
     [HttpPost("/api/reports/{guid}/publish")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Publish(string guid)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
@@ -453,6 +458,7 @@ public class ReportController : Controller
     }
 
     [HttpDelete("/api/reports/{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Delete(string guid)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
@@ -492,6 +498,7 @@ public class ReportController : Controller
     }
 
     [HttpPost("/api/reports/{guid}/snapshots")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> CreateSnapshot(string guid, [FromBody] CreateSnapshotRequest req)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
@@ -521,6 +528,7 @@ public class ReportController : Controller
     }
 
     [HttpPost("/api/reports/{guid}/revisions/{revId}/restore")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> RestoreRevision(string guid, int revId)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
@@ -557,6 +565,7 @@ public class ReportController : Controller
     }
 
     [HttpDelete("/api/reports/{guid}/revisions/{revId}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> DeleteRevision(string guid, int revId)
     {
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
