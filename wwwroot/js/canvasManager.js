@@ -315,6 +315,19 @@ class CanvasManager {
                             }
                             return;
                         }
+                        if (errJson.code === 'subscription_expired') {
+                            if (typeof window.cpToast === 'function') {
+                                window.cpToast({
+                                    title: 'Subscription ended',
+                                    message: errJson.error || 'Your organization\'s subscription has ended. The portal is read-only.',
+                                    variant: 'error',
+                                    duration: 7000
+                                });
+                            } else {
+                                alert(errJson.error || 'Your organization\'s subscription has ended. The portal is read-only.');
+                            }
+                            return;
+                        }
                     } catch { /* JSON parse failed; fall through to generic error below */ }
                 }
                 bodyEl.innerHTML = '<div class="text-danger">AI request failed (HTTP ' + response.status + ').</div>';

@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -95,6 +96,7 @@ public class AgentController : ControllerBase
     }
 
     [HttpPost]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Create([FromBody] AgentRequest req)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
@@ -154,6 +156,7 @@ public class AgentController : ControllerBase
     }
 
     [HttpPut("{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Update(string guid, [FromBody] AgentRequest req)
     {
         var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Guid == guid);
@@ -189,6 +192,7 @@ public class AgentController : ControllerBase
     }
 
     [HttpDelete("{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Delete(string guid)
     {
         Agent? agent = null;

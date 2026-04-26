@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -49,6 +50,7 @@ public class ChatController : Controller
     }
 
     [HttpPost("/api/chat/send")]
+    [RequireActiveSubscription]
     public async Task SendMessage([FromBody] SendMessageRequest req)
     {
         // ── Defense-in-depth: gate chart-explain calls on the server ──────────────
@@ -460,6 +462,7 @@ IMPORTANT RULES:
     }
 
     [HttpPost("/api/data/execute")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteQueryRequest req)
     {
         var execUser2 = await _db.Users.FindAsync(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "");
@@ -581,6 +584,7 @@ IMPORTANT RULES:
     }
 
     [HttpPost("/api/chat/pin")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> PinResult([FromBody] PinRequest req)
     {
         var wsId = await ResolveWorkspaceIdAsync(req.WorkspaceId);
@@ -628,6 +632,7 @@ IMPORTANT RULES:
     }
 
     [HttpPost("/api/chat/analyze-image")]
+    [RequireActiveSubscription]
     public async Task AnalyzeImage([FromBody] AnalyzeImageRequest req)
     {
         Response.ContentType = "text/event-stream";

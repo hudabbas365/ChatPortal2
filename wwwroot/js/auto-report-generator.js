@@ -724,6 +724,15 @@
             });
 
             if (!response.ok) {
+                if (response.status === 403) {
+                    try {
+                        var errBody = await response.json();
+                        if (errBody.code === 'subscription_expired' || errBody.code === 'plan_gated') {
+                            _toast(errBody.error || 'Your organization\'s subscription has ended. The portal is read-only.', 'error');
+                            return;
+                        }
+                    } catch (e) {}
+                }
                 throw new Error('AI request failed (HTTP ' + response.status + ')');
             }
 

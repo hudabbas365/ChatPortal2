@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -37,6 +38,7 @@ public class AutoReportController : ControllerBase
     }
 
     [HttpPost("generate")]
+    [RequireActiveSubscription]
     public async Task Generate([FromBody] AutoReportRequest req)
     {
         Response.ContentType = "text/event-stream";

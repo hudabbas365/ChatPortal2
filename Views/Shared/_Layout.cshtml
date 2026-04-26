@@ -50,6 +50,36 @@
     @await Html.PartialAsync("~/Views/Partials/_Navbar.cshtml")
 
     @await Html.PartialAsync("~/Views/Partials/_TrialBanner.cshtml")
+    <div id="subscriptionExpiredBanner" style="display:none;background:#dc3545;color:#fff;padding:.6rem 1.25rem;font-size:.82rem;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <span id="subscriptionExpiredMsg"><i class="bi bi-exclamation-triangle-fill me-1"></i></span>
+        <button onclick="document.getElementById('subscriptionExpiredBanner').style.display='none'" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:.2rem .75rem;font-size:.78rem;cursor:pointer;font-family:inherit">Dismiss</button>
+    </div>
+    <script>
+    (function() {
+        try {
+            var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
+            if (!u || !u.id || !u.organizationId) return;
+            fetch('/api/paypal/subscription-status?organizationId=' + u.organizationId, { credentials: 'same-origin' })
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    if (!d) return;
+                    // Show banner only when subscription is definitively expired (not for new/free orgs that never subscribed)
+                    var isExpired = d.status === 'EXPIRED'
+                        || (d.plan === 'Free' && d.status !== 'APPROVAL_PENDING' && d.status !== 'NONE' && d.status !== 'ACTIVE');
+                    if (!isExpired) return;
+                    var banner = document.getElementById('subscriptionExpiredBanner');
+                    var msg = document.getElementById('subscriptionExpiredMsg');
+                    if (!banner || !msg) return;
+                    var isAdmin = u.role === 'OrgAdmin';
+                    msg.innerHTML = isAdmin
+                        ? '<i class="bi bi-exclamation-triangle-fill me-1"></i>Your subscription has ended. Choose a plan in <a href="/orgadmin/settings" style="color:#fff;text-decoration:underline;">Settings &rarr; Billing</a> to restore full access.'
+                        : '<i class="bi bi-exclamation-triangle-fill me-1"></i>Your organization\'s subscription has ended. The portal is read-only. Please contact your Org Admin to reactivate.';
+                    banner.style.display = 'flex';
+                })
+                .catch(function() { /* non-fatal */ });
+        } catch(e) { /* non-fatal */ }
+    })();
+    </script>
     @if (Context.Items.ContainsKey("ImpersonationBanner"))
     {
         var bannerMsg = Context.Items["ImpersonationBanner"]?.ToString();
