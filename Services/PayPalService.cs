@@ -23,6 +23,12 @@ public interface IPayPalService
     // Reuses or lazily creates the catalog Product + Plan IDs so we don't spam
     // PayPal with duplicate product/plan objects on every checkout.
     Task<PayPalPlanResult> EnsureSubscriptionPlanAsync(string planKey, decimal monthlyPrice);
+
+    // Reverse lookup: given a PayPal plan_id, return the tier name
+    // ("Professional" / "Enterprise") it was created for. Used to recover the
+    // correct PlanType when activating a subscription where the client-supplied
+    // planKey is missing or wrong.
+    bool TryResolvePlanKeyFromPlanId(string planId, out string? planKey);
 }
 
 public class PayPalService : IPayPalService
@@ -404,6 +410,35 @@ public class PayPalService : IPayPalService
         {
             _catalogLock.Release();
         }
+    }
+
+    public bool TryResolvePlanKeyFromPlanId(string planId, out string? planKey)
+    {
+        planKey = null;
+        if (string.IsNullOrWhiteSpace(planId)) return false;
+
+        // 1. Check configured plan ids first (PayPal:ProfessionalPlanId, PayPal:EnterprisePlanId).
+        foreach (var tier in new[] { "Professional", "Enterprise" })
+        {
+            var cfg = _config[$"PayPal:{tier}PlanId"];
+            if (!string.IsNullOrWhiteSpace(cfg) && string.Equals(cfg, planId, StringComparison.OrdinalIgnoreCase))
+            {
+                planKey = tier;
+                return true;
+            }
+        }
+
+        // 2. Reverse-scan the in-memory cache (keys look like "Professional|25.00").
+        foreach (var kv in _planCache)
+        {
+            if (string.Equals(kv.Value, planId, StringComparison.OrdinalIgnoreCase))
+            {
+                var sep = kv.Key.IndexOf('|');
+                planKey = sep > 0 ? kv.Key[..sep] : kv.Key;
+                return true;
+            }
+        }
+        return false;
     }
 }
 

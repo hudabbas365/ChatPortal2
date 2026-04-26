@@ -152,7 +152,17 @@
         },
 
         removeMember: async function (wsGuid, userId) {
-var __ok = await (window.cpConfirm
+            const ok = (typeof window.cpConfirm === 'function')
+                ? await window.cpConfirm({
+                    title: 'Remove Member',
+                    message: 'Remove this member from the workspace?',
+                    subtext: 'They will lose access immediately. You can re-add them later.',
+                    icon: 'bi-person-dash',
+                    variant: 'danger',
+                    confirmText: 'Remove'
+                })
+                : confirm('Remove this member from the workspace?');
+            if (!ok) return;
             fetch('/api/workspaces/' + encodeURIComponent(wsGuid) + '/users/' + encodeURIComponent(userId), {
                 method: 'DELETE'
             })

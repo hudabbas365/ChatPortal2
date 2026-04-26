@@ -44,8 +44,20 @@
             var self = this;
             if (wsGuid) {
                 var p = this._selectWorkspace(wsGuid);
+                // Capture the selection token AFTER _selectWorkspace's sync
+                // prologue ran (it increments the token). If anything bumps
+                // the token before the fetch resolves — e.g. the user clicks
+                // any workspace, even the same one — we must NOT auto-open
+                // the remembered chat, because the newer selection is going
+                // to render the home/lineage view and we'd flash chat first.
+                var initToken = self._wsSelectionToken;
                 if (agentGuid && p && typeof p.then === 'function') {
-                    p.then(function () { self._startChat(wsGuid, agentGuid); });
+                    p.then(function () {
+                        if (self._wsSelectionToken === initToken &&
+                            self._selectedWsId === wsGuid) {
+                            self._startChat(wsGuid, agentGuid);
+                        }
+                    });
                 } else if (agentGuid) {
                     this._startChat(wsGuid, agentGuid);
                 }
@@ -226,6 +238,10 @@
             if (item) item.classList.add('active');
 
             this._selectedWsId = guid;
+            // Track the in-flight selection so a slower earlier fetch can't
+            // overwrite the UI after the user has already moved on to another
+            // workspace (e.g. rapid clicks, or chat-restore racing a click).
+            const selectionToken = (this._wsSelectionToken = (this._wsSelectionToken || 0) + 1);
             const topTitle = document.getElementById('chatWorkspaceTitle');
             const subName = document.getElementById('chatSubnavWorkspaceName');
 
@@ -233,15 +249,18 @@
                 const r = await fetch(`/api/workspaces/${guid}`);
                 if (!r.ok) throw new Error();
                 const data = await r.json();
+                if (selectionToken !== this._wsSelectionToken) return; // stale
                 this._wsData = data;
                 if (topTitle) topTitle.textContent = data.name || 'Workspace';
                 if (subName) subName.textContent = data.name || 'Workspace';
                 this._updateWorkspaceStatus(guid, data);
                 // Load role BEFORE rendering so delete buttons appear for admins
                 if (window.workspaceRoles) await window.workspaceRoles.loadMyRole(guid);
+                if (selectionToken !== this._wsSelectionToken) return; // stale
                 this._renderHome(data);
                 if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
             } catch {
+                if (selectionToken !== this._wsSelectionToken) return; // stale
                 if (topTitle) topTitle.textContent = 'Workspace';
                 this._showLanding();
             }

@@ -633,8 +633,22 @@ public class BillingController : Controller
 
             if (details.Status == "ACTIVE" || details.Status == "APPROVED")
             {
-                // Activate the plan on the org
-                if (Enum.TryParse<PlanType>(req.PlanKey, true, out var planType))
+                // Resolve the tier authoritatively from PayPal's plan_id (or the
+                // plan_id we stored at create time) so we don't depend on the
+                // client-provided planKey, which can be stale or wrong if the
+                // user subscribed from a different page/tab.
+                var resolvedPlanKey = req.PlanKey;
+                var planIdForLookup = !string.IsNullOrEmpty(details.PlanId) ? details.PlanId : org.PayPalPlanId;
+                if ((string.IsNullOrWhiteSpace(resolvedPlanKey) ||
+                     !Enum.TryParse<PlanType>(resolvedPlanKey, true, out _)) &&
+                    !string.IsNullOrEmpty(planIdForLookup) &&
+                    _payPal.TryResolvePlanKeyFromPlanId(planIdForLookup, out var derived) &&
+                    !string.IsNullOrWhiteSpace(derived))
+                {
+                    resolvedPlanKey = derived;
+                }
+
+                if (Enum.TryParse<PlanType>(resolvedPlanKey, true, out var planType))
                 {
                     org.Plan = planType;
                 }
@@ -645,12 +659,12 @@ public class BillingController : Controller
                 _db.ActivityLogs.Add(new ActivityLog
                 {
                     Action = "subscription_activated",
-                    Description = $"Monthly {req.PlanKey} subscription activated (PayPal: {org.PayPalSubscriptionId}). Next billing: {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                    Description = $"Monthly {resolvedPlanKey} subscription activated (PayPal: {org.PayPalSubscriptionId}). Next billing: {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
                     UserId = caller.Id,
                     OrganizationId = req.OrganizationId
                 });
                 // Log successful subscription payment
-                decimal subPrice = req.PlanKey?.ToLower() == "enterprise" ? 45m : 25m;
+                decimal subPrice = string.Equals(resolvedPlanKey, "Enterprise", StringComparison.OrdinalIgnoreCase) ? 45m : 25m;
                 _db.PaymentRecords.Add(new PaymentRecord
                 {
                     OrganizationId = req.OrganizationId,
@@ -659,8 +673,8 @@ public class BillingController : Controller
                     Amount = subPrice,
                     Status = "succeeded",
                     PayPalSubscriptionId = org.PayPalSubscriptionId,
-                    Description = $"Monthly {req.PlanKey} subscription activated",
-                    PlanKey = req.PlanKey
+                    Description = $"Monthly {resolvedPlanKey} subscription activated",
+                    PlanKey = resolvedPlanKey
                 });
                 await _db.SaveChangesAsync();
 
@@ -669,12 +683,12 @@ public class BillingController : Controller
                 {
                     _ = _emailService.SendInvoiceEmailAsync(
                         caller.Email, caller.FullName ?? caller.Email, org.Name,
-                        $"Monthly {req.PlanKey} subscription — activated",
+                        $"Monthly {resolvedPlanKey} subscription — activated",
                         subPrice, "USD",
                         org.PayPalSubscriptionId ?? "", DateTime.UtcNow);
                 }
 
-                return Ok(new { success = true, status = "ACTIVE", nextBilling = org.SubscriptionNextBillingDate });
+                return Ok(new { success = true, status = "ACTIVE", plan = org.Plan.ToString(), planKey = resolvedPlanKey, nextBilling = org.SubscriptionNextBillingDate });
             }
 
             return Ok(new { success = false, status = details.Status, error = $"Subscription status is {details.Status}, not yet active." });
@@ -706,17 +720,28 @@ public class BillingController : Controller
                 return BadRequest(new { error = "Failed to cancel subscription with PayPal." });
 
             org.SubscriptionStatus = "CANCELLED";
-            // Keep plan active until end of current billing period
+            // Auto-renewal is off, but the paid period the customer already
+            // paid for is honored. Plan + licenses stay active until
+            // SubscriptionNextBillingDate; SubscriptionExpiryJob then reverts
+            // the org to the Free plan and marks the status as EXPIRED.
+            var endsOn = org.SubscriptionNextBillingDate;
             _db.ActivityLogs.Add(new ActivityLog
             {
                 Action = "subscription_cancelled",
-                Description = $"Monthly subscription cancelled (PayPal: {org.PayPalSubscriptionId}). Plan remains active until {org.SubscriptionNextBillingDate:yyyy-MM-dd}.",
+                Description = $"Auto-renewal cancelled (PayPal: {org.PayPalSubscriptionId}). Plan and all assigned licenses remain active until {endsOn:yyyy-MM-dd}; subscription will be suspended after this date.",
                 UserId = caller.Id,
                 OrganizationId = req.OrganizationId
             });
             await _db.SaveChangesAsync();
 
-            return Ok(new { success = true, message = $"Subscription cancelled. Your plan remains active until {org.SubscriptionNextBillingDate:yyyy-MM-dd}." });
+            var endsOnText = endsOn.HasValue ? endsOn.Value.ToString("yyyy-MM-dd") : "the end of the current billing period";
+            return Ok(new
+            {
+                success = true,
+                status = "CANCELLED",
+                nextBillingDate = endsOn,
+                message = $"Subscription cancelled. Your plan and all assigned licenses remain active until {endsOnText}. Access will be suspended after this date unless you resubscribe."
+            });
         }
         catch (Exception ex)
         {
@@ -788,13 +813,26 @@ public class BillingController : Controller
                 var details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
                 if (details != null && (details.Status == "ACTIVE" || details.Status == "APPROVED"))
                 {
+                    // Also fix the Plan field — when the row is APPROVAL_PENDING
+                    // the org.Plan is usually still the pre-checkout value (Free /
+                    // FreeTrial / a different paid tier), so flipping only
+                    // SubscriptionStatus would leave the customer on the wrong
+                    // plan. Resolve the tier from PayPal's plan_id.
+                    var planIdForLookup = !string.IsNullOrEmpty(details.PlanId) ? details.PlanId : org.PayPalPlanId;
+                    if (!string.IsNullOrEmpty(planIdForLookup) &&
+                        _payPal.TryResolvePlanKeyFromPlanId(planIdForLookup, out var resolved) &&
+                        Enum.TryParse<PlanType>(resolved, true, out var planType))
+                    {
+                        org.Plan = planType;
+                    }
+
                     org.SubscriptionStatus = "ACTIVE";
                     org.SubscriptionStartDate ??= DateTime.UtcNow;
                     org.SubscriptionNextBillingDate = details.NextBillingTime ?? org.SubscriptionNextBillingDate ?? DateTime.UtcNow.AddMonths(1);
                     _db.ActivityLogs.Add(new ActivityLog
                     {
                         Action = "subscription_status_self_healed",
-                        Description = $"Subscription status corrected from APPROVAL_PENDING to ACTIVE on status check ({org.PayPalSubscriptionId}).",
+                        Description = $"Subscription status corrected from APPROVAL_PENDING to ACTIVE on status check ({org.PayPalSubscriptionId}, plan={org.Plan}).",
                         OrganizationId = org.Id
                     });
                     await _db.SaveChangesAsync();
