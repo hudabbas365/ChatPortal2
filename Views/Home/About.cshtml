@@ -1,53 +1,111 @@
 @{
-    ViewData["Title"] = "About";
+    ViewData["Title"] = "About — AI Insights 365";
+    Layout = null;
 }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About — AI Insights 365</title>
+    <meta name="description" content="Learn about AI Insights 365 — a conversational analytics platform that connects to your data and answers questions in plain English with AI-powered charts and reports." />
+    <meta name="keywords" content="AI Insights 365, about, AI analytics, conversational analytics, data platform, team" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://aiinsights365.net/about" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="About — AI Insights 365" />
+    <meta property="og:description" content="We turn complex data systems into simple, trustworthy conversations for every team." />
+    <meta property="og:url" content="https://aiinsights365.net/about" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="About — AI Insights 365" />
+    <meta name="twitter:description" content="We turn complex data systems into simple, trustworthy conversations for every team." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/coming-soon.css" />
+</head>
+<body>
+    <div class="cs-bg"></div>
+    <div class="cs-grid"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
 
-<section class="cp-section cp-page-hero">
-    <div class="container">
-        <h1 class="page-title">About AI Insights</h1>
-        <p class="page-subtitle">We turn complex data systems into simple, trustworthy conversations for every team.</p>
-    </div>
-</section>
+    <div class="cs-wrapper">
 
-<section class="cp-section">
-    <div class="container">
-        <div class="row g-4">
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Who We Are</h2>
+        <partial name="_CsNav" />
+
+        <!-- Hero -->
+        <section class="cs-hero">
+            <div class="cs-badge">
+                <span class="pulse"></span>
+                Our Story
+            </div>
+            <h1>
+                Built for <span class="gradient-text">Every Team</span><br/>
+                That Runs on Data
+            </h1>
+            <p class="cs-hero-sub">
+                We turn complex data systems into simple, trustworthy conversations for every team —
+                no SQL, no BI complexity, just answers.
+            </p>
+        </section>
+
+        <!-- About Cards -->
+        <section class="cs-section">
+            <h2 class="cs-section-title">Who We Are &amp; What We Do</h2>
+            <p class="cs-section-sub">A data engineering team passionate about making enterprise data accessible to everyone.</p>
+
+            <div class="cs-features">
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(99,102,241,.15);color:var(--cs-primary-light)">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <h3>Who We Are</h3>
                     <p>We are a data engineering team passionate about making data accessible to everyone. Our background is in data engineering, data warehousing, and AI, and we built AI Insights to make enterprise data easier to use in everyday work.</p>
                 </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-bullseye me-2 text-primary"></i>Our Mission</h2>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(6,182,212,.15);color:var(--cs-accent)">
+                        <i class="bi bi-bullseye"></i>
+                    </div>
+                    <h3>Our Mission</h3>
                     <p>Our mission is to eliminate the gap between business users and data. We believe every person in an organization—not just data teams—should be able to ask questions and get instant, trustworthy answers without SQL, BI complexity, or IT tickets.</p>
                 </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-chat-square-text-fill me-2 text-primary"></i>What is AI Insights?</h2>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(167,139,250,.15);color:var(--cs-accent2)">
+                        <i class="bi bi-chat-square-text-fill"></i>
+                    </div>
+                    <h3>What is AI Insights?</h3>
                     <p>AI Insights is a conversational analytics platform. It connects to your existing data sources, deploys AI agents that understand your business context, and returns answers in plain English with auto-generated charts and reports.</p>
                 </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-exclamation-triangle-fill me-2 text-primary"></i>The Problem We Solve</h2>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(251,191,36,.15);color:#fbbf24">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                    <h3>The Problem We Solve</h3>
                     <p>Data is often trapped behind technical complexity. Business teams wait days for reports while data teams get overloaded with ad-hoc requests. AI Insights removes this bottleneck with self-serve, conversational analytics.</p>
                 </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-cpu-fill me-2 text-primary"></i>Our Technology</h2>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(52,211,153,.15);color:#34d399">
+                        <i class="bi bi-cpu-fill"></i>
+                    </div>
+                    <h3>Our Technology</h3>
                     <p>Built on a modern cloud-native stack—ASP.NET Core 8, Cohere AI, and ApexCharts—AI Insights is secure, scalable, and designed for enterprise teams that need speed and governance together.</p>
                 </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h2 class="h4 mb-3"><i class="bi bi-stars me-2 text-primary"></i>Our Vision</h2>
-                    <p>We’re expanding to 15+ data connectors, collaboration workflows, scheduled reports, and embedded analytics—all powered by conversational AI that keeps getting smarter with your business context.</p>
+                <div class="cs-feature">
+                    <div class="cs-feature-icon" style="background:rgba(244,63,94,.15);color:#fb7185">
+                        <i class="bi bi-stars"></i>
+                    </div>
+                    <h3>Our Vision</h3>
+                    <p>We're expanding to 15+ data connectors, collaboration workflows, scheduled reports, and embedded analytics—all powered by conversational AI that keeps getting smarter with your business context.</p>
                 </div>
             </div>
-        </div>
+        </section>
+
+        <partial name="_CsFooter" />
+
     </div>
-</section>
+</body>
+</html>
