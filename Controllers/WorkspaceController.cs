@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -173,6 +174,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpPost("/api/workspaces")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Create([FromBody] WorkspaceRequest req)
     {
         var orgId = req.OrganizationId;
@@ -264,6 +266,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpPut("/api/workspaces/{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Update(string guid, [FromBody] WorkspaceRequest req)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
@@ -308,6 +311,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpDelete("/api/workspaces/{guid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> Delete(string guid)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
@@ -349,6 +353,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpDelete("/api/workspaces/{wsGuid}/insights/{dsGuid}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> DeleteInsights(string wsGuid, string dsGuid)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == wsGuid);
@@ -458,6 +463,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpPost("/api/workspaces/{guid}/users")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> AddUser(string guid, [FromBody] AddWorkspaceUserRequest req)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
@@ -510,6 +516,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpDelete("/api/workspaces/{guid}/users/{userId}")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> RemoveUser(string guid, string userId)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
@@ -532,6 +539,7 @@ public class WorkspaceController : Controller
     }
 
     [HttpPut("/api/workspaces/{guid}/users/{userId}/role")]
+    [RequireActiveSubscription]
     public async Task<IActionResult> UpdateUserRole(string guid, string userId, [FromBody] UpdateWsUserRoleRequest req)
     {
         var workspace = await _db.Workspaces.FirstOrDefaultAsync(w => w.Guid == guid);
