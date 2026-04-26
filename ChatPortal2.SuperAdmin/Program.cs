@@ -201,6 +201,11 @@ app.MapGet("/", context =>
     return Task.CompletedTask;
 });
 
+// Explicitly register attribute-routed controllers (e.g. POST /api/superadmin/login).
+// MapDefaultControllerRoute alone has been observed to leave attribute-routed
+// POST endpoints out of the resolved endpoint table in some build/restart
+// scenarios, which produces a 405 on POST while GET on the same path works.
+app.MapControllers();
 app.MapDefaultControllerRoute();
 
 app.Run();

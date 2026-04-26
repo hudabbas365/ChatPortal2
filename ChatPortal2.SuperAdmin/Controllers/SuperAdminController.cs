@@ -81,6 +81,15 @@ public class SuperAdminController : Controller
         var activeTrials = await _db.SubscriptionPlans
             .CountAsync(p => p.Plan == PlanType.FreeTrial && p.TrialEndDate != null && p.TrialEndDate >= nowUtc);
 
+        // Actual revenue collected this calendar month from succeeded payments,
+        // matching the Revenue page (Payments action). The previous calculation
+        // (proCount * price + enterpriseCount * price) returned a theoretical
+        // MRR that ignored cancellations, refunds, and real collections.
+        var monthStart = new DateTime(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthlyRevenue = await _db.PaymentRecords
+            .Where(p => p.Status == "succeeded" && p.CreatedAt >= monthStart)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
         var now = DateTime.UtcNow;
         var activeNow = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.AddMinutes(-5));
         var activeToday = await _db.Users.CountAsync(u => u.LastSeenAt != null && u.LastSeenAt >= now.Date);
@@ -107,7 +116,7 @@ public class SuperAdminController : Controller
             TotalMessages = totalMessages,
             ProSubscriptions = proCount,
             EnterpriseSubscriptions = enterpriseCount,
-            TotalIncome = proCount * PlanPricing.ProPricePerUser + enterpriseCount * PlanPricing.EnterprisePricePerUser,
+            TotalIncome = monthlyRevenue,
             ActiveTrials = activeTrials,
             ActiveNow = activeNow,
             ActiveToday = activeToday,

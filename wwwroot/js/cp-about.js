@@ -106,6 +106,14 @@
     function openAbout() {
         var modalEl = $('cpAboutModal');
         if (!modalEl || !window.bootstrap) return;
+        // The modal markup lives inside the navbar partial. The navbar uses
+        // `backdrop-filter`, which creates a CSS stacking context and traps
+        // the modal beneath Bootstrap's body-level `.modal-backdrop`
+        // (resulting in a fully grayed-out page). Move the modal directly
+        // under <body> so it escapes that stacking context.
+        if (modalEl.parentNode !== document.body) {
+            document.body.appendChild(modalEl);
+        }
         var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         modal.show();
         loadAbout();

@@ -1,0 +1,14 @@
+@{
+    var currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+}
+<nav class="cs-nav">
+    <a href="/" class="cs-logo">
+        <div class="cs-logo-icon"><i class="bi bi-bar-chart-fill"></i></div>
+        <span class="cs-logo-text">AI Insights 365</span>
+    </a>
+    <div class="cs-nav-links">
+        <a href="/" class="@(currentAction == "Index" ? "active" : "")">Home</a>
+        <a href="/about" class="@(currentAction == "About" ? "active" : "")">About</a>
+        <a href="/auth/login">Sign In</a>
+    </div>
+</nav>

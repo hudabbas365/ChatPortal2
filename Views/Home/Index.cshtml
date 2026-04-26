@@ -8,14 +8,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Insights 365 — Coming June 1, 2026</title>
-    <meta name="description" content="AI Insights 365 launches June 1 2026.
-    <meta name="keywords" content="AI Insights 365, coming soon,
+    <meta name="description" content="AI Insights 365 launches June 1, 2026. Turn any data into decisions instantly with AI-powered analytics, 72+ chart types, and natural-language queries." />
+    <meta name="keywords" content="AI Insights 365, coming soon, AI analytics, conversational analytics, natural language BI, data insights" />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://aiinsights.io/" />
+    <link rel="canonical" href="https://aiinsights365.net/" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="AI Insights 365 — Launching June 1, 2026" />
     <meta property="og:description" content="Turn any data into decisions instantly. AI-powered analytics with 72+ chart types, natural-language queries, and beautiful dashboards." />
-    <meta property="og:url" content="https://aiinsights.io/" />
+    <meta property="og:url" content="https://aiinsights365.net/" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="AI Insights 365 — Launching June 1, 2026" />
     <meta name="twitter:description" content="Turn any data into decisions instantly. AI-powered analytics with 72+ chart types." />
@@ -24,9 +24,9 @@
         "@@context": "https://schema.org",
         "@@type": "WebSite",
         "name": "AI Insights 365",
-        "url": "https://aiinsights.io/",
+        "url": "https://aiinsights365.net/",
         "description": "AI-powered data conversations — ask your data anything and get instant charts and reports.",
-        "potentialAction": { "@@type": "SearchAction", "target": "https://aiinsights.io/search?q={search_term_string}", "query-input": "required name=search_term_string" }
+        "potentialAction": { "@@type": "SearchAction", "target": "https://aiinsights365.net/search?q={search_term_string}", "query-input": "required name=search_term_string" }
     }
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -42,255 +42,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-    <style>
-        :root {
-            --cs-bg: #0a0e1a;
-            --cs-surface: rgba(255,255,255,.04);
-            --cs-border: rgba(255,255,255,.08);
-            --cs-primary: #6366f1;
-            --cs-primary-light: #818cf8;
-            --cs-accent: #06b6d4;
-            --cs-accent2: #a78bfa;
-            --cs-text: #e2e8f0;
-            --cs-text-dim: #94a3b8;
-            --cs-text-muted: #64748b;
-            --cs-glow: rgba(99,102,241,.25);
-        }
-        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-        html { scroll-behavior:smooth; }
-        body {
-            font-family:'Inter',system-ui,-apple-system,sans-serif;
-            background:var(--cs-bg); color:var(--cs-text);
-            min-height:100vh; overflow-x:hidden;
-        }
-
-        /* ── Animated background ── */
-        .cs-bg {
-            position:fixed; inset:0; z-index:0; pointer-events:none;
-            background:
-                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99,102,241,.12) 0%, transparent 60%),
-                radial-gradient(ellipse 60% 50% at 80% 80%, rgba(6,182,212,.10) 0%, transparent 60%),
-                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(167,139,250,.06) 0%, transparent 60%);
-        }
-        .cs-grid {
-            position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.03;
-            background-image:
-                linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
-            background-size:64px 64px;
-        }
-
-        /* ── Floating orbs ── */
-        .orb {
-            position:fixed; border-radius:50%; filter:blur(80px); opacity:.18; z-index:0;
-            animation:orbFloat 20s ease-in-out infinite alternate;
-        }
-        .orb-1 { width:500px;height:500px;background:var(--cs-primary);top:-10%;left:-5%; }
-        .orb-2 { width:400px;height:400px;background:var(--cs-accent);bottom:-5%;right:-5%;animation-delay:-7s; }
-        .orb-3 { width:300px;height:300px;background:var(--cs-accent2);top:40%;left:60%;animation-delay:-13s; }
-        @@keyframes orbFloat {
-            0%   { transform:translate(0,0) scale(1); }
-            100% { transform:translate(40px,30px) scale(1.15); }
-        }
-
-        .cs-wrapper { position:relative; z-index:1; }
-
-        /* ── Nav ── */
-        .cs-nav {
-            padding:1.25rem 2rem;
-            display:flex; align-items:center; justify-content:space-between;
-        }
-        .cs-logo { display:flex; align-items:center; gap:.6rem; text-decoration:none; }
-        .cs-logo-icon {
-            width:40px;height:40px;border-radius:12px;
-            background:linear-gradient(135deg,var(--cs-primary),var(--cs-accent));
-            display:flex;align-items:center;justify-content:center;
-            font-size:1.1rem;color:#fff;
-        }
-        .cs-logo-text { font-size:1.1rem; font-weight:700; color:#fff; }
-        .cs-nav-links { display:flex; gap:1.5rem; }
-        .cs-nav-links a {
-            color:var(--cs-text-dim); text-decoration:none; font-size:.85rem;
-            font-weight:500; transition:color .2s;
-        }
-        .cs-nav-links a:hover { color:#fff; }
-
-        /* ── Hero ── */
-        .cs-hero {
-            text-align:center; padding:4rem 1.5rem 2rem;
-            max-width:860px; margin:0 auto;
-        }
-        .cs-badge {
-            display:inline-flex; align-items:center; gap:.4rem;
-            background:var(--cs-surface); border:1px solid var(--cs-border);
-            border-radius:100px; padding:.35rem 1rem;
-            font-size:.78rem; font-weight:600; color:var(--cs-accent);
-            margin-bottom:1.5rem;
-            animation:fadeUp .8s ease both;
-        }
-        .cs-badge .pulse {
-            width:8px;height:8px;border-radius:50%;background:var(--cs-accent);
-            animation:pulse 2s infinite;
-        }
-        @@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
-
-        .cs-hero h1 {
-            font-size:clamp(2.2rem,5.5vw,4rem); font-weight:900;
-            line-height:1.08; letter-spacing:-.03em;
-            margin-bottom:1.25rem;
-            animation:fadeUp .8s .15s ease both;
-        }
-        .cs-hero h1 .gradient-text {
-            background:linear-gradient(135deg,var(--cs-primary-light),var(--cs-accent),var(--cs-accent2));
-            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-            background-clip:text;
-        }
-        .cs-hero-sub {
-            font-size:1.1rem; color:var(--cs-text-dim); line-height:1.7;
-            max-width:640px; margin:0 auto 2.5rem;
-            animation:fadeUp .8s .3s ease both;
-        }
-        @@keyframes fadeUp {
-            from { opacity:0; transform:translateY(24px); }
-            to   { opacity:1; transform:translateY(0); }
-        }
-
-        /* ── Countdown ── */
-        .cs-countdown {
-            display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;
-            margin-bottom:1rem;
-            animation:fadeUp .8s .45s ease both;
-        }
-        .cs-count-box {
-            background:var(--cs-surface); border:1px solid var(--cs-border);
-            border-radius:16px; padding:1.2rem 1.5rem; min-width:100px;
-            text-align:center; backdrop-filter:blur(12px);
-            transition:border-color .3s, box-shadow .3s;
-        }
-        .cs-count-box:hover {
-            border-color:var(--cs-primary);
-            box-shadow:0 0 30px var(--cs-glow);
-        }
-        .cs-count-val {
-            font-size:2.4rem; font-weight:800;
-            background:linear-gradient(135deg,#fff,var(--cs-primary-light));
-            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-            background-clip:text; line-height:1;
-        }
-        .cs-count-label {
-            font-size:.7rem; font-weight:600; text-transform:uppercase;
-            letter-spacing:.1em; color:var(--cs-text-muted); margin-top:.35rem;
-        }
-        .cs-launch-date {
-            font-size:.85rem; color:var(--cs-text-muted); margin-bottom:2.5rem;
-            animation:fadeUp .8s .55s ease both;
-        }
-        .cs-launch-date strong { color:var(--cs-accent); }
-
-        /* ── CTA ── */
-        .cs-cta-row {
-            display:flex; justify-content:center; gap:.75rem; flex-wrap:wrap;
-            margin-bottom:3.5rem;
-            animation:fadeUp .8s .6s ease both;
-        }
-        .cs-btn {
-            display:inline-flex; align-items:center; gap:.4rem;
-            padding:.7rem 1.6rem; border-radius:12px;
-            font-size:.9rem; font-weight:600; font-family:inherit;
-            cursor:pointer; text-decoration:none; transition:all .25s;
-        }
-        .cs-btn-primary {
-            background:linear-gradient(135deg,var(--cs-primary),var(--cs-accent));
-            border:none; color:#fff;
-            box-shadow:0 4px 24px var(--cs-glow);
-        }
-        .cs-btn-primary:hover { transform:translateY(-2px); box-shadow:0 8px 32px var(--cs-glow); }
-        .cs-btn-outline {
-            background:transparent; border:1px solid var(--cs-border);
-            color:var(--cs-text-dim);
-        }
-        .cs-btn-outline:hover { border-color:var(--cs-primary-light); color:#fff; }
-
-        /* ── What we're building ── */
-        .cs-section {
-            max-width:1100px; margin:0 auto; padding:0 1.5rem 4rem;
-        }
-        .cs-section-title {
-            text-align:center; font-size:1.6rem; font-weight:800;
-            margin-bottom:.5rem;
-        }
-        .cs-section-sub {
-            text-align:center; color:var(--cs-text-dim); font-size:.95rem;
-            margin-bottom:2.5rem; max-width:600px; margin-left:auto; margin-right:auto;
-        }
-
-        .cs-features {
-            display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-            gap:1.25rem;
-        }
-        .cs-feature {
-            background:var(--cs-surface); border:1px solid var(--cs-border);
-            border-radius:16px; padding:1.5rem; backdrop-filter:blur(12px);
-            transition:border-color .3s, transform .3s;
-        }
-        .cs-feature:hover { border-color:var(--cs-primary); transform:translateY(-4px); }
-        .cs-feature-icon {
-            width:48px;height:48px;border-radius:12px;
-            display:flex;align-items:center;justify-content:center;
-            font-size:1.2rem; margin-bottom:1rem;
-        }
-        .cs-feature h3 { font-size:1rem; font-weight:700; margin-bottom:.4rem; }
-        .cs-feature p { font-size:.85rem; color:var(--cs-text-dim); line-height:1.65; }
-
-        /* ── Chart showcase ── */
-        .cs-charts-grid {
-            display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-            gap:1rem; margin-top:2rem;
-        }
-        .cs-chart-card {
-            background:var(--cs-surface); border:1px solid var(--cs-border);
-            border-radius:14px; padding:1.25rem; text-align:center;
-            backdrop-filter:blur(12px);
-            transition:border-color .3s, transform .3s;
-        }
-        .cs-chart-card:hover { border-color:var(--cs-accent); transform:translateY(-3px); }
-        .cs-chart-card i { font-size:2rem; margin-bottom:.6rem; }
-        .cs-chart-card .chart-name { font-size:.82rem; font-weight:600; }
-        .cs-chart-card .chart-desc { font-size:.72rem; color:var(--cs-text-muted); margin-top:.2rem; }
-
-        /* ── Stats bar ── */
-        .cs-stats {
-            display:flex; justify-content:center; gap:2.5rem; flex-wrap:wrap;
-            padding:2rem 1.5rem;
-            border-top:1px solid var(--cs-border);
-            border-bottom:1px solid var(--cs-border);
-            margin-bottom:4rem;
-        }
-        .cs-stat { text-align:center; }
-        .cs-stat-val {
-            font-size:1.8rem; font-weight:800;
-            background:linear-gradient(135deg,var(--cs-primary-light),var(--cs-accent));
-            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-            background-clip:text;
-        }
-        .cs-stat-label { font-size:.75rem; color:var(--cs-text-muted); font-weight:500; margin-top:.15rem; }
-
-        /* ── Footer ── */
-        .cs-footer {
-            text-align:center; padding:2rem 1.5rem 3rem;
-            font-size:.8rem; color:var(--cs-text-muted);
-        }
-        .cs-footer a { color:var(--cs-primary-light); text-decoration:none; }
-
-        /* ── Responsive ── */
-        @@media (max-width:600px) {
-            .cs-nav { padding:1rem; }
-            .cs-hero { padding:2.5rem 1rem 1.5rem; }
-            .cs-count-box { min-width:72px; padding:.9rem 1rem; }
-            .cs-count-val { font-size:1.8rem; }
-            .cs-charts-grid { grid-template-columns:repeat(2,1fr); }
-        }
-    </style>
+    <link rel="stylesheet" href="~/css/coming-soon.css" />
 </head>
 <body>
     <div class="cs-bg"></div>
@@ -302,17 +54,7 @@
     <div class="cs-wrapper">
 
         <!-- Nav -->
-        <nav class="cs-nav">
-            <a href="/" class="cs-logo">
-                <div class="cs-logo-icon"><i class="bi bi-bar-chart-fill"></i></div>
-                <span class="cs-logo-text">AI Insights 365</span>
-            </a>
-            <div class="cs-nav-links">
-                <a href="#features">Features</a>
-                <a href="#charts">Charts</a>
-                <a href="/auth/login">Sign In</a>
-            </div>
-        </nav>
+        <partial name="_CsNav" />
 
         <!-- Hero -->
         <section class="cs-hero">
@@ -350,7 +92,7 @@
                     <div class="cs-count-label">Seconds</div>
                 </div>
             </div>
-            Official launch: <strong>June 1, 2026</strong>
+            <p class="cs-launch-date">Official launch: <strong>June 1, 2026</strong></p>
 
             <div class="cs-cta-row">
                 <a href="/auth/register" class="cs-btn cs-btn-primary">
@@ -510,12 +252,7 @@
         </section>
 
         <!-- Footer -->
-        <footer class="cs-footer">
-            <p>&copy; 2025–2026 <a href="/">AI Insights 365</a>. All rights reserved.</p>
-            <p style="margin-top:.4rem">
-                <a href="/about">About</a> · <a href="/docs">Docs</a> · <a href="/blog">Blog</a> · <a href="mailto:support@AIInsights365.net">support@AIInsights365.net</a>
-            </p>
-        </footer>
+        <partial name="_CsFooter" />
 
     </div>
 
