@@ -9,6 +9,15 @@
             <span class="cp-user-menu-label">License</span>
             <span id="navLicenseBadge" class="cp-license-badge">—</span>
         </div>
+        <div class="cp-user-menu-org-guid d-none" id="navOrgGuidRow">
+            <span class="cp-user-menu-label">Org ID</span>
+            <span class="d-flex align-items-center gap-1">
+                <code id="navOrgGuid" class="cp-org-guid-code" title="Organization GUID">—</code>
+                <button type="button" class="cp-guid-copy-btn" id="navOrgGuidCopy" title="Copy Org ID" aria-label="Copy Org ID">
+                    <i class="bi bi-clipboard"></i>
+                </button>
+            </span>
+        </div>
         <a href="/org/settings" class="cp-user-menu-item" id="navUserMenuSettings" style="display:none;">
             <i class="bi bi-gear"></i><span>Settings</span>
         </a>
@@ -46,8 +55,13 @@
                         <dl class="cp-about-list">
                             <dt>Name</dt>
                             <dd id="cpAboutOrgName">—</dd>
-                            <dt>Organization ID</dt>
-                            <dd><code id="cpAboutOrgId">—</code></dd>
+                            <dt>Org ID</dt>
+                            <dd class="d-flex align-items-center gap-2">
+                                <code id="cpAboutOrgGuid" style="font-size:.8rem;word-break:break-all">—</code>
+                                <button type="button" class="cp-guid-copy-btn" id="cpAboutOrgGuidCopy" title="Copy Org ID" aria-label="Copy Org ID">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </dd>
                         </dl>
                     </div>
 

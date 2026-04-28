@@ -17,6 +17,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Org ID</th>
                 <th>Users</th>
                 <th>Pro</th>
                 <th>Enterprise</th>
@@ -39,6 +40,18 @@
                             + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
                     <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
+                    <td>
+                        @{
+                            var guidStr = org.OrganizationGuid.ToString();
+                            var guidShort = guidStr.Length >= 12 ? guidStr.Substring(0, 8) + "…" + guidStr.Substring(guidStr.Length - 4) : guidStr;
+                        }
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <code class="sa-org-guid" title="@guidStr" style="font-size:.75rem">@guidShort</code>
+                            <button type="button" class="sa-guid-copy-btn" data-guid="@guidStr" title="Copy full Org ID" aria-label="Copy Org ID">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </span>
+                    </td>
                     <td>@(org.Users?.Count ?? 0)</td>
                     <td>
                         @if (proCount > 0)
@@ -181,4 +194,35 @@ async function saveOrgPlan(id) {
     if (!r.ok) { showToast(data.error || 'Failed to update plan.', 'error'); return; }
     showToast('Organization plan & licenses updated.', 'success', 'Saved');
 }
+
+// Org GUID copy buttons
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.sa-guid-copy-btn');
+    if (!btn) return;
+    var guid = btn.dataset.guid;
+    if (!guid || !navigator.clipboard) return;
+    navigator.clipboard.writeText(guid).then(function () {
+        var icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.replace('bi-clipboard', 'bi-check');
+            setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+        }
+        showToast('Org ID copied to clipboard.', 'success', 'Copied');
+    });
+});
 </script>
+<style>
+.sa-guid-copy-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+    font-size: 0.8rem;
+    transition: color 0.12s ease;
+}
+.sa-guid-copy-btn:hover { color: var(--primary, #4a8ec9); }
+.sa-org-guid { cursor: default; }
+</style>

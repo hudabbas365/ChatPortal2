@@ -16,6 +16,17 @@
         dataStorageNotice: 'AI Insights does not retain copies of your business data. Queries run live against your own datasource.'
     };
 
+    function copyToClipboard(text, btn) {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(text).then(function () {
+            var icon = btn.querySelector('i');
+            if (icon) {
+                icon.classList.replace('bi-clipboard', 'bi-check');
+                setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+            }
+        });
+    }
+
     function $(id) { return document.getElementById(id); }
 
     function setText(id, value) {
@@ -44,11 +55,28 @@
         if (content) content.classList.remove('d-none');
 
         setText('cpAboutOrgName', data.name);
-        setText('cpAboutOrgId', data.id);
+        var guidVal = data.organizationGuid || data.id || null;
+        setText('cpAboutOrgGuid', guidVal);
         setText('cpAboutRegion', data.dataRegion || ABOUT_FALLBACK.dataRegion);
         setText('cpAboutHostingNotice', data.hostingNotice || ABOUT_FALLBACK.hostingNotice);
         setText('cpAboutEncryption', data.encryptionNotice || ABOUT_FALLBACK.encryptionNotice);
         setText('cpAboutDataStored', data.dataStorageNotice || ABOUT_FALLBACK.dataStorageNotice);
+
+        // Wire copy button
+        var copyBtn = $('cpAboutOrgGuidCopy');
+        if (copyBtn && guidVal) {
+            copyBtn.onclick = function () { copyToClipboard(String(guidVal), copyBtn); };
+        }
+
+        // Update nav dropdown Org ID row
+        var navRow = $('navOrgGuidRow');
+        var navCode = $('navOrgGuid');
+        var navCopy = $('navOrgGuidCopy');
+        if (navRow && navCode && guidVal) {
+            navCode.textContent = guidVal;
+            navRow.classList.remove('d-none');
+            if (navCopy) navCopy.onclick = function () { copyToClipboard(String(guidVal), navCopy); };
+        }
     }
 
     function showLoading() {

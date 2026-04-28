@@ -3,6 +3,7 @@ namespace AIInsights.Models;
 public class Organization
 {
     public int Id { get; set; }
+    public Guid OrganizationGuid { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
     public string? LogoUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

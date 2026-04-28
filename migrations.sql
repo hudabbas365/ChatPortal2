@@ -1205,3 +1205,32 @@ GO
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260428075601_AddOrganizationGuid'
+)
+BEGIN
+    ALTER TABLE [Organizations] ADD [OrganizationGuid] uniqueidentifier NOT NULL DEFAULT (NEWID());
+    -- Backfill: ensure every existing row has a distinct non-empty GUID
+    UPDATE [Organizations] SET [OrganizationGuid] = NEWID() WHERE [OrganizationGuid] = '00000000-0000-0000-0000-000000000000';
+    UPDATE [Organizations] SET [OrganizationGuid] = NEWID();
+    CREATE UNIQUE INDEX [IX_Organizations_OrganizationGuid] ON [Organizations] ([OrganizationGuid]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260428075601_AddOrganizationGuid'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260428075601_AddOrganizationGuid', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+

@@ -3831,6 +3831,38 @@ body.embed-body {
     background: #f1f5f9;
     margin: 4px 0;
 }
+.cp-user-menu-org-guid {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 4px;
+}
+.cp-org-guid-code {
+    font-size: 0.72rem;
+    color: #334155;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    word-break: break-all;
+    max-width: 170px;
+    display: inline-block;
+}
+.cp-guid-copy-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    transition: color 0.12s ease;
+}
+.cp-guid-copy-btn:hover {
+    color: var(--cp-primary, #5b9bd5);
+}
 @media (max-width: 576px) {
     .cp-user-menu-welcome { max-width: 110px; }
     .cp-user-menu-dropdown { right: -8px; min-width: 220px; }
