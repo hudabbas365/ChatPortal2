@@ -73,9 +73,10 @@
 <div class="kpi-grid" id="kpiGrid">
     @foreach (var label in new[] { "Total Tokens", "Prompt Tokens (est.)", "Completion Tokens (est.)", "Est. Cost (USD)" })
     {
+        var kpiId = "kpi" + label.Replace(" ", "").Replace(".", "").Replace("(", "").Replace(")", "");
         <div class="stat">
             <div class="stat-icon" style="background:rgba(74,142,201,.1);color:#4a8ec9"><i class="bi bi-cpu"></i></div>
-            <div class="stat-val" id="kpi-@label.Replace(" ", "").Replace(".", "").Replace("(", "").Replace(")", "")">—</div>
+            <div class="stat-val" id="@kpiId">—</div>
             <div class="stat-label">@label</div>
         </div>
     }
@@ -116,8 +117,14 @@
     if (orgId)  qs += '&orgId='  + orgId;
     if (userId) qs += '&userId=' + userId;
 
-    fetch('/api/superadmin/insights/token-usage' + qs)
-        .then(r => r.json())
+    fetch('/api/superadmin/insights/token-usage' + qs, { credentials: 'same-origin' })
+        .then(async r => {
+            if (!r.ok) {
+                const text = await r.text().catch(() => '');
+                throw new Error('HTTP ' + r.status + (text ? ' — ' + text.substring(0, 300) : ''));
+            }
+            return r.json();
+        })
         .then(data => {
             // KPIs
             const fmtNum = n => n >= 1e6 ? (n/1e6).toFixed(1) + 'M' : n >= 1e3 ? (n/1e3).toFixed(0) + 'K' : n;
@@ -195,7 +202,28 @@
                 });
             }
         })
-        .catch(() => console.warn('Failed to load token usage data'));
+        .catch(err => {
+            console.error('Failed to load token usage data:', err);
+            const setMsg = (id, msg) => { const el = document.getElementById(id); if (el) el.textContent = msg; };
+            setMsg('kpiTotalTokens', '—');
+            setMsg('kpiPromptTokensest', '—');
+            setMsg('kpiCompletionTokensest', '—');
+            setMsg('kpiEstCostUSD', '—');
+            const errBanner = document.createElement('div');
+            errBanner.className = 'card-panel';
+            errBanner.style.cssText = 'background:#fff5f5;border:1px solid #fca5a5;color:#b91c1c;margin-bottom:1rem';
+            errBanner.textContent = 'Failed to load token usage data: ' + (err && err.message ? err.message : 'Unknown error');
+            const grid = document.getElementById('kpiGrid');
+            if (grid && grid.parentNode) grid.parentNode.insertBefore(errBanner, grid);
+            ['#topOrgsTable tbody', '#topUsersTable tbody'].forEach(sel => {
+                const tbody = document.querySelector(sel);
+                if (!tbody) return;
+                while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+                const tr = tbody.insertRow(); const td = tr.insertCell();
+                td.colSpan = 3; td.style.cssText = 'text-align:center;color:#b91c1c';
+                td.textContent = 'Error loading data.';
+            });
+        });
 })();
 </script>
 }

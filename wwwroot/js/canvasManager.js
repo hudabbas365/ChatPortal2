@@ -145,6 +145,12 @@ class CanvasManager {
     async addChart(partial) {
         if (this._pageSwitchPromise) await this._pageSwitchPromise;
         this._pushUndo('Add chart');
+        // Normalize aliased chartTypes (e.g. "doughnut" -> "donut", "kpi" -> "kpiCard")
+        // so the Properties panel chart-type dropdown can reflect them.
+        const _ctAlias = { 'doughnut': 'donut', 'kpi': 'kpiCard', 'column': 'bar', 'columnChart': 'bar' };
+        if (partial && partial.chartType && _ctAlias[partial.chartType]) {
+            partial.chartType = _ctAlias[partial.chartType];
+        }
         const isShape = window.ShapeManager && ShapeManager.isShape(partial.chartType);
         const isNavigation = partial.chartType === 'navigation';
         const defaultX = 20 + (this.charts.length % 5) * 30;
@@ -209,6 +215,11 @@ class CanvasManager {
         this._pushUndo('Delete chart');
         await fetch(_chartApiUrl(`/api/chart/${chartId}`), { method: 'DELETE' });
         this.charts = this.charts.filter(c => c.id !== chartId);
+        // Tear down ApexCharts instance + document-level filter listeners
+        // before removing the DOM card to prevent memory leaks.
+        if (window.chartRenderer) {
+            try { window.chartRenderer.destroy(chartId); } catch (_) {}
+        }
         const card = document.querySelector(`.chart-card[data-chart-id="${chartId}"]`);
         if (card) card.remove();
         if (this.selectedChartId === chartId) {
@@ -1309,3 +1320,23 @@ window.CrossFilter = {
         document.getElementById('crossfilter-clear-btn')?.addEventListener('click', () => this.clear());
     }
 };
+
+// Global cross-filter dim effect: when a filter is active, dim every chart
+// card to 50% except the source chart (which stays focused). When the filter
+// clears, restore all cards. Power BI parity for visual cross-highlighting.
+document.addEventListener('crossfilter:change', (e) => {
+    const filter = e.detail;
+    document.querySelectorAll('.chart-card').forEach(card => {
+        card.classList.remove('cf-dimmed', 'cf-source');
+    });
+    if (!filter) return;
+    const sourceId = filter.sourceChartId;
+    document.querySelectorAll('.chart-card').forEach(card => {
+        const id = card.getAttribute('data-chart-id');
+        if (id && sourceId && String(id) === String(sourceId)) {
+            card.classList.add('cf-source');
+        } else {
+            card.classList.add('cf-dimmed');
+        }
+    });
+});

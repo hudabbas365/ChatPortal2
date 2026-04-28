@@ -1,0 +1,22 @@
+/* ============================================================
+   File URL datasource — per-type styles.
+   Scoped via [data-ds-type="fileurl"].
+   ============================================================ */
+
+[data-ds-type="fileurl"] {
+    --ds-accent: #9b59b6; /* purple — distinguishes "static file" links from live APIs */
+}
+
+[data-ds-type="fileurl"].wfe-ds-block,
+[data-ds-type="fileurl"] .wfe-ds-block {
+    border-left: 3px solid var(--ds-accent);
+    padding-left: 10px;
+}
+
+/* The helper text under the URL input is the most distinctive piece — make
+   sure it stays comfortably readable inside the narrow wizard column. */
+[data-ds-type="fileurl"] small {
+    display: block;
+    margin-top: 4px;
+    line-height: 1.4;
+}

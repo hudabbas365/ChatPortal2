@@ -98,10 +98,17 @@ class WorkspaceSettings {
 
                     <!-- Users Tab -->
                     <div class="ws-settings-panel" data-panel="users">
-                        <div class="ws-users-header">
-                            <h6><i class="bi bi-people me-2"></i>Workspace Users</h6>
+                        <div class="ws-add-user-row">
+                            <input type="email" class="form-control" id="wsAddUserEmail" placeholder="Add user by email…" autocomplete="off">
+                            <select class="form-select ws-role-select" id="wsAddUserRole">
+                                <option value="Viewer" selected>Viewer</option>
+                                <option value="Editor">Editor</option>
+                                <option value="Admin">Admin</option>
+                            </select>
+                            <button class="btn btn-sm cp-btn-gradient" id="wsAddUserBtn" type="button">
+                                <i class="bi bi-plus-lg me-1"></i>Add
+                            </button>
                         </div>
-                        <div id="wsUsersPicker"></div>
                         <div class="ws-users-list" id="wsUsersList"></div>
                     </div>
                 </div>
@@ -174,6 +181,12 @@ class WorkspaceSettings {
             if (!r.ok) throw new Error('Not found');
             this._workspaceData = await r.json();
             this._populate();
+            // If the user already navigated to the Users tab while data was loading,
+            // populate the members list now (otherwise it would stay empty until
+            // they manually re-click the tab).
+            if (this._activeTab === 'users') {
+                this._populateUsers();
+            }
         } catch {
             this._showAlert('Could not load workspace.', 'error');
         }
@@ -259,39 +272,88 @@ class WorkspaceSettings {
     async _populateUsers() {
         const ov = this._overlay;
         const list = ov.querySelector('#wsUsersList');
-        const pickerDiv = ov.querySelector('#wsUsersPicker');
+        if (!list) return;
+
+        // Workspace data may still be loading. Show a placeholder; open() will
+        // re-invoke _populateUsers once the GET /api/workspaces/{guid} resolves.
         const wsGuid = this._workspaceData?.guid;
-        if (!list || !wsGuid) return;
-
-        // Show people picker for adding users
-        if (pickerDiv && !pickerDiv.dataset.wired) {
-            pickerDiv.dataset.wired = '1';
-            if (window.workspaceRoles) {
-                window.workspaceRoles.buildPeoplePicker('wsUsersPicker', wsGuid, (email) => {
-                    this._addUserToWorkspace(wsGuid, email);
-                });
-            }
-        }
-
-        // Load existing workspace users
-        const users = this._workspaceData?.users || [];
-        if (!users.length) {
-            list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--cp-text-muted);font-size:0.82rem;"><i class="bi bi-people" style="font-size:1.5rem;display:block;margin-bottom:8px;"></i>No additional users. Use the search above to add members.</div>';
+        if (!wsGuid) {
+            list.innerHTML = '<div class="ws-users-empty"><i class="bi bi-hourglass-split"></i><p>Loading workspace…</p></div>';
             return;
         }
 
+        // Wire the add-user form once
+        const addBtn = ov.querySelector('#wsAddUserBtn');
+        const emailInput = ov.querySelector('#wsAddUserEmail');
+        const roleSelect = ov.querySelector('#wsAddUserRole');
+        if (addBtn && !addBtn.dataset.wired) {
+            addBtn.dataset.wired = '1';
+            const submit = () => {
+                const email = (emailInput.value || '').trim();
+                const role = roleSelect.value || 'Viewer';
+                if (!email) {
+                    this._showAlert('Please enter an email address.', 'error');
+                    return;
+                }
+                this._addUserToWorkspace(wsGuid, email, role);
+                emailInput.value = '';
+            };
+            addBtn.addEventListener('click', submit);
+            emailInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            });
+        }
+
+        // Load existing workspace users from the dedicated endpoint.
+        // The GET /api/workspaces/{guid} response does NOT include members, so
+        // we must call /api/workspaces/{guid}/users separately.
+        list.innerHTML = '<div class="ws-users-empty"><i class="bi bi-hourglass-split"></i><p>Loading members…</p></div>';
+        let users = [];
+        try {
+            const r = await fetch(`/api/workspaces/${encodeURIComponent(wsGuid)}/users`);
+            if (!r.ok) {
+                let msg = `Could not load members (HTTP ${r.status}).`;
+                try { const j = await r.json(); if (j?.error) msg = j.error; } catch { }
+                console.warn('[workspaceSettings] GET /users failed:', r.status, msg);
+                list.innerHTML = `<div class="ws-users-empty"><i class="bi bi-exclamation-triangle text-danger"></i><p>${this._esc(msg)}</p></div>`;
+                this._showAlert(msg, 'error');
+                return;
+            }
+            users = await r.json();
+        } catch (e) {
+            console.error('[workspaceSettings] GET /users threw:', e);
+            list.innerHTML = '<div class="ws-users-empty"><i class="bi bi-exclamation-triangle text-danger"></i><p>Network error loading members.</p></div>';
+            this._showAlert('Network error loading members.', 'error');
+            return;
+        }
+
+        if (!users || !users.length) {
+            list.innerHTML = '<div class="ws-users-empty"><i class="bi bi-people"></i><p>No additional users yet. Add members above.</p></div>';
+            return;
+        }
+
+        const roleClass = (r) => {
+            if (r === 'Admin') return 'ws-role-admin';
+            if (r === 'Editor') return 'ws-role-editor';
+            return 'ws-role-viewer';
+        };
+
         list.innerHTML = users.map(u => `
-            <div class="ws-user-item" data-user-id="${this._esc(u.userId)}">
+            <div class="ws-user-row" data-user-id="${this._esc(u.userId)}">
                 <div class="ws-user-avatar">${this._esc((u.fullName || u.email || '?').substring(0, 2).toUpperCase())}</div>
                 <div class="ws-user-info">
                     <div class="ws-user-name">${this._esc(u.fullName || u.email)}</div>
                     <div class="ws-user-email">${this._esc(u.email || '')}</div>
                 </div>
-                <select class="form-select form-select-sm ws-user-role-select" data-user-id="${this._esc(u.userId)}">
-                    <option value="Admin" ${u.role === 'Admin' ? 'selected' : ''}>Admin</option>
-                    <option value="Editor" ${u.role === 'Editor' ? 'selected' : ''}>Editor</option>
+                <select class="form-select form-select-sm ws-user-role-select" data-user-id="${this._esc(u.userId)}" style="width:auto;flex-shrink:0;">
                     <option value="Viewer" ${u.role === 'Viewer' ? 'selected' : ''}>Viewer</option>
+                    <option value="Editor" ${u.role === 'Editor' ? 'selected' : ''}>Editor</option>
+                    <option value="Admin" ${u.role === 'Admin' ? 'selected' : ''}>Admin</option>
                 </select>
+                <span class="ws-user-role-badge ${roleClass(u.role)}">${this._esc(u.role || 'Viewer')}</span>
+                <button class="ws-user-remove-btn" type="button" data-user-id="${this._esc(u.userId)}" title="Remove user">
+                    <i class="bi bi-trash"></i>
+                </button>
             </div>
         `).join('');
 
@@ -301,29 +363,50 @@ class WorkspaceSettings {
                 this._updateUserRole(wsGuid, sel.dataset.userId, sel.value);
             });
         });
+        // Wire remove buttons
+        list.querySelectorAll('.ws-user-remove-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._removeUserFromWorkspace(wsGuid, btn.dataset.userId);
+            });
+        });
     }
 
-    async _addUserToWorkspace(wsGuid, email) {
+    async _addUserToWorkspace(wsGuid, email, role) {
         try {
             const r = await fetch(`/api/workspaces/${encodeURIComponent(wsGuid)}/users`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, role: 'Viewer' })
+                body: JSON.stringify({ email, role: role || 'Viewer' })
             });
             if (r.ok) {
-                this._showAlert(`User added as Viewer.`, 'success');
-                // Reload workspace data to refresh users
-                const wr = await fetch(`/api/workspaces/${encodeURIComponent(wsGuid)}`);
-                if (wr.ok) {
-                    this._workspaceData = await wr.json();
-                    this._populateUsers();
-                }
+                this._showAlert(`User added as ${role || 'Viewer'}.`, 'success');
+                // Refresh the members list directly from the dedicated endpoint.
+                this._populateUsers();
                 setTimeout(() => this._clearAlert(), 2500);
             } else {
-                this._showAlert('Failed to add user.', 'error');
+                let msg = 'Failed to add user.';
+                try { const j = await r.json(); if (j?.error) msg = j.error; } catch {}
+                this._showAlert(msg, 'error');
             }
         } catch {
             this._showAlert('Failed to add user.', 'error');
+        }
+    }
+
+    async _removeUserFromWorkspace(wsGuid, userId) {
+        try {
+            const r = await fetch(`/api/workspaces/${encodeURIComponent(wsGuid)}/users/${encodeURIComponent(userId)}`, {
+                method: 'DELETE'
+            });
+            if (r.ok) {
+                this._showAlert('User removed.', 'success');
+                this._populateUsers();
+                setTimeout(() => this._clearAlert(), 2000);
+            } else {
+                this._showAlert('Failed to remove user.', 'error');
+            }
+        } catch {
+            this._showAlert('Failed to remove user.', 'error');
         }
     }
 

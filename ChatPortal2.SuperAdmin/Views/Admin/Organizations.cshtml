@@ -17,6 +17,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Org ID</th>
                 <th>Users</th>
                 <th>Pro</th>
                 <th>Enterprise</th>
@@ -39,6 +40,18 @@
                             + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
                     <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
+                    <td>
+                        @{
+                            var guidStr = org.OrganizationGuid.ToString();
+                            var guidShort = guidStr.Substring(0, 8) + "…" + guidStr.Substring(guidStr.Length - 4);
+                        }
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <code class="sa-org-guid" title="@guidStr" style="font-size:.75rem">@guidShort</code>
+                            <button type="button" class="sa-guid-copy-btn" data-guid="@guidStr" title="Copy full Org ID" aria-label="Copy Org ID">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </span>
+                    </td>
                     <td>@(org.Users?.Count ?? 0)</td>
                     <td>
                         @if (proCount > 0)
@@ -95,9 +108,20 @@
                     </td>
                     <td style="color:var(--text-muted)">@org.CreatedAt.ToString("MMM d, yyyy")</td>
                     <td>
-                        <a href="/superadmin/organizations/@org.Id/invoices" class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem">
-                            <i class="bi bi-receipt"></i> Invoices
-                        </a>
+                        <div class="d-flex gap-1">
+                            <a href="/superadmin/organizations/@org.Id/invoices" class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem">
+                                <i class="bi bi-receipt"></i> Invoices
+                            </a>
+                            <button type="button" class="btn-ghost-sm sa-org-delete-btn"
+                                    data-org-id="@org.Id"
+                                    data-org-name="@org.Name"
+                                    data-user-count="@(org.Users?.Count ?? 0)"
+                                    data-ws-count="@(org.Workspaces?.Count ?? 0)"
+                                    title="Delete organization and all related data"
+                                    style="font-size:.75rem;padding:.3rem .65rem;color:#b91c1c;border-color:#fecaca">
+                                <i class="bi bi-trash3"></i> Delete
+                            </button>
+                        </div>
                     </td>
                 </tr>
             }
@@ -107,6 +131,51 @@
 
 <div id="toastHost" aria-live="polite" aria-atomic="true"
      style="position:fixed;top:1.25rem;right:1.25rem;z-index:1080;display:flex;flex-direction:column;gap:.5rem;pointer-events:none"></div>
+
+<!-- Delete-organization confirmation modal -->
+<div id="saDeleteOrgBackdrop"
+     style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1090;align-items:center;justify-content:center;padding:1rem">
+    <div style="background:#fff;border-radius:12px;max-width:520px;width:100%;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);overflow:hidden">
+        <div style="padding:1.1rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem">
+            <div style="width:32px;height:32px;border-radius:8px;background:rgba(244,63,94,.15);color:#b91c1c;display:flex;align-items:center;justify-content:center">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div>
+                <div style="font-weight:600;color:#1e3a5f">Delete organization</div>
+                <div style="font-size:.78rem;color:var(--text-muted)">This action cannot be undone.</div>
+            </div>
+        </div>
+        <div style="padding:1.1rem 1.25rem;font-size:.85rem;color:var(--text)">
+            <p style="margin:0 0 .65rem">
+                You are about to permanently delete
+                <strong id="saDelOrgName" style="color:#1e3a5f"></strong>.
+            </p>
+            <p style="margin:0 0 .65rem;color:var(--text-dim)">
+                The following will be removed:
+            </p>
+            <ul style="margin:0 0 .9rem 1.1rem;color:var(--text-dim);font-size:.8rem;line-height:1.55">
+                <li><span id="saDelUserCount">0</span> users (and their subscriptions)</li>
+                <li><span id="saDelWsCount">0</span> workspaces (with all reports, dashboards &amp; chat history)</li>
+                <li>All agents, datasources &amp; connection strings</li>
+                <li>Token usage, payment records, activity logs &amp; notifications</li>
+            </ul>
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+                Type the organization name to confirm
+            </label>
+            <input type="text" id="saDelConfirmInput" class="form-control form-control-sm mt-1"
+                   autocomplete="off" placeholder="Organization name"
+                   style="font-family:ui-monospace,Menlo,Consolas,monospace" />
+            <div id="saDelError" style="display:none;color:#b91c1c;font-size:.78rem;margin-top:.5rem"></div>
+        </div>
+        <div style="padding:.9rem 1.25rem;border-top:1px solid var(--border);display:flex;gap:.5rem;justify-content:flex-end;background:#f8fafc">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="saDelCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-sm" id="saDelConfirmBtn"
+                    style="background:#dc2626;border-color:#dc2626;color:#fff" disabled>
+                <i class="bi bi-trash3 me-1"></i>Delete permanently
+            </button>
+        </div>
+    </div>
+</div>
 
 <style>
     .app-toast {
@@ -181,4 +250,127 @@ async function saveOrgPlan(id) {
     if (!r.ok) { showToast(data.error || 'Failed to update plan.', 'error'); return; }
     showToast('Organization plan & licenses updated.', 'success', 'Saved');
 }
+
+// Org GUID copy buttons
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.sa-guid-copy-btn');
+    if (!btn) return;
+    var guid = btn.dataset.guid;
+    if (!guid || !navigator.clipboard) return;
+    navigator.clipboard.writeText(guid).then(function () {
+        var icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.replace('bi-clipboard', 'bi-check');
+            setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+        }
+        showToast('Org ID copied to clipboard.', 'success', 'Copied');
+    });
+});
+
+// ── Delete-organization flow ─────────────────────────────────────────
+(function () {
+    var backdrop      = document.getElementById('saDeleteOrgBackdrop');
+    var nameEl        = document.getElementById('saDelOrgName');
+    var userCountEl   = document.getElementById('saDelUserCount');
+    var wsCountEl     = document.getElementById('saDelWsCount');
+    var confirmInput  = document.getElementById('saDelConfirmInput');
+    var confirmBtn    = document.getElementById('saDelConfirmBtn');
+    var cancelBtn     = document.getElementById('saDelCancelBtn');
+    var errEl         = document.getElementById('saDelError');
+    var pendingOrgId  = null;
+    var pendingName   = '';
+
+    function open(orgId, orgName, userCount, wsCount) {
+        pendingOrgId = orgId;
+        pendingName  = orgName || '';
+        nameEl.textContent      = pendingName;
+        userCountEl.textContent = userCount;
+        wsCountEl.textContent   = wsCount;
+        confirmInput.value      = '';
+        confirmInput.placeholder = pendingName;
+        confirmBtn.disabled     = true;
+        confirmBtn.innerHTML    = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+        errEl.style.display     = 'none';
+        errEl.textContent       = '';
+        backdrop.style.display  = 'flex';
+        setTimeout(function () { confirmInput.focus(); }, 50);
+    }
+
+    function close() {
+        backdrop.style.display = 'none';
+        pendingOrgId = null;
+        pendingName  = '';
+    }
+
+    confirmInput.addEventListener('input', function () {
+        confirmBtn.disabled = confirmInput.value !== pendingName;
+    });
+
+    cancelBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) close();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && backdrop.style.display === 'flex') close();
+    });
+
+    confirmBtn.addEventListener('click', async function () {
+        if (!pendingOrgId || confirmInput.value !== pendingName) return;
+        confirmBtn.disabled  = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting…';
+        errEl.style.display  = 'none';
+        try {
+            var url = '/api/admin/super/orgs/' + pendingOrgId
+                    + '?confirm=' + encodeURIComponent(pendingName);
+            var r = await fetch(url, { method: 'DELETE', credentials: 'same-origin' });
+            var data = await r.json().catch(function () { return {}; });
+            if (!r.ok) {
+                errEl.textContent = data.error || ('Delete failed (HTTP ' + r.status + ').');
+                if (data.detail) errEl.textContent += ' ' + data.detail;
+                errEl.style.display = '';
+                confirmBtn.disabled  = false;
+                confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+                return;
+            }
+            // Remove the row from the table without a full reload.
+            var btn = document.querySelector('.sa-org-delete-btn[data-org-id="' + pendingOrgId + '"]');
+            var row = btn ? btn.closest('tr') : null;
+            if (row) row.remove();
+            close();
+            showToast('Organization "' + pendingName + '" and all related data were deleted.', 'success', 'Deleted');
+        } catch (ex) {
+            errEl.textContent   = 'Network error: ' + (ex && ex.message ? ex.message : 'unknown');
+            errEl.style.display = '';
+            confirmBtn.disabled  = false;
+            confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.sa-org-delete-btn');
+        if (!btn) return;
+        e.preventDefault();
+        open(
+            btn.dataset.orgId,
+            btn.dataset.orgName || '',
+            btn.dataset.userCount || '0',
+            btn.dataset.wsCount   || '0'
+        );
+    });
+})();
 </script>
+<style>
+.sa-guid-copy-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+    font-size: 0.8rem;
+    transition: color 0.12s ease;
+}
+.sa-guid-copy-btn:hover { color: var(--primary, #4a8ec9); }
+.sa-org-guid { cursor: default; }
+</style>

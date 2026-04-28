@@ -30,8 +30,14 @@
             if (!wsGuid) wsGuid = params.get('workspace');
             if (!agentGuid) agentGuid = params.get('agent');
 
+            // Explicit "home" intent (?home=1) — caller wants the landing page,
+            // not the last-visited chat. Skip the localStorage auto-restore so
+            // clicking the AI Insights brand from a report viewer truly lands
+            // on the chat home instead of bouncing into the previous workspace.
+            var forceHome = params.get('home') === '1';
+
             // Fallback to last-visited chat persisted in localStorage when URL has nothing.
-            if (!wsGuid && !agentGuid) {
+            if (!forceHome && !wsGuid && !agentGuid) {
                 try {
                     var last = JSON.parse(localStorage.getItem('cp_last_chat') || 'null');
                     if (last && last.wsGuid) {
@@ -246,17 +252,21 @@
             const subName = document.getElementById('chatSubnavWorkspaceName');
 
             try {
-                const r = await fetch(`/api/workspaces/${guid}`);
-                if (!r.ok) throw new Error();
-                const data = await r.json();
+                // Run the workspace fetch and the role lookup in parallel — they're
+                // independent, so awaiting them serially just adds RTT for no reason.
+                const wsPromise = fetch(`/api/workspaces/${guid}`).then(r => {
+                    if (!r.ok) throw new Error();
+                    return r.json();
+                });
+                const rolePromise = window.workspaceRoles
+                    ? window.workspaceRoles.loadMyRole(guid).catch(() => null)
+                    : Promise.resolve(null);
+                const [data] = await Promise.all([wsPromise, rolePromise]);
                 if (selectionToken !== this._wsSelectionToken) return; // stale
                 this._wsData = data;
                 if (topTitle) topTitle.textContent = data.name || 'Workspace';
                 if (subName) subName.textContent = data.name || 'Workspace';
                 this._updateWorkspaceStatus(guid, data);
-                // Load role BEFORE rendering so delete buttons appear for admins
-                if (window.workspaceRoles) await window.workspaceRoles.loadMyRole(guid);
-                if (selectionToken !== this._wsSelectionToken) return; // stale
                 this._renderHome(data);
                 if (window.workspaceRoles) window.workspaceRoles._applyRoleUI();
             } catch {
@@ -528,6 +538,7 @@
                         ${ds
                         ? `<span class="wf-binding-badge connected"><i class="bi bi-link-45deg"></i></span>`
                         : `<span class="wf-binding-badge unbound"><i class="bi bi-exclamation-circle"></i></span>`}
+                        <button class="wf-agent-delete-btn wf-role-editor" title="Delete AI Insights" data-action="agent-cascade-delete" data-agent-id="${this._esc(a.guid)}" data-agent-name="${this._esc(a.name)}" data-ws-id="${this._esc(wsData.guid)}"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>`;
             });
@@ -592,6 +603,15 @@
 
         // ── Wire artifact card actions ──────────────────────
         _wireArtifactActions() {
+            // Cascade-delete buttons (must run BEFORE agent-chat handler so the click
+            // doesn't bubble up to the parent agent node and open chat).
+            document.querySelectorAll('[data-action="agent-cascade-delete"]').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._cascadeDeleteAgent(el.dataset.agentId, el.dataset.agentName, el.dataset.wsId);
+                });
+            });
             document.querySelectorAll('[data-action="agent-chat"]').forEach(el => {
                 el.addEventListener('click', () => {
                     const wsGuid = el.dataset.wsId;
@@ -619,6 +639,64 @@
             });
         },
 
+        // -- Cascade delete an AI Insights instance ----------
+        // Removes: the agent + bound datasource (if no other agent uses it) +
+        // associated dashboards + reports + clears local "last chat" memory.
+        async _cascadeDeleteAgent(agentGuid, agentName, wsGuid) {
+            if (!agentGuid) return;
+            const reports = (this._wsData?.reports || []).filter(r => r.agentId &&
+                (this._wsData.agents || []).some(a => a.guid === agentGuid && a.id === r.agentId));
+            const reportCount = reports.length;
+            const subMessage = `This permanently removes the agent “${agentName || 'AI Insights'}”` +
+                (reportCount ? `, ${reportCount} saved report${reportCount === 1 ? '' : 's'}` : '') +
+                `, its dashboard, and the bound datasource (if no other agent uses it). This cannot be undone.`;
+            const ok = await (window.cpConfirm ? window.cpConfirm({
+                title: 'Delete AI Insights',
+                message: 'Delete this AI Insights instance?',
+                subMessage,
+                confirmText: 'Delete',
+                cancelText: 'Cancel',
+                variant: 'danger',
+                icon: 'bi-trash-fill'
+            }) : Promise.resolve(confirm('Delete this AI Insights instance? ' + subMessage)));
+            if (!ok) return;
+
+            try {
+                const r = await fetch('/api/agents/' + encodeURIComponent(agentGuid) + '/cascade', {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                });
+                if (!r.ok) {
+                    let msg = 'Failed to delete AI Insights.';
+                    try { const j = await r.json(); if (j && j.error) msg = j.error; } catch { }
+                    if (window.cpToast) window.cpToast(msg, 'error'); else alert(msg);
+                    return;
+                }
+
+                // Purge cached chat pointer if it referenced the deleted agent.
+                try {
+                    const last = JSON.parse(localStorage.getItem('cp_last_chat') || 'null');
+                    if (last && last.agentGuid === agentGuid) {
+                        localStorage.removeItem('cp_last_chat');
+                    }
+                } catch { /* ignore */ }
+                if (window.currentAgentGuid === agentGuid) {
+                    window.currentAgentGuid = null;
+                    window.currentDatasourceId = null;
+                    window.currentDatasourceName = null;
+                    window.currentDatasourceType = null;
+                }
+
+                if (window.cpToast) window.cpToast('AI Insights deleted.', 'success');
+
+                // Re-render workspace home (will show empty-state if everything is gone).
+                if (wsGuid) await this._selectWorkspace(wsGuid);
+            } catch (e) {
+                if (window.cpToast) window.cpToast('Failed to delete AI Insights.', 'error');
+                else alert('Failed to delete AI Insights.');
+            }
+        },
+
         _showDatasourceDetailPopup(dsGuid) {
             const ds = (this._wsData?.datasources || []).find(d => d.guid === dsGuid);
             if (!ds) return;
@@ -632,6 +710,21 @@
             modal.tabIndex = -1;
             const isRest = /rest\s*api/i.test(ds.type || '');
             const isPbi = /power\s*bi/i.test(ds.type || '');
+            const isFile = /file\s*url/i.test(ds.type || '');
+            const isSql = !isRest && !isPbi && !isFile;
+            const fileFormatLabel = (() => {
+                const m = (ds.apiMethod || '').toLowerCase();
+                if (m === 'csv')  return 'CSV';
+                if (m === 'xlsx') return 'Excel (XLSX)';
+                if (m === 'auto' || !m) return 'Auto-detect';
+                return ds.apiMethod;
+            })();
+            const sqlConnDisplay = ds.connectionString && ds.connectionString.trim().length
+                ? ds.connectionString
+                : '(not configured — open the workspace flow editor to set the connection string)';
+            const pbiCatalogDisplay = ds.pbiConnection && ds.pbiConnection.trim().length
+                ? ds.pbiConnection
+                : '(not configured)';
             modal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content" style="background:white;color:var(--cp-text)">
@@ -647,7 +740,7 @@
                             ${isRest ? `
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">API URL</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '')}" style="font-family:monospace;font-size:0.78rem" />
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '(not set)')}" style="font-family:monospace;font-size:0.78rem" />
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">API Key</label>
@@ -657,38 +750,50 @@
                                 <label class="form-label fw-bold" style="font-size:0.8rem">HTTP Method</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiMethod || 'GET')}" />
                             </div>
+                            ` : isFile ? `
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">File URL</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '(not set)')}" style="font-family:monospace;font-size:0.78rem" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">File Format</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(fileFormatLabel)}" />
+                            </div>
                             ` : isPbi ? `
+                            <div class="alert alert-info py-2 small mb-3">
+                                <i class="bi bi-info-circle me-1"></i>Leave any field blank to keep its current value. Secrets are never shown.
+                            </div>
                             <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">XMLA Endpoint</label>
+                                <label class="form-label fw-bold" style="font-size:0.8rem">XMLA Endpoint <span class="text-muted fw-normal">(current: ${esc(ds.xmlaEndpoint || '(not set)')})</span></label>
                                 <input type="text" class="form-control form-control-sm" id="dsPbiXmla" placeholder="powerbi://api.powerbi.com/v1.0/myorg/<workspace>" value="" style="font-family:monospace;font-size:0.78rem" />
-                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Semantic Model (Catalog)</label>
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Semantic Model / Catalog <span class="text-muted fw-normal">(current: ${esc(pbiCatalogDisplay)})</span></label>
                                 <input type="text" class="form-control form-control-sm" id="dsPbiCatalog" placeholder="Dataset / semantic model name" value="" />
-                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Tenant ID</label>
-                                <input type="text" class="form-control form-control-sm" id="dsPbiTenant" placeholder="••••••" value="" autocomplete="off" />
-                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Tenant ID <span class="text-muted fw-normal">${ds.microsoftAccountTenantId ? '(configured)' : '(not set)'}</span></label>
+                                <input type="text" class="form-control form-control-sm" id="dsPbiTenant" placeholder="${ds.microsoftAccountTenantId ? '••••••' : 'tenant-guid'}" value="" autocomplete="off" />
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Client ID</label>
                                 <input type="text" class="form-control form-control-sm" id="dsPbiClientId" placeholder="••••••" value="" autocomplete="off" />
-                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Client Secret</label>
                                 <input type="password" class="form-control form-control-sm" id="dsPbiClientSecret" placeholder="••••••" value="" autocomplete="new-password" />
-                                <div class="form-text" style="font-size:0.7rem">Leave blank to keep the current value.</div>
                             </div>
                             <div id="dsPbiSaveStatus" class="small" style="min-height:1rem"></div>
                             ` : `
                             <div class="mb-3">
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>
-                                <textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">${esc(ds.connectionString || '')}</textarea>
+                                <textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">${esc(sqlConnDisplay)}</textarea>
                             </div>
+                            ${ds.dbUser ? `
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" style="font-size:0.8rem">Database User</label>
+                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.dbUser)}" />
+                            </div>` : ''}
                             `}
                         </div>
                         <div class="modal-footer border-top d-flex justify-content-between" style="border-color:var(--cp-border)!important">
@@ -941,11 +1046,11 @@
                             <label>Datasource Name</label>
                             <input type="text" id="wfDsName" placeholder="e.g. Sales DB" />
                         </div>
-                        <div class="wf-setup-field">
+                        <div class="wf-setup-field wfe-ds-block" data-ds-type="sql">
                             <label>Connection String / URL</label>
                             <input type="text" id="wfDsConnStr" placeholder="Server=...;Database=..." />
                         </div>
-                        <div id="wfDsPbiFields" style="display:none">
+                        <div id="wfDsPbiFields" class="wfe-ds-block" data-ds-type="powerbi" style="display:none">
                             <div class="wf-setup-field">
                                 <label>XMLA Endpoint</label>
                                 <input type="text" id="wfDsXmlaEndpoint" placeholder="powerbi://api.powerbi.com/v1.0/myorg/WorkspaceName" />
@@ -967,7 +1072,7 @@
                                 <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
                             </div>
                         </div>
-                        <div id="wfDsRestApiFields" style="display:none">
+                        <div id="wfDsRestApiFields" class="wfe-ds-block" data-ds-type="restapi" style="display:none">
                             <div class="wf-setup-field">
                                 <label>API URL</label>
                                 <input type="text" id="wfDsApiUrl" placeholder="https://api.example.com/data" />
@@ -1030,15 +1135,11 @@
                     document.getElementById('wfDsTypeSelector').style.display = 'none';
                     document.getElementById('wfDsConfigForm').style.display = 'block';
 
-                    // Toggle Power BI vs REST API vs standard fields
-                    const isPbi = /power\s*bi/i.test(this._selectedDsType);
-                    const isRestApi = /rest\s*api/i.test(this._selectedDsType);
-                    const connStrField = document.getElementById('wfDsConnStr')?.closest('.wf-setup-field');
-                    const pbiFields = document.getElementById('wfDsPbiFields');
-                    const restApiFields = document.getElementById('wfDsRestApiFields');
-                    if (connStrField) connStrField.style.display = (isPbi || isRestApi) ? 'none' : '';
-                    if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
-                    if (restApiFields) restApiFields.style.display = isRestApi ? '' : 'none';
+                    // Per-type field visibility is owned by the datasource registry —
+                    // see /js/datasources/datasource-*.js.
+                    if (window.WfDatasources) {
+                        window.WfDatasources.toggleFields(document, this._selectedDsType);
+                    }
                 });
             }
             if (search) {
@@ -1070,8 +1171,6 @@
             const name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
             const alertEl = document.getElementById('wfDsAlert');
             const testBtn = document.getElementById('wfDsTestBtn');
-            const isPbi = /power\s*bi/i.test(this._selectedDsType);
-            const isRestApi = /rest\s*api/i.test(this._selectedDsType);
 
             // Build payload based on datasource type
             const payload = {
@@ -1081,17 +1180,10 @@
                 userId: user?.id || ''
             };
 
-            if (isRestApi) {
-                payload.apiUrl = document.getElementById('wfDsApiUrl')?.value.trim() || '';
-                payload.apiKey = document.getElementById('wfDsApiKey')?.value.trim() || '';
-            } else if (isPbi) {
-                payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
-                payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
-                payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
-                payload.dbUser = document.getElementById('wfDsClientId')?.value.trim() || '';
-                payload.dbPassword = document.getElementById('wfDsClientSecret')?.value.trim() || '';
-            } else {
-                payload.connectionString = document.getElementById('wfDsConnStr')?.value.trim() || '';
+            // Per-type modules contribute their own fields — see
+            // /js/datasources/datasource-*.js.
+            if (window.WfDatasources) {
+                window.WfDatasources.buildPayload(payload, document, this._selectedDsType);
             }
 
             // Disable button & show testing state

@@ -14,6 +14,11 @@
     var workspaceRole = ViewBag.WorkspaceRole as string;
     var isViewOnly = workspaceRole == "Viewer";
     var embedMode = ViewBag.EmbedMode is bool em && em;
+    // Anonymous viewers (public link / iframe embed of a Published report) have
+    // no workspace context and can't use any auth-gated action. Hide the entire
+    // workspace/edit/share/embed cluster so the toolbar stays focused on the
+    // only actions that make sense for them: Print and Export PDF.
+    var isAnonymous = User?.Identity?.IsAuthenticated != true;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -46,7 +51,7 @@
     @if (!embedMode)
     {
     <nav class="rv-navbar">
-        <a href="/" class="rv-brand">
+        <a href="/chat?home=1" class="rv-brand">
             <i class="bi bi-bar-chart-fill text-primary"></i>
             <span class="rv-brand-text">AIInsights</span>
         </a>
@@ -75,7 +80,7 @@
             }
         </div>
         <div class="rv-toolbar">
-            @if (!string.IsNullOrEmpty(workspaceGuid))
+            @if (!isAnonymous && !string.IsNullOrEmpty(workspaceGuid))
             {
                 <a class="btn" href="/chat?workspace=@workspaceGuid" title="Back to Workspace">
                     <i class="bi bi-arrow-left"></i> Workspace
@@ -87,10 +92,16 @@
                     </a>
                 }
             }
-            @if (!isViewOnly)
+            @if (!isAnonymous && !isViewOnly)
             {
                 <button class="btn" onclick="openShareModal()" title="Share Report">
                     <i class="bi bi-share"></i> Share
+                </button>
+            }
+            @if (!isAnonymous && status == "Published")
+            {
+                <button class="btn" onclick="openEmbedModal()" title="Get public URL &amp; embed code">
+                    <i class="bi bi-code-slash"></i> Embed
                 </button>
             }
             <button class="btn" onclick="window.print()" title="Print Report">
@@ -103,23 +114,26 @@
     </nav>
     }
 
-    @if (!isViewOnly)
+    @if (!isAnonymous && (!isViewOnly || status == "Published"))
     {
         <div class="rv-share-overlay" id="rvShareOverlay">
             <div class="rv-share-box">
-                <h5><i class="bi bi-link-45deg me-2"></i>Share Report</h5>
-                <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
-                    Generate a share link to invite people as <strong>viewers</strong> of this report in
-                    <strong id="rvShareWsName">this workspace</strong>.
-                </p>
-                <div class="rv-share-url" style="display:none">
-                    <input type="text" id="rvShareUrlInput" readonly onclick="this.select()">
-                    <button id="rvShareCopyBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
-                </div>
-                <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
-                    <i class="bi bi-info-circle-fill me-1"></i>
-                    Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
-                </div>
+                <h5><i class="bi bi-link-45deg me-2"></i>@(isViewOnly ? "Embed Report" : "Share Report")</h5>
+                @if (!isViewOnly)
+                {
+                    <p style="font-size:0.82rem;color:#475569;margin-bottom:14px;">
+                        Generate a share link to invite people as <strong>viewers</strong> of this report in
+                        <strong id="rvShareWsName">this workspace</strong>.
+                    </p>
+                    <div class="rv-share-url" style="display:none">
+                        <input type="text" id="rvShareUrlInput" readonly onclick="this.select()">
+                        <button id="rvShareCopyBtn"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                    </div>
+                    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;font-size:0.78rem;color:#0369a1;margin-bottom:14px;">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Anyone who opens this link and is signed in will be added as a <strong>Viewer</strong> to the workspace.
+                    </div>
+                }
 
                 @if (status == "Published")
                 {
@@ -130,26 +144,96 @@
                     <p style="font-size:0.78rem;color:#475569;margin-bottom:8px;">
                         This report is <strong>Published</strong> — anyone with the link can view it (no sign-in required).
                     </p>
-                    <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Public link</label>
-                    <div class="rv-share-url" style="display:flex;gap:6px;margin-bottom:10px;">
-                        <input type="text" id="rvPublicUrlInput" readonly onclick="this.select()"
-                               style="flex:1;font-size:0.78rem;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;"
-                               value="@($"{Context.Request.Scheme}://{Context.Request.Host}/report/view/{reportGuid}")" />
-                        <button type="button" onclick="rvCopyPublicUrl()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
-                            <i class="bi bi-clipboard me-1"></i>Copy
+
+                    <!-- Initial state: user must explicitly request the public URL / embed code -->
+                    <div id="rvEmbedGenerateWrap" style="margin-bottom:10px;">
+                        <button type="button" id="rvEmbedGenerateBtn"
+                                data-report-guid="@reportGuid"
+                                style="font-size:0.78rem;padding:6px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
+                            <i class="bi bi-code-slash me-1"></i>Generate Public URL &amp; Embed Code
                         </button>
+                        <div id="rvEmbedGenerateStatus" style="font-size:0.74rem;color:#dc2626;margin-top:6px;display:none;"></div>
                     </div>
-                    <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Embed code</label>
-                    <div style="display:flex;gap:6px;align-items:flex-start;">
-                        <textarea id="rvEmbedSnippet" readonly onclick="this.select()" rows="3"
-                                  style="flex:1;font-size:0.74rem;font-family:ui-monospace,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;resize:vertical;">&lt;iframe src="@($"{Context.Request.Scheme}://{Context.Request.Host}/report/view/{reportGuid}?embed=1")" width="100%" height="900" frameborder="0" style="border:0;border-radius:12px;"&gt;&lt;/iframe&gt;</textarea>
-                        <button type="button" onclick="rvCopyEmbedSnippet()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
-                            <i class="bi bi-clipboard me-1"></i>Copy
-                        </button>
+
+                    <!-- Revealed after the user clicks the button above -->
+                    <div id="rvEmbedDetails" style="display:none;">
+                        <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Public link</label>
+                        <div class="rv-share-url" style="display:flex;gap:6px;margin-bottom:10px;">
+                            <input type="text" id="rvPublicUrlInput" readonly onclick="this.select()"
+                                   style="flex:1;font-size:0.78rem;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;" />
+                            <button type="button" onclick="rvCopyPublicUrl()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
+                                <i class="bi bi-clipboard me-1"></i>Copy
+                            </button>
+                            <button type="button" id="rvOpenPublicUrlBtn" onclick="rvOpenPublicUrl()" title="Open public report in new tab"
+                                    style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                            </button>
+                        </div>
+                        <label style="font-size:0.74rem;font-weight:500;color:#334155;display:block;margin-bottom:4px;">Embed code</label>
+                        <div style="display:flex;gap:6px;align-items:flex-start;">
+                            <textarea id="rvEmbedSnippet" readonly onclick="this.select()" rows="3"
+                                      style="flex:1;font-size:0.74rem;font-family:ui-monospace,Menlo,Consolas,monospace;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;resize:vertical;"></textarea>
+                            <div style="display:flex;flex-direction:column;gap:6px;">
+                                <button type="button" onclick="rvCopyEmbedSnippet()" style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">
+                                    <i class="bi bi-clipboard me-1"></i>Copy
+                                </button>
+                                <button type="button" id="rvOpenEmbedUrlBtn" onclick="rvOpenEmbedUrl()" title="Preview embedded report in new tab"
+                                        style="font-size:0.78rem;padding:5px 12px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:#fff;color:var(--cp-primary,#4A90D9);cursor:pointer;font-weight:500;">
+                                    <i class="bi bi-eye me-1"></i>Preview
+                                </button>
+                            </div>
+                        </div>
+                        <div id="rvEmbedCopyStatus" style="font-size:0.74rem;color:#16a34a;margin-top:6px;display:none;">
+                            <i class="bi bi-check-circle-fill me-1"></i>Copied to clipboard.
+                        </div>
                     </div>
-                    <div id="rvEmbedCopyStatus" style="font-size:0.74rem;color:#16a34a;margin-top:6px;display:none;">
-                        <i class="bi bi-check-circle-fill me-1"></i>Copied to clipboard.
-                    </div>
+
+                    <script>
+                        (function () {
+                            var btn = document.getElementById('rvEmbedGenerateBtn');
+                            if (!btn) return;
+                            btn.addEventListener('click', async function () {
+                                var status = document.getElementById('rvEmbedGenerateStatus');
+                                if (status) { status.style.display = 'none'; status.textContent = ''; }
+                                var origLabel = btn.innerHTML;
+                                btn.disabled = true;
+                                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating…';
+                                try {
+                                    var guid = btn.getAttribute('data-report-guid') || window._rvReportGuid;
+                                    var resp = await fetch('/api/reports/' + encodeURIComponent(guid) + '/embed-token', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ expiresInDays: 30 })
+                                    });
+                                    if (!resp.ok) {
+                                        var msg = 'Failed to generate embed token.';
+                                        try { var j = await resp.json(); if (j && j.error) msg = j.error; } catch(e) {}
+                                        throw new Error(msg);
+                                    }
+                                    var data = await resp.json();
+                                    var publicUrl = data.publicUrl || '';
+                                    var embedUrl = data.embedUrl || '';
+                                    var urlInput = document.getElementById('rvPublicUrlInput');
+                                    var snippet = document.getElementById('rvEmbedSnippet');
+                                    if (urlInput) urlInput.value = publicUrl;
+                                    if (snippet) snippet.value = '<iframe src="' + embedUrl + '" width="100%" height="900" frameborder="0" style="border:0;border-radius:12px;"></iframe>';
+                                    window._rvPublicUrl = publicUrl;
+                                    window._rvEmbedUrl = embedUrl;
+                                    var details = document.getElementById('rvEmbedDetails');
+                                    if (details) details.style.display = '';
+                                    var wrap = document.getElementById('rvEmbedGenerateWrap');
+                                    if (wrap) wrap.style.display = 'none';
+                                } catch (err) {
+                                    if (status) {
+                                        status.textContent = err.message || 'Failed to generate embed token.';
+                                        status.style.display = '';
+                                    }
+                                    btn.disabled = false;
+                                    btn.innerHTML = origLabel;
+                                }
+                            });
+                        })();
+                    </script>
                 }
                 else
                 {
@@ -161,9 +245,12 @@
                 <div id="rvShareStatus" style="font-size:0.78rem;margin-bottom:10px;display:none;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button class="rv-share-close" id="rvShareCloseBtn">Close</button>
-                    <button id="rvShareGenerateBtn" class="rv-share-url button" style="font-size:0.78rem;padding:5px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
-                        <i class="bi bi-link-45deg me-1"></i>Generate Link
-                    </button>
+                    @if (!isViewOnly)
+                    {
+                        <button id="rvShareGenerateBtn" class="rv-share-url button" style="font-size:0.78rem;padding:5px 14px;border-radius:6px;border:1px solid var(--cp-primary,#4A90D9);background:var(--cp-primary,#4A90D9);color:#fff;cursor:pointer;font-weight:500;">
+                            <i class="bi bi-link-45deg me-1"></i>Generate Link
+                        </button>
+                    }
                 </div>
             </div>
         </div>
@@ -249,6 +336,12 @@
     window._rvDatasourceId   = @Html.Raw(datasourceId.HasValue ? datasourceId.Value.ToString() : "null");
     window._rvReportName     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(reportName));
     window._rvWorkspaceName  = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(workspaceName ?? ""));
+    // When the viewer is not signed in (public link / iframe embed of a Published report),
+    // chartRenderer.js will route data fetches through the anonymous per-report endpoint.
+    window._rvIsPublic       = @((User?.Identity?.IsAuthenticated == true) ? "false" : "true");
+    // Signed embed token (?t=...) — required by the public data endpoint.
+    // Empty for authenticated viewers, who hit the regular /api/data/execute path.
+    window._rvEmbedToken     = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Context.Request.Query["t"].ToString() ?? ""));
     </script>
     <script>
     function rvCopyPublicUrl() {
@@ -264,6 +357,34 @@
         el.select();
         navigator.clipboard?.writeText(el.value).catch(function(){ document.execCommand('copy'); });
         rvShowCopyStatus();
+    }
+    function rvOpenPublicUrl() {
+        var url = window._rvPublicUrl
+            || (document.getElementById('rvPublicUrlInput') || {}).value
+            || '';
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    function rvOpenEmbedUrl() {
+        var url = window._rvEmbedUrl || '';
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    function openEmbedModal() {
+        if (typeof window.openShareModal === 'function') {
+            window.openShareModal();
+        }
+        // Auto-trigger the embed generation so the URL & snippet are visible immediately.
+        var genBtn = document.getElementById('rvEmbedGenerateBtn');
+        var details = document.getElementById('rvEmbedDetails');
+        if (genBtn && details && details.style.display === 'none') {
+            genBtn.click();
+        }
+        // Make sure the embed section is in view inside the modal.
+        setTimeout(function () {
+            var target = document.getElementById('rvEmbedDetails') || document.getElementById('rvEmbedGenerateWrap');
+            if (target && target.scrollIntoView) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 50);
     }
     function rvShowCopyStatus() {
         var s = document.getElementById('rvEmbedCopyStatus');

@@ -40,6 +40,7 @@ public class DashboardController : Controller
     {
         CanvasState canvas;
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        int? resolvedOrgId = null; // populated below from the loaded report/workspace; falls back to caller's org
 
         // If a report guid is provided, load that report's canvas for editing
         if (!string.IsNullOrEmpty(report))
@@ -67,6 +68,14 @@ public class DashboardController : Controller
                 canvas = JsonConvert.DeserializeObject<CanvasState>(rpt.CanvasJson) ?? new CanvasState();
                 canvas.CanvasName = rpt.Name ?? canvas.CanvasName;
                 ViewBag.ReportGuid = rpt.Guid;
+                // Track the report's owning organization so the view can expose OrganizationGuid
+                if (rpt.WorkspaceId > 0)
+                {
+                    resolvedOrgId = await _db.Workspaces
+                        .Where(w => w.Id == rpt.WorkspaceId)
+                        .Select(w => (int?)w.OrganizationId)
+                        .FirstOrDefaultAsync();
+                }
                 // Persist to session so chart operations work on this canvas
                 var sessionKey = SessionKeyPrefix + (report ?? "");
                 HttpContext.Session.SetString(sessionKey, JsonConvert.SerializeObject(canvas));
@@ -184,6 +193,7 @@ public class DashboardController : Controller
                 }
                 ViewBag.WorkspaceGuid = ws.Guid;
                 ViewBag.WorkspaceName = ws.Name;
+                resolvedOrgId = ws.OrganizationId;
             }
             else
             {
@@ -193,6 +203,27 @@ public class DashboardController : Controller
         else
         {
             canvas = LoadOrCreateCanvas();
+        }
+
+        // Expose Organization GUID — fall back to the caller's org when no workspace/report context
+        if (resolvedOrgId == null || resolvedOrgId == 0)
+        {
+            resolvedOrgId = await _db.Users
+                .Where(u => u.Id == currentUserId)
+                .Select(u => u.OrganizationId)
+                .FirstOrDefaultAsync();
+        }
+        if (resolvedOrgId.HasValue && resolvedOrgId.Value > 0)
+        {
+            var org = await _db.Organizations
+                .Where(o => o.Id == resolvedOrgId.Value)
+                .Select(o => new { o.OrganizationGuid, o.Name })
+                .FirstOrDefaultAsync();
+            if (org != null)
+            {
+                ViewBag.OrganizationGuid = org.OrganizationGuid.ToString();
+                ViewBag.OrganizationName = org.Name;
+            }
         }
 
         ViewBag.InitialCharts = JsonConvert.SerializeObject(canvas.Charts, CamelCaseSettings);

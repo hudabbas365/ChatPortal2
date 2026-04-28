@@ -40,7 +40,7 @@ public class CohereService
         return input;
     }
 
-    public async IAsyncEnumerable<string> StreamChatAsync(string userMessage, List<(string role, string content)> history, string systemPrompt = "You are a helpful data assistant.")
+    public async IAsyncEnumerable<string> StreamChatAsync(string userMessage, List<(string role, string content)> history, string systemPrompt = "You are a helpful data assistant.", int? maxTokens = null)
     {
         bool unsafePrompt = false;
         try { userMessage = SanitizeUserInput(userMessage); }
@@ -59,10 +59,10 @@ public class CohereService
             {
                 type = "data_response",
                 prompt = userMessage.Length > 80 ? userMessage[..80] : userMessage,
-                query = "SELECT region, SUM(total_revenue) AS total_revenue FROM sales GROUP BY region ORDER BY total_revenue DESC",
-                description = "Mock response — configure Cohere:ApiKey in appsettings.json for real AI. Showing sample regional revenue data.",
-                suggestedChart = "bar",
-                suggestedFields = new { label = "region", value = "total_revenue" }
+                query = "",
+                description = "AI is not configured. Please add your Cohere:ApiKey in appsettings.json to enable AI-generated answers.",
+                suggestedChart = "",
+                suggestedFields = new { label = "", value = "" }
             };
             yield return Newtonsoft.Json.JsonConvert.SerializeObject(mockObj);
             yield break;
@@ -77,12 +77,12 @@ public class CohereService
         messages.Add(new { role = "user", content = userMessage });
 
         var model = _config["Cohere:Model"] ?? "command-r-plus";
-        var requestBody = new
-        {
-            model = model,
-            messages = messages,
-            stream = true
-        };
+        // Callers (e.g. the auto-report generator) may need a larger output budget
+        // than Cohere's default to fit a multi-page JSON plan in one stream. When
+        // omitted, Cohere applies its default which is fine for normal chat turns.
+        object requestBody = maxTokens.HasValue
+            ? new { model, messages, stream = true, max_tokens = maxTokens.Value }
+            : new { model, messages, stream = true };
 
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(requestBody);
         using var request = new HttpRequestMessage(HttpMethod.Post, CohereApiUrl);

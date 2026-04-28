@@ -466,7 +466,13 @@
             try {
                 var r = await fetch('/api/datasources/' + dsId + '/tables');
                 if (!r.ok) return;
-                var tables = await r.json();
+                var payload = await r.json();
+                // Endpoint may return either a bare array (success) or
+                // { error, tables: [] } when introspection fails. Normalize.
+                var tables = Array.isArray(payload)
+                    ? payload
+                    : (payload && Array.isArray(payload.tables) ? payload.tables : []);
+                if (tables.length === 0) return;
                 var anchor = document.getElementById('wfDsFieldsPreview');
                 if (!anchor) return;
 

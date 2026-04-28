@@ -16,11 +16,15 @@ public class ReportController : Controller
 {
     private readonly AppDbContext _db;
     private readonly IWorkspacePermissionService _permissions;
+    private readonly IQueryExecutionService _queryService;
+    private readonly JwtService _jwt;
 
-    public ReportController(AppDbContext db, IWorkspacePermissionService permissions)
+    public ReportController(AppDbContext db, IWorkspacePermissionService permissions, IQueryExecutionService queryService, JwtService jwt)
     {
         _db = db;
         _permissions = permissions;
+        _queryService = queryService;
+        _jwt = jwt;
     }
 
     [AllowAnonymous]
@@ -37,6 +41,25 @@ public class ReportController : Controller
         // Anonymous users can only view published reports
         if (User.Identity?.IsAuthenticated != true && report.Status != "Published")
             return Redirect("/access-denied?statusCode=401");
+
+        // Anonymous viewers of a Published report MUST present a valid embed
+        // token (?t=…) signed by us. The bare /report/view/{guid} URL no longer
+        // grants access — it would otherwise render the page chrome and then
+        // every chart would 401 from /api/reports/public/.../data.
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            var embedToken = Request.Query["t"].ToString();
+            if (string.IsNullOrWhiteSpace(embedToken))
+                return Redirect("/access-denied?statusCode=401&reason=embed-token-required");
+
+            var embedClaims = _jwt.ValidateEmbedToken(embedToken);
+            if (embedClaims == null
+                || !string.Equals(embedClaims.ReportGuid, report.Guid, StringComparison.Ordinal)
+                || embedClaims.TokenVersion != report.EmbedTokenVersion)
+            {
+                return Redirect("/access-denied?statusCode=401&reason=embed-token-invalid");
+            }
+        }
 
         // Authenticated users must have workspace access, shared report access, or report must be Published
         string? workspaceRole = null;
@@ -134,6 +157,295 @@ public class ReportController : Controller
         }
 
         return Ok(new { shareToken = report.ShareToken });
+    }
+
+    // Mint a signed embed token bound to this report's datasource and the set
+    // of tables actually referenced by its canvas. Editor or Admin permission
+    // is required, so anonymous viewers can never request a token themselves —
+    // they only receive one when an authorised user shares the URL with them.
+    [HttpPost("/api/reports/{guid}/embed-token")]
+    [RequireActiveSubscription]
+    public async Task<IActionResult> CreateEmbedToken(string guid, [FromBody] CreateEmbedTokenRequest? req)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        // Anyone with at least Viewer access to the workspace (or shared access)
+        // can mint an embed token for a Published report. The report is already
+        // publicly viewable, so issuing a signed link does not escalate access —
+        // it just lets non-editors copy the public/embed URL too. Editor remains
+        // required for unpublished drafts.
+        if (report.WorkspaceId > 0)
+        {
+            var canEdit = await _permissions.CanEditAsync(report.WorkspaceId, userId);
+            if (!canEdit)
+            {
+                if (report.Status != "Published")
+                    return StatusCode(403, new { error = "You need Editor or Admin role to create embed tokens for unpublished reports." });
+                var canView = await _permissions.CanViewAsync(report.WorkspaceId, userId);
+                var hasSharedAccess = await _db.SharedReports
+                    .AnyAsync(sr => sr.ReportId == report.Id && sr.UserId == userId);
+                if (!canView && !hasSharedAccess)
+                    return StatusCode(403, new { error = "You do not have access to this report." });
+            }
+        }
+        if (report.Status != "Published")
+            return BadRequest(new { error = "Only Published reports can be embedded. Publish the report first." });
+        if (report.DatasourceId == null)
+            return BadRequest(new { error = "Report has no datasource bound." });
+
+        // Derive the table allow-list from the report's saved canvas. Each
+        // chart node carries a `datasetName` identifying the table it queries.
+        var tables = ExtractTableNamesFromCanvas(report.CanvasJson);
+
+        var expiresInDays = Math.Clamp(req?.ExpiresInDays ?? 30, 1, 365);
+        var token = _jwt.GenerateEmbedToken(
+            report.Guid,
+            report.DatasourceId.Value,
+            report.EmbedTokenVersion,
+            tables,
+            expiresInDays);
+        var expiresAt = DateTime.UtcNow.AddDays(expiresInDays);
+
+        var origin = $"{Request.Scheme}://{Request.Host}";
+        var publicUrl = $"{origin}/report/view/{report.Guid}?t={Uri.EscapeDataString(token)}";
+        var embedUrl = $"{origin}/report/view/{report.Guid}?embed=1&t={Uri.EscapeDataString(token)}";
+
+        return Ok(new
+        {
+            token,
+            expiresAt,
+            publicUrl,
+            embedUrl,
+            tables,
+            tokenVersion = report.EmbedTokenVersion
+        });
+    }
+
+    // Bumps the report's EmbedTokenVersion, immediately invalidating every
+    // outstanding embed token for this report.
+    [HttpPost("/api/reports/{guid}/embed-token/revoke")]
+    [RequireActiveSubscription]
+    public async Task<IActionResult> RevokeEmbedTokens(string guid)
+    {
+        var report = await _db.Reports.FirstOrDefaultAsync(r => r.Guid == guid);
+        if (report == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (report.WorkspaceId > 0 && !await _permissions.CanEditAsync(report.WorkspaceId, userId))
+            return StatusCode(403, new { error = "You need Editor or Admin role to revoke embed tokens." });
+
+        report.EmbedTokenVersion += 1;
+        report.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, tokenVersion = report.EmbedTokenVersion });
+    }
+
+    // Strip surrounding [ ] " ` quotes from each path segment and lowercase
+    // for a case-insensitive comparison key. Preserves multi-part identifiers
+    // (e.g. "dbo.MyTable") so the allow-list and the SQL match shape-for-shape.
+    private static string NormalizeTableName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var parts = raw.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var cleaned = parts.Select(p => p.Trim().Trim('[', ']', '"', '`').Trim());
+        return string.Join(".", cleaned).ToLowerInvariant();
+    }
+
+    // Walk the canvas JSON and collect every distinct datasetName referenced
+    // by chart-shaped nodes. The structure is intentionally tolerant — any
+    // string-valued "datasetName" / "DatasetName" is accepted regardless of
+    // depth so future canvas schema tweaks don't silently shrink the allow-list.
+    private static List<string> ExtractTableNamesFromCanvas(string? canvasJson)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(canvasJson)) return result.ToList();
+        try
+        {
+            var token = Newtonsoft.Json.Linq.JToken.Parse(canvasJson);
+            // Recursive descent — match any property named datasetName at any depth.
+            foreach (var v in token.SelectTokens("$..datasetName"))
+            {
+                AddCanvasTableName(result, v);
+            }
+            // JSONPath in Newtonsoft is case-sensitive — also pick up DatasetName.
+            foreach (var v in token.SelectTokens("$..DatasetName"))
+            {
+                AddCanvasTableName(result, v);
+            }
+        }
+        catch { /* tolerant: bad canvas JSON => empty allow-list, mint will block */ }
+        return result.ToList();
+    }
+
+    private static void AddCanvasTableName(HashSet<string> sink, Newtonsoft.Json.Linq.JToken v)
+    {
+        string? name = null;
+        if (v is Newtonsoft.Json.Linq.JValue jv && jv.Type == Newtonsoft.Json.Linq.JTokenType.String)
+        {
+            name = jv.ToString();
+        }
+        else if (v is Newtonsoft.Json.Linq.JObject jo)
+        {
+            name = jo.Value<string>("name") ?? jo.Value<string>("Name");
+        }
+        if (!string.IsNullOrWhiteSpace(name))
+            sink.Add(name.Trim());
+    }
+
+    // Anonymous chart-data endpoint scoped to a single Published report's bound datasource.
+    // The chart renderer uses this when the viewer is not signed in (e.g. public link or
+    // iframe embed) so charts can fetch their data without hitting the authenticated
+    // /api/data/execute endpoint, which would otherwise redirect anonymous callers to
+    // login and break JSON parsing on the client.
+    [AllowAnonymous]
+    [HttpPost("/api/reports/public/{reportGuid}/data")]
+    public async Task<IActionResult> PublicExecuteQuery(string reportGuid, [FromBody] ExecuteQueryRequest req)
+    {
+        if (req == null) return BadRequest(new { success = false, error = "Missing request body." });
+
+        // ── Embed-token gate ────────────────────────────────────────────────
+        // Accept token from Authorization: Bearer <jwt> header (preferred for
+        // SPA fetches) or ?t=<jwt> query string (used by the iframe `src` so
+        // even uncontrolled embedders work).
+        var rawToken = "";
+        var authHeader = Request.Headers.Authorization.ToString();
+        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            rawToken = authHeader.Substring("Bearer ".Length).Trim();
+        if (string.IsNullOrEmpty(rawToken))
+            rawToken = Request.Query["t"].ToString();
+        if (string.IsNullOrWhiteSpace(rawToken))
+            return Unauthorized(new { success = false, error = "Embed token required." });
+
+        var claims = _jwt.ValidateEmbedToken(rawToken);
+        if (claims == null)
+            return Unauthorized(new { success = false, error = "Embed token is invalid or expired." });
+        if (!string.Equals(claims.ReportGuid, reportGuid, StringComparison.Ordinal))
+            return StatusCode(403, new { success = false, error = "Token does not belong to this report." });
+
+        var report = await _db.Reports
+            .Include(r => r.Datasource)
+            .FirstOrDefaultAsync(r => r.Guid == reportGuid);
+        if (report == null) return NotFound(new { success = false, error = "Report not found." });
+
+        // Token revocation check: if the report's token version was bumped after
+        // the JWT was minted, reject — even though the signature is still valid.
+        if (claims.TokenVersion != report.EmbedTokenVersion)
+            return Unauthorized(new { success = false, error = "Embed token has been revoked." });
+
+        // Only Published reports may serve data anonymously.
+        if (report.Status != "Published")
+            return StatusCode(403, new { success = false, error = "This report is not published." });
+
+        // The caller may only query the report's bound datasource — never an arbitrary one.
+        if (!req.DatasourceId.HasValue || report.DatasourceId == null || req.DatasourceId.Value != report.DatasourceId.Value)
+            return StatusCode(403, new { success = false, error = "Datasource is not bound to this report." });
+
+        // The token's `dsid` must also match — defence-in-depth in case the
+        // report's bound datasource was rebound after the token was minted.
+        if (claims.DatasourceId != report.DatasourceId.Value)
+            return StatusCode(403, new { success = false, error = "Token does not match this report's datasource." });
+
+        var ds = report.Datasource;
+        if (ds == null) return Ok(new { success = false, data = Array.Empty<object>(), rowCount = 0, error = "Report has no datasource." });
+
+        var query = (req.Query ?? "").Trim();
+        query = QueryExecutionService.StripSqlComments(query);
+        if (!string.IsNullOrEmpty(query) && !query.TrimStart().StartsWith("EVALUATE", StringComparison.OrdinalIgnoreCase))
+        {
+            var firstStatement = query.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            if (!string.IsNullOrEmpty(firstStatement)) query = firstStatement;
+        }
+
+        // Read-only guard — block any write operations even on the public path.
+        var normalized = System.Text.RegularExpressions.Regex.Replace(
+            query.ToUpperInvariant(), @"\s+", " ").Trim();
+        var writeOps = new[] { "INSERT","UPDATE","DELETE","DROP","CREATE","ALTER",
+                               "TRUNCATE","EXEC","EXECUTE","MERGE","CALL","GRANT",
+                               "REVOKE","REPLACE","UPSERT","ATTACH","DETACH" };
+        var firstToken = System.Text.RegularExpressions.Regex.Split(
+            normalized.TrimStart(), @"[\s(;]+").FirstOrDefault() ?? "";
+        var isDaxOrDmv = firstToken == "EVALUATE"
+            || firstToken == "REST_API"
+            || firstToken == "FILE_URL"
+            || (firstToken == "SELECT" && normalized.Contains("$SYSTEM."));
+        if (!isDaxOrDmv &&
+            (writeOps.Contains(firstToken) ||
+             writeOps.Any(kw => System.Text.RegularExpressions.Regex.IsMatch(normalized, $@"\b{kw}\b"))))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = $"Write operation \"{firstToken}\" is not permitted on a public report."
+            });
+        }
+
+        // Table allow-list — every FROM/JOIN target in the SQL must appear in
+        // the token's `tables` claim (which was derived from the report's
+        // CanvasJson at mint time). Skipped for DAX/DMV/REST/File paths since
+        // those don't reference user-supplied tables. Empty allow-list = block.
+        if (!isDaxOrDmv
+            && !QueryExecutionService.RestApiTypes.Contains(ds?.Type ?? "")
+            && !QueryExecutionService.FileUrlTypes.Contains(ds?.Type ?? ""))
+        {
+            var allowed = new HashSet<string>(
+                claims.Tables.Select(NormalizeTableName).Where(s => !string.IsNullOrEmpty(s)),
+                StringComparer.OrdinalIgnoreCase);
+            if (allowed.Count == 0)
+                return StatusCode(403, new { success = false, error = "Token has no permitted tables." });
+
+            // Match identifiers after FROM/JOIN. Captures `dbo.MyTable`,
+            // `[dbo].[MyTable]`, `"public"."MyTable"`, `MyTable`, etc. Stops
+            // at the first whitespace/paren/comma/semicolon.
+            var refs = System.Text.RegularExpressions.Regex.Matches(
+                query,
+                @"\b(?:FROM|JOIN)\s+([\[\""\w\.\]\""`]+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            foreach (System.Text.RegularExpressions.Match m in refs)
+            {
+                var table = NormalizeTableName(m.Groups[1].Value);
+                if (string.IsNullOrEmpty(table)) continue;
+                if (!allowed.Contains(table))
+                {
+                    return StatusCode(403, new
+                    {
+                        success = false,
+                        error = $"Table \"{table}\" is not permitted by this embed token."
+                    });
+                }
+            }
+        }
+
+        // REST / File-URL datasources bypass SQL execution.
+        if (QueryExecutionService.RestApiTypes.Contains(ds.Type ?? ""))
+        {
+            var apiResult = await _queryService.ExecuteRestApiAsync(ds);
+            return Ok(new { success = apiResult.Success, data = apiResult.Data, rowCount = apiResult.RowCount, error = apiResult.Error });
+        }
+        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        {
+            var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
+            return Ok(new { success = fileResult.Success, data = fileResult.Data, rowCount = fileResult.RowCount, error = fileResult.Error });
+        }
+
+        var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
+        var hasConnection = isPbi
+            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
+            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+        if (!hasConnection)
+        {
+            return Ok(new
+            {
+                success = false,
+                data = Array.Empty<object>(),
+                rowCount = 0,
+                error = "Report's datasource is not connected."
+            });
+        }
+
+        var result = await _queryService.ExecuteReadOnlyAsync(ds, query);
+        return Ok(new { success = result.Success, data = result.Data, rowCount = result.RowCount, error = result.Error });
     }
 
     [HttpGet("/api/reports/shared")]
@@ -589,6 +901,11 @@ public class CreateSnapshotRequest
 {
     public string? Name { get; set; }
     public string? CanvasJson { get; set; }
+}
+
+public class CreateEmbedTokenRequest
+{
+    public int? ExpiresInDays { get; set; }
 }
 
 public class CreateReportRequest

@@ -81,8 +81,13 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// HttpClientFactory (needed by CohereService)
-builder.Services.AddHttpClient("cohere");
+// HttpClientFactory (needed by CohereService). The default 100s timeout is too
+// short for the auto-report generator which streams a large multi-page JSON
+// plan (max_tokens up to 8000). Widen the timeout for this named client only.
+builder.Services.AddHttpClient("cohere", c =>
+{
+    c.Timeout = TimeSpan.FromMinutes(5);
+});
 
 // CORS
 builder.Services.AddCors(options =>
@@ -114,6 +119,23 @@ builder.Services.AddSingleton<CachingQueryExecutionService>(sp =>
 builder.Services.AddSingleton<IQueryExecutionService>(sp => sp.GetRequiredService<CachingQueryExecutionService>());
 builder.Services.AddSingleton<IQueryCacheInvalidator>(sp => sp.GetRequiredService<CachingQueryExecutionService>());
 builder.Services.AddScoped<IRelationshipService, RelationshipService>();
+
+// Auto-report builders — one per datasource type. Order does not matter; the
+// controller picks the first builder whose CanHandle() returns true and falls
+// back to SQL if none match. Add a new builder + DI line here to support a
+// new datasource type without touching the controller.
+builder.Services.AddScoped<AIInsights.Services.AutoReport.IAutoReportBuilder, AIInsights.Services.AutoReport.SqlAutoReportBuilder>();
+builder.Services.AddScoped<AIInsights.Services.AutoReport.IAutoReportBuilder, AIInsights.Services.AutoReport.PowerBiAutoReportBuilder>();
+builder.Services.AddScoped<AIInsights.Services.AutoReport.IAutoReportBuilder, AIInsights.Services.AutoReport.RestApiAutoReportBuilder>();
+builder.Services.AddScoped<AIInsights.Services.AutoReport.IAutoReportBuilder, AIInsights.Services.AutoReport.FileUrlAutoReportBuilder>();
+
+// Per-datasource-type services — same fan-out pattern as the auto-report
+// builders above. Each implementation owns the test/introspect logic for one
+// datasource family so the controller stays a thin HTTP shim.
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.SqlDatasourceService>();
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.PowerBiDatasourceService>();
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.RestApiDatasourceService>();
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.FileUrlDatasourceService>();
 builder.Services.AddSingleton<IEncryptionService, AesEncryptionService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();

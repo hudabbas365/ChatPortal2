@@ -47,6 +47,7 @@
                     html += '<div class="wf-flow-branch-row wf-flow-branch-top">';
                     html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
                     html += '<div class="wf-flow-node wf-flow-agent" data-action="agent-chat" data-agent-id="' + self._esc(a.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                    html += '<button class="wf-agent-delete-btn wf-role-editor" title="Delete AI Insights" data-action="agent-cascade-delete" data-agent-id="' + self._esc(a.guid) + '" data-agent-name="' + self._esc(a.name) + '" data-ws-id="' + self._esc(wsData.guid) + '"><i class="bi bi-trash"></i></button>';
                     html += '<div class="wf-flow-label">' + self._esc(a.name) + '</div>';
                     html += '<div class="wf-flow-sublabel">AI Agent</div>';
                     html += '</div>';
@@ -175,6 +176,7 @@
             html += '<span class="wf-flow-unbound-label">Unbound agents:</span>';
             unboundAgents.forEach(function (a) {
                 html += '<div class="wf-flow-node wf-flow-agent" data-action="agent-chat" data-agent-id="' + self._esc(a.guid) + '" data-ws-id="' + self._esc(wsData.guid) + '">';
+                html += '<button class="wf-agent-delete-btn wf-role-editor" title="Delete AI Insights" data-action="agent-cascade-delete" data-agent-id="' + self._esc(a.guid) + '" data-agent-name="' + self._esc(a.name) + '" data-ws-id="' + self._esc(wsData.guid) + '"><i class="bi bi-trash"></i></button>';
                 html += '<div class="wf-flow-label">' + self._esc(a.name) + '</div>';
                 html += '<div class="wf-flow-sublabel">AI Agent \xb7 Unbound</div>';
                 html += '</div>';
@@ -326,11 +328,11 @@
                         <label>Datasource Name</label>
                         <input type="text" id="wfDsName" placeholder="e.g. Sales DB" />
                     </div>
-                    <div class="wf-setup-field">
+                    <div class="wf-setup-field wfe-ds-block" data-ds-type="sql">
                         <label>Connection String / URL</label>
                         <input type="text" id="wfDsConnStr" placeholder="Server=...;Database=..." />
                     </div>
-                    <div id="wfDsPbiFields" style="display:none">
+                    <div id="wfDsPbiFields" class="wfe-ds-block" data-ds-type="powerbi" style="display:none">
                         <div class="wf-setup-field">
                             <label>XMLA Endpoint</label>
                             <input type="text" id="wfDsXmlaEndpoint" placeholder="powerbi://api.powerbi.com/v1.0/myorg/WorkspaceName" />
@@ -352,7 +354,7 @@
                             <input type="password" id="wfDsClientSecret" placeholder="••••••••" />
                         </div>
                     </div>
-                    <div id="wfDsRestApiFields" style="display:none">
+                    <div id="wfDsRestApiFields" class="wfe-ds-block" data-ds-type="restapi" style="display:none">
                         <div class="wf-setup-field">
                             <label>HTTP Method</label>
                             <select id="wfDsApiMethod" style="width:100%;padding:6px 10px;border:1.5px solid var(--cp-border);border-radius:8px;font-size:0.875rem;">
@@ -373,7 +375,7 @@
                             <input type="password" id="wfDsApiKey" placeholder="Bearer token or API key" />
                         </div>
                     </div>
-                    <div id="wfDsFileUrlFields" style="display:none">
+                    <div id="wfDsFileUrlFields" class="wfe-ds-block" data-ds-type="fileurl" style="display:none">
                         <div class="wf-setup-field">
                             <label>File URL <span class="wfe-opt">(public/anonymous share link)</span></label>
                             <input type="text" id="wfDsFileUrl" placeholder="https://… (OneDrive, Google Drive, Dropbox, raw CSV/XLSX URL)" />
@@ -388,7 +390,7 @@
                             </select>
                         </div>
                     </div>
-                    <div class="wfe-cred-row">
+                    <div class="wfe-cred-row wfe-ds-block" data-ds-type="sql">
                         <div class="wf-setup-field">
                             <label>Database User <span class="wfe-opt">(optional)</span></label>
                             <input type="text" id="wfDsUser" placeholder="e.g. sa, admin, root" />
@@ -427,20 +429,12 @@
                 document.getElementById('wfDsTypeSelector').style.display = 'none';
                 document.getElementById('wfDsConfigForm').style.display = 'block';
 
-                // Toggle Power BI vs REST API vs File URL vs standard fields
-                var isPbi = /power\s*bi/i.test(self._selectedDsType);
-                var isRestApi = /rest\s*api/i.test(self._selectedDsType);
-                var isFileUrl = /file\s*url/i.test(self._selectedDsType);
-                var connStrField = document.getElementById('wfDsConnStr');
-                if (connStrField) connStrField.closest('.wf-setup-field').style.display = (isPbi || isRestApi || isFileUrl) ? 'none' : '';
-                var credRow = document.querySelector('.wfe-cred-row');
-                if (credRow) credRow.style.display = (isPbi || isRestApi || isFileUrl) ? 'none' : '';
-                var pbiFields = document.getElementById('wfDsPbiFields');
-                if (pbiFields) pbiFields.style.display = isPbi ? '' : 'none';
-                var restApiFields = document.getElementById('wfDsRestApiFields');
-                if (restApiFields) restApiFields.style.display = isRestApi ? '' : 'none';
-                var fileUrlFields = document.getElementById('wfDsFileUrlFields');
-                if (fileUrlFields) fileUrlFields.style.display = isFileUrl ? '' : 'none';
+                // Per-type field visibility is owned by the datasource registry —
+                // each module (SQL / Power BI / REST API / File URL) shows its
+                // own block and hides the others.
+                if (window.WfDatasources) {
+                    window.WfDatasources.toggleFields(document, self._selectedDsType);
+                }
             });
         }
         if (search) {
@@ -472,9 +466,6 @@
         var name = document.getElementById('wfDsName')?.value.trim() || this._selectedDsType + ' DS';
         var alertEl = document.getElementById('wfDsAlert');
         var testBtn = document.getElementById('wfDsTestBtn');
-        var isPbi = /power\s*bi/i.test(this._selectedDsType);
-        var isRestApi = /rest\s*api/i.test(this._selectedDsType);
-        var isFileUrl = /file\s*url/i.test(this._selectedDsType);
 
         var payload = {
             name: name,
@@ -484,23 +475,10 @@
             userId: user?.id || ''
         };
 
-        if (isRestApi) {
-            payload.apiUrl = document.getElementById('wfDsApiUrl')?.value.trim() || '';
-            payload.apiKey = document.getElementById('wfDsApiKey')?.value.trim() || '';
-            payload.apiMethod = document.getElementById('wfDsApiMethod')?.value || 'GET';
-        } else if (isFileUrl) {
-            payload.apiUrl = document.getElementById('wfDsFileUrl')?.value.trim() || '';
-            payload.apiMethod = document.getElementById('wfDsFileFormat')?.value || 'Auto';
-        } else if (isPbi) {
-            payload.xmlaEndpoint = document.getElementById('wfDsXmlaEndpoint')?.value.trim() || '';
-            payload.connectionString = document.getElementById('wfDsCatalog')?.value.trim() || '';
-            payload.microsoftAccountTenantId = document.getElementById('wfDsTenantId')?.value.trim() || '';
-            payload.dbUser = document.getElementById('wfDsClientId')?.value.trim() || '';
-            payload.dbPassword = document.getElementById('wfDsClientSecret')?.value.trim() || '';
-        } else {
-            payload.connectionString = document.getElementById('wfDsConnStr')?.value.trim() || '';
-            payload.dbUser = document.getElementById('wfDsUser')?.value.trim() || null;
-            payload.dbPassword = document.getElementById('wfDsPassword')?.value.trim() || null;
+        // Per-type modules contribute their own fields (connection string,
+        // XMLA endpoint, API URL, file URL, …) — see /js/datasources/*.js.
+        if (window.WfDatasources) {
+            window.WfDatasources.buildPayload(payload, document, this._selectedDsType);
         }
 
         // Disable button & show testing state. Always hide Next while a test is
@@ -738,13 +716,18 @@
             var result = await r.json();
             if (pf) pf.value = result.prompt;
         } catch {
-            var isRest = (self._createdDsType || '').toLowerCase().indexOf('rest api') !== -1;
-            var isFile = (self._createdDsType || '').toLowerCase().indexOf('file url') !== -1;
-            if (pf) pf.value = isRest
-                ? 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You are connected to ' + (self._createdDsName || 'a REST API') + ' (' + (self._createdDsType || 'REST API') + '). Data is fetched automatically from the API. Help users analyze the API data, suggest charts and visualizations. Always set query to "REST_API".'
-                : isFile
-                ? 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You are connected to ' + (self._createdDsName || 'a CSV/Excel file') + ' (' + (self._createdDsType || 'File URL') + '). The file is fetched and parsed automatically. Help users analyze the data, suggest charts and visualizations. Always set query to "FILE_URL".'
-                : 'You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace. You have access to ' + (self._createdDsName || 'the datasource') + ' (' + (self._createdDsType || 'database') + '). Available tables: ' + (self._selectedTables || []).join(', ') + '. Help users query data, generate SQL, analyze results, and create visualizations.';
+            // Per-type modules own the fallback prompt template — see
+            // /js/datasources/datasource-*.js.
+            var fallback = '';
+            if (window.WfDatasources) {
+                fallback = window.WfDatasources.fallbackSystemPrompt(
+                    self._createdDsType || '',
+                    wsData.name || '',
+                    self._createdDsName || '',
+                    self._createdDsType || '',
+                    self._selectedTables || []);
+            }
+            if (pf) pf.value = fallback || ('You are a helpful data assistant for the "' + (wsData.name || 'workspace') + '" workspace.');
         }
         document.getElementById('wfGenPromptBtn')?.addEventListener('click', async function (e) {
             var btn = e.currentTarget;

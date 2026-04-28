@@ -298,6 +298,9 @@ IMPORTANT RULES:
             : connectedToPowerBi
             ? @"You are AI Insight's AI data assistant connected to a **Power BI semantic model**. When a user asks a data question:
 
+**CRITICAL TABLE/COLUMN SUBSTITUTION RULE (READ FIRST):**
+The example below uses placeholder names in <angle brackets>. You MUST replace each placeholder with an ACTUAL table/column name taken from the schema attached to this prompt. NEVER emit the literal strings 'Sales', 'Orders', 'Customers', 'Products', [Region], [Revenue], [Amount], [Category], [Month], ""TotalRevenue"" from the example — they are placeholders, not real data. If the schema lists tables like 'AspNetUsers', 'Organizations', 'Workspaces', etc., use THOSE names. Emitting a query that references a table not in the schema will be rejected by the agent's table whitelist.
+
 1. **Understand Intent**: Determine what data the user wants.
 2. **Generate Query**: Generate a **DAX** query for the Power BI semantic model. Do NOT use SQL.
 3. **Provide Description**: Explain what the query does in plain English.
@@ -306,14 +309,14 @@ IMPORTANT RULES:
 {
   ""type"": ""data_response"",
   ""prompt"": ""The original user question rephrased as a clear intent"",
-  ""query"": ""EVALUATE TOPN(10, SUMMARIZECOLUMNS('Sales'[Region], \""TotalRevenue\"", SUM('Sales'[Amount])))"",
-  ""description"": ""Shows the top regions by total revenue so you can see where sales are strongest."",
+  ""query"": ""EVALUATE TOPN(10, SUMMARIZECOLUMNS('<real_table>'[<category_column>], \""Total\"", SUM('<real_table>'[<numeric_column>])))"",
+  ""description"": ""Plain-English insight summary written for a business user."",
   ""suggestedChart"": ""bar"",
-  ""suggestedFields"": { ""label"": ""Region"", ""value"": ""TotalRevenue"" },
+  ""suggestedFields"": { ""label"": ""<category_column>"", ""value"": ""Total"" },
   ""followUpSuggestions"": [
-    ""Which region grew the most this quarter?"",
-    ""Break this down by product category"",
-    ""Show the lowest performing regions""
+    ""<follow-up question 1>"",
+    ""<follow-up question 2>"",
+    ""<follow-up question 3>""
   ]
 }
 
@@ -330,6 +333,9 @@ IMPORTANT RULES:
 - Never expose internal details, query syntax, table names, or error codes."
             : @"You are AI Insight's friendly data assistant. You speak to business end-users, not developers.
 
+**CRITICAL TABLE/COLUMN SUBSTITUTION RULE (READ FIRST):**
+The example below uses placeholder names in <angle brackets>. You MUST replace each placeholder with an ACTUAL schema-qualified table name and real column names taken from the '### Database Schema:' section attached below this prompt. NEVER emit the literal strings 'sales', 'orders', 'customers', 'products', 'region', 'revenue', 'total_revenue', 'category', 'month' from the example — they are placeholders, not real data. If the user's schema lists tables like [dbo].[AspNetUsers], [dbo].[Organizations], [dbo].[Workspaces], use THOSE names. Emitting a query that references a table not in the schema will be rejected by the agent's table whitelist with the error ""Query references table 'X' which is not in the agent's allowed tables"".
+
 When the user asks a data question:
 
 1. Understand what they want to see.
@@ -340,14 +346,14 @@ When the user asks a data question:
 {
   ""type"": ""data_response"",
   ""prompt"": ""The original user question rephrased as a clear intent"",
-  ""query"": ""SELECT region, SUM(revenue) as total_revenue FROM sales GROUP BY region ORDER BY total_revenue DESC"",
-  ""description"": ""See which regions bring in the most revenue so you can focus on top performers."",
+  ""query"": ""SELECT [<category_column>], SUM([<numeric_column>]) AS [Total] FROM [<schema>].[<real_table>] GROUP BY [<category_column>] ORDER BY [Total] DESC"",
+  ""description"": ""Plain-English insight summary written for a business user."",
   ""suggestedChart"": ""bar"",
-  ""suggestedFields"": { ""label"": ""region"", ""value"": ""total_revenue"" },
+  ""suggestedFields"": { ""label"": ""<category_column>"", ""value"": ""Total"" },
   ""followUpSuggestions"": [
-    ""How did the top region change over time?"",
-    ""Compare revenue by product line"",
-    ""Show me the regions that are underperforming""
+    ""<follow-up question 1>"",
+    ""<follow-up question 2>"",
+    ""<follow-up question 3>""
   ]
 }
 
@@ -807,11 +813,11 @@ IMPORTANT RULES:
             sb.AppendLine("You are connected to a Power BI semantic model via XMLA. Generate **DAX** queries — NOT SQL.");
             sb.AppendLine("### DAX Query Rules:");
             sb.AppendLine("- Always start with `EVALUATE`.");
-            sb.AppendLine("- Use single-quoted table names: `'Sales'`.");
-            sb.AppendLine("- Use square-bracketed column names: `[Amount]`.");
+            sb.AppendLine("- Use single-quoted table names: `'<real_table>'` (substitute with an actual table name from the schema below).");
+            sb.AppendLine("- Use square-bracketed column names: `[<real_column>]` (substitute with an actual column name from the schema below).");
             sb.AppendLine("- Use `SUMMARIZECOLUMNS`, `FILTER`, `CALCULATETABLE`, `TOPN`, `ADDCOLUMNS`, `VALUES` etc.");
             sb.AppendLine("- Do NOT use SQL keywords (SELECT, FROM, WHERE, GROUP BY, JOIN).");
-            sb.AppendLine("- Example: `EVALUATE SUMMARIZECOLUMNS('Sales'[Region], \"TotalRevenue\", SUM('Sales'[Amount]))`");
+            sb.AppendLine("- Example shape (DO NOT copy 'Sales'/[Region]/[Amount] literally — substitute real names from the schema): `EVALUATE SUMMARIZECOLUMNS('<real_table>'[<category_column>], \"Total\", SUM('<real_table>'[<numeric_column>]))`");
         }
         else
         {
@@ -822,6 +828,11 @@ IMPORTANT RULES:
                 sb.AppendLine("- ALWAYS use fully schema-qualified table names exactly as listed below (e.g., [SalesLT].[Product], [dbo].[BuildVersion]).");
                 sb.AppendLine("- NEVER omit the schema prefix. Every table reference in FROM, JOIN, and subqueries MUST include the schema.");
                 sb.AppendLine("- ALWAYS wrap every column name in square brackets (e.g., [Database Version], [ModifiedDate]). This is required because column names may contain spaces or reserved words.");
+                sb.AppendLine("### Column Existence Rules (CRITICAL — violating these returns 'Invalid column name' errors):");
+                sb.AppendLine("- Use ONLY columns that appear under the exact table in the '### Database Schema:' section below. Treat that list as the COMPLETE column inventory for each table.");
+                sb.AppendLine("- DO NOT assume audit / timestamp / soft-delete columns exist unless they are explicitly listed. Columns like [CreatedAt], [UpdatedAt], [ModifiedDate], [DeletedAt], [IsActive], [IsDeleted], [Timestamp], [Date] are common in many systems but DO NOT exist here unless shown.");
+                sb.AppendLine("- Example: the table [dbo].[__EFMigrationsHistory] has ONLY [MigrationId] and [ProductVersion]. There is NO [CreatedAt], [AppliedOn], or [Date] column on it. A query like `MIN([CreatedAt]) FROM [dbo].[__EFMigrationsHistory]` is INVALID.");
+                sb.AppendLine("- If the user asks for data that requires a column not in the schema, respond in natural language explaining which columns ARE available for that table instead of fabricating a query.");
                 sb.AppendLine("### Aggregation / GROUP BY Rules (CRITICAL — violating these causes 'column is invalid in the select list' errors):");
                 sb.AppendLine("- If the SELECT list contains ANY aggregate function (COUNT, SUM, AVG, MIN, MAX), then EVERY other non-aggregated column in the SELECT list MUST appear in the GROUP BY clause.");
                 sb.AppendLine("- To return a standalone total/count from an UNRELATED table alongside row data, use a scalar subquery — NOT a CROSS JOIN with a single-row aggregate. ");
@@ -866,7 +877,21 @@ IMPORTANT RULES:
                         }
 
                         sb.AppendLine();
+                        // Emit a strict, machine-checked allow-list so the model cannot
+                        // hallucinate generic example tables (Sales / Orders / Customers / etc.).
+                        // QueryExecutionService.ValidateAllowedTables rejects any FROM/JOIN
+                        // referencing a table outside this set with a hard error.
+                        var allowedTableNames = grouped.Select(g => g.Key).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                        if (allowedTableNames.Count > 0)
+                        {
+                            sb.AppendLine("### STRICT TABLE WHITELIST (do not deviate)");
+                            sb.AppendLine("These are the ONLY tables that exist in this database: " + string.Join(", ", allowedTableNames) + ".");
+                            sb.AppendLine("⚠️ Tables named 'Sales', 'Orders', 'Customers', 'Products', 'Region', 'Revenue' DO NOT EXIST here unless they appear in the list above. NEVER use a table name that is not in the list — the query will be rejected with: \"Query references table 'X' which is not in the agent's allowed tables.\"");
+                            sb.AppendLine("If the user asks about a concept (e.g. \"sales trends\", \"top customers\") and no matching table exists, pick the closest table from the list above, or politely tell the user that data isn't in this datasource.");
+                            sb.AppendLine();
+                        }
                         sb.AppendLine("Always use exact table and column names from the schema above — including the schema prefix (e.g., dbo.TableName or SalesLT.TableName).");
+                        sb.AppendLine("If a column is NOT listed for a table above, it does not exist on that table — never reference it. Common audit columns ([CreatedAt], [UpdatedAt], [ModifiedDate], [IsActive], etc.) only exist when explicitly shown.");
                         sb.AppendLine(isPbi ? "Generate DAX queries (not SQL) for this Power BI model." : $"Generate SQL appropriate for {ds.Type}.");
                         return sb.ToString();
                     }
@@ -898,10 +923,25 @@ IMPORTANT RULES:
             return sb.ToString();
         }
 
-        var tableNames = string.IsNullOrEmpty(ds.SelectedTables)
-            ? new[] { "Customers", "Orders", "Products", "Sales", "Employees" }
-            : ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        // Fallback: real introspection is unavailable AND the customer hasn't picked
+        // tables. We deliberately emit NO column information here — earlier versions
+        // hand-rolled "(Id INT PK, Name NVARCHAR, Value DECIMAL, CreatedAt DATETIME)"
+        // for unknown tables, which the model then treated as ground truth and used
+        // those exact column names against real tables (e.g. __EFMigrationsHistory),
+        // producing "Invalid column name" errors at execution time.
+        if (string.IsNullOrEmpty(ds.SelectedTables))
+        {
+            sb.AppendLine("- Schema introspection is unavailable for this datasource and no tables have been selected.");
+            sb.AppendLine();
+            sb.AppendLine("**You do NOT have a column list. DO NOT generate SQL with guessed column names** (no [Id], [Name], [Value], [CreatedAt], etc.). Instead, ask the user a clarifying question or instruct them to (re)connect the datasource so the schema can be loaded.");
+            return sb.ToString();
+        }
 
+        var tableNames = ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+        // Demo / sample schemas — only used if the user explicitly selected one of
+        // these well-known sample table names. Anything else is reported as
+        // "columns unknown" rather than fabricated.
         var schemas = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Customers"] = "Customers (Id INT PK, Name NVARCHAR, Email NVARCHAR, Region NVARCHAR, CreatedAt DATETIME)",
@@ -914,17 +954,31 @@ IMPORTANT RULES:
             ["vw_TopProducts"] = "vw_TopProducts (ProductId INT, ProductName NVARCHAR, TotalSold INT, Revenue DECIMAL)"
         };
 
+        var anyUnknown = false;
         foreach (var table in tableNames)
         {
             var trimmed = table.Trim();
             if (schemas.TryGetValue(trimmed, out var desc))
+            {
                 sb.AppendLine($"- {desc}");
+            }
             else
-                sb.AppendLine($"- {trimmed} (Id INT PK, Name NVARCHAR, Value DECIMAL, CreatedAt DATETIME)");
+            {
+                // No invented columns. Tell the model the column list is unknown
+                // for this specific table so it cannot fabricate [Id]/[Name]/[CreatedAt].
+                sb.AppendLine($"- {trimmed} (columns unknown — schema introspection failed for this table)");
+                anyUnknown = true;
+            }
         }
 
         sb.AppendLine();
         sb.AppendLine("Always use exact table and column names from the schema above.");
+        if (anyUnknown)
+        {
+            sb.AppendLine("**For tables marked \"columns unknown\" above, you MUST NOT generate SQL that references specific columns.** Do not guess [Id], [Name], [Value], [CreatedAt], or any other column name. Either:");
+            sb.AppendLine("  1. Use only `SELECT TOP N * FROM [schema].[table]` so the user can inspect the real columns, OR");
+            sb.AppendLine("  2. Reply in plain language asking the user to (re)connect the datasource so the column list can be loaded.");
+        }
         sb.AppendLine(isPbi ? "Generate DAX queries (not SQL) for this Power BI model." : $"Generate SQL appropriate for {ds.Type}.");
         return sb.ToString();
     }

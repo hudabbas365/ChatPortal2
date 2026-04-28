@@ -68,25 +68,29 @@
         var container = document.getElementById('welcomeSuggestions');
         if (!container) return;
 
-        // Show default fallback chips immediately while fetching
-        var fallbackChips = [
-            { icon: 'bi-bar-chart', text: 'What are the top revenue regions?' },
-            { icon: 'bi-graph-up', text: 'Show me sales trends this quarter' },
-            { icon: 'bi-diagram-3', text: 'Compare performance by product' }
-        ];
-        renderChips(container, fallbackChips);
+        // Show a neutral loading state — no fake/canned suggestions that may not
+        // match the connected datasource. Real suggestions are tailored to the
+        // user's schema by /api/chat/suggestions.
+        container.innerHTML = '<div class="cac-suggestions-loading-msg" style="font-size:0.82rem;color:var(--cp-text-muted);padding:6px 0;">' +
+            '<i class="bi bi-hourglass-split me-1"></i>Loading suggestions tailored to your data\u2026</div>';
 
         try {
             var r = await fetch('/api/chat/suggestions?agentId=' + encodeURIComponent(agentGuid));
-            if (!r.ok) return;
+            if (!r.ok) throw new Error('HTTP ' + r.status);
             var suggestions = await r.json();
-            if (!suggestions || !suggestions.length) return;
+            if (!suggestions || !suggestions.length) {
+                container.innerHTML = '<div style="font-size:0.82rem;color:var(--cp-text-muted);padding:6px 0;">' +
+                    'No tailored suggestions yet — ask me anything about your data below.</div>';
+                return;
+            }
 
             _cachedSuggestions = suggestions;
             renderChips(container, suggestions);
             renderPersistentSuggestions(suggestions);
         } catch (e) {
-            // Keep fallback suggestions on error
+            // Don't show fake chips on error — be honest with the user.
+            container.innerHTML = '<div style="font-size:0.82rem;color:var(--cp-text-muted);padding:6px 0;">' +
+                '<i class="bi bi-info-circle me-1"></i>Suggestions unavailable. Type your own question below to get started.</div>';
         }
     }
 

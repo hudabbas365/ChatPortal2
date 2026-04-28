@@ -486,7 +486,7 @@
         const technical = /\b(query|queries|queried|records?|rows?|columns?|tables?|dbo\.|schema|SQL|DAX|database|fetched|join(ed)?|separately|unrelated|select\b|from\b|where\b|group by|order by)\b/i;
         const sentences = text.split(/(?<=[.!?])\s+/);
         const cleaned = sentences.filter(s => s && !technical.test(s)).join(' ').trim();
-        return cleaned || "Here's what your data shows.";
+        return cleaned;
     }
 
     // Pull a trailing <followups>["q1","q2","q3"]</followups> tag out of the AI response.
@@ -1339,7 +1339,8 @@
                         : (tagSuggestions.length ? tagSuggestions : DEFAULT_FOLLOWUPS);
                     renderFollowUpChips(aiBubble, chips);
                 } else {
-                    const safeText = sanitizeMarkdown(withoutTag) || "Here's what I found. Ask me to explain any part or dig deeper.";
+                    const cleaned = sanitizeMarkdown(withoutTag);
+                    const safeText = cleaned || "I couldn't produce a clear answer for that question. Please try rephrasing or ask something more specific about your data.";
                     aiBubble.textContent = safeText;
                     fullText = safeText;
                     CohereProgress.done(false);
@@ -1472,7 +1473,18 @@
 
             // The "AI Insights" subnav button (data-tab="chat") navigates back
             // to the workspace home panel so users can pick another artifact.
+            // Reset the chat session so the next time the user opens a chat
+            // they get a fresh conversation instead of the cached history of
+            // whatever chat was active when they clicked AI Insights.
             if (tab === 'chat') {
+                try { currentChatId = null; } catch { }
+                clearChatUI();
+                const histList = document.getElementById('chatHistoryList');
+                if (histList) {
+                    histList.querySelectorAll('.chat-history-item.active')
+                        .forEach(el => el.classList.remove('active'));
+                }
+
                 const WF = window.workspaceFlow;
                 if (WF) {
                     if (WF._wsData) {

@@ -94,7 +94,7 @@ $('#loginForm').on('submit', function(e) {
         success: function(r) {
             localStorage.setItem('cp_user', JSON.stringify(r.user));
             localStorage.setItem('cp_token', r.token);
-            window.location.href = r.redirectUrl || '/chat';
+            window.location.href = r.redirectUrl || '/chat?home=1';
         },
         error: function(e) {
             $('#authAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Login failed.');

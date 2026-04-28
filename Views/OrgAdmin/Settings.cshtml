@@ -626,6 +626,10 @@
                             </div>`;
                         break;
                     case 'CANCELLED':
+                        // Renew button: re-create a recurring subscription on the same tier.
+                        // The plan key is inlined at template-build time so the inline onclick
+                        // (which runs in global scope) doesn't reference the outer closure.
+                        const renewPlanKey = plan?.plan === 'Enterprise' ? 'Enterprise' : 'Professional';
                         el.innerHTML = `
                             <div class="alert alert-warning mb-0 py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
                                 <div>
@@ -636,10 +640,11 @@
                                     <div class="small">
                                         Your plan and all assigned licenses remain <strong>active until ${nextDate}</strong>.
                                         After this date, the subscription will be <strong>suspended</strong> and your organization will be downgraded to the Free plan.
+                                        You can renew at any time before then to keep your plan active without interruption.
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-primary" onclick="window.upgradeplan && window.upgradeplan(plan?.plan === 'Enterprise' ? 'Enterprise' : 'Professional')">
-                                    <i class="bi bi-arrow-repeat me-1"></i>Resubscribe
+                                <button class="btn btn-sm btn-success" onclick="window.upgradeplan && window.upgradeplan('${renewPlanKey}')" title="Restart auto-renewal on the ${renewPlanKey} plan">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Renew subscription
                                 </button>
                             </div>`;
                         break;
@@ -785,27 +790,70 @@
                                 const hasLicenses = totalPurchased > 0;
 
                                 if (hasLicenses) {
-                                    // Pay-per-license customer — they're active, just not on a recurring plan.
+                                    const proSubId = li.paypalProSubscriptionId || '';
+                                    const entSubId = li.paypalEntSubscriptionId || '';
+                                    const hasProSub = !!proSubId;
+                                    const hasEntSub = !!entSubId;
+                                    const hasAnyLicSub = hasProSub || hasEntSub;
+
+                                    // Build per-tier action buttons.
+                                    let tierButtons = '';
+                                    if (hasProSub) {
+                                        tierButtons += `<button class="btn btn-outline-danger" onclick="cancelSubscription('Professional')" title="Stop auto-renewal for Professional licenses at the end of the current billing cycle. No refund for the current period.">
+                                            <i class="bi bi-x-circle me-1"></i>Cancel Professional sub
+                                        </button>`;
+                                    }
+                                    if (hasEntSub) {
+                                        tierButtons += `<button class="btn btn-outline-danger" onclick="cancelSubscription('Enterprise')" title="Stop auto-renewal for Enterprise licenses at the end of the current billing cycle. No refund for the current period.">
+                                            <i class="bi bi-x-circle me-1"></i>Cancel Enterprise sub
+                                        </button>`;
+                                    }
+
+                                    // Legacy orgs: licenses purchased as one-time orders before
+                                    // the recurring-subscription migration. They have no PayPal
+                                    // subscription — offer a one-click conversion per tier (no
+                                    // need to buy any new licenses; existing seats are simply
+                                    // attached to a new monthly subscription).
+                                    let convertButtons = '';
+                                    if (!hasProSub && proPurchased > 0) {
+                                        convertButtons += `<button class="btn btn-success" onclick="convertLicensesToSub('Professional', ${proPurchased}, 25)" title="Switch your existing Professional licenses to a monthly subscription — no new license purchase required.">
+                                            <i class="bi bi-arrow-repeat me-1"></i>Switch ${proPurchased} Pro to monthly ($${(proPurchased * 25).toFixed(2)}/mo)
+                                        </button>`;
+                                    }
+                                    if (!hasEntSub && entPurchased > 0) {
+                                        convertButtons += `<button class="btn btn-success" onclick="convertLicensesToSub('Enterprise', ${entPurchased}, 45)" title="Switch your existing Enterprise licenses to a monthly subscription — no new license purchase required.">
+                                            <i class="bi bi-arrow-repeat me-1"></i>Switch ${entPurchased} Ent to monthly ($${(entPurchased * 45).toFixed(2)}/mo)
+                                        </button>`;
+                                    }
+                                    const convertCta = (hasAnyLicSub && !convertButtons) ? '' : (convertButtons ? `
+                                        <div class="alert alert-info mb-0 mt-2 py-2 small d-flex flex-wrap align-items-center gap-2">
+                                            <i class="bi bi-info-circle-fill me-1"></i>
+                                            <span class="flex-grow-1">Your existing licenses are one-time purchases. Switch them to monthly billing — no new licenses needed.</span>
+                                            <div class="btn-group btn-group-sm flex-wrap">${convertButtons}</div>
+                                        </div>` : '');
+
                                     el.innerHTML = `
                                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                                             <div>
-                                                <span class="badge bg-success mb-1">Active — License-based billing</span>
+                                                <span class="badge bg-success mb-1">${hasAnyLicSub ? 'Active — Per-user monthly subscription' : 'Active — Legacy one-time licenses'}</span>
                                                 <div class="small text-muted">
                                                     Your organization is on the <strong>${currentPlan}</strong> plan with
                                                     <strong>${proPurchased}</strong> Professional and
-                                                    <strong>${entPurchased}</strong> Enterprise license(s) purchased.
-                                                    Licenses are paid per user as a one-time purchase — no monthly subscription is required.
+                                                    <strong>${entPurchased}</strong> Enterprise license(s).
+                                                    Each license is billed <strong>monthly per user</strong> and
+                                                    renews automatically every 30 days. Cancelling stops auto-renewal —
+                                                    assigned users keep full access until the next payment date.
+                                                    <strong>No refund</strong> is issued for the current billing period.
                                                 </div>
                                             </div>
-                                            <div class="btn-group btn-group-sm">
+                                            <div class="btn-group btn-group-sm flex-wrap">
                                                 <button class="btn btn-outline-primary" onclick="document.getElementById('buyLicensesBtn')?.click()">
                                                     <i class="bi bi-cart-plus me-1"></i>Buy more licenses
                                                 </button>
-                                                <button class="btn btn-outline-secondary" onclick="window.upgradeplan && window.upgradeplan(currentPlan === 'Enterprise' ? 'Enterprise' : 'Professional')" title="Switch to a recurring monthly subscription instead of per-user license purchases">
-                                                    <i class="bi bi-arrow-repeat me-1"></i>Switch to monthly subscription
-                                                </button>
+                                                ${tierButtons}
                                             </div>
-                                        </div>`;
+                                        </div>
+                                        ${convertCta}`;
                                     return;
                                 }
 
@@ -985,11 +1033,19 @@
 
         try {
             if (_pendingPayment.type === 'subscription') {
-                // ── Recurring subscription flow ──
+                // ── Recurring subscription flow (plan-level OR per-tier license sub) ──
+                const isLicenseSub = _pendingPayment.purchaseType === 'license';
+                const isConversion = !!_pendingPayment.isConversion;
                 const createResp = await fetch('/api/paypal/create-subscription', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
+                    body: JSON.stringify({
+                        organizationId: orgId,
+                        planKey: _pendingPayment.planKey,
+                        purchaseType: isLicenseSub ? 'license' : 'plan',
+                        quantity: _pendingPayment.quantity || 1,
+                        isConversion: isConversion
+                    })
                 });
                 const createData = await createResp.json();
                 if (!createResp.ok || !createData.approveUrl) {
@@ -1007,21 +1063,23 @@
                     setTimeout(() => { clearInterval(interval); reject(new Error('Payment timeout.')); }, 600000);
                 });
 
-                // Activate the subscription. The server already polls PayPal a few
-                // times, but we also retry on this side because the user might close
-                // the popup the instant they click Subscribe — before PayPal has
-                // finished promoting APPROVAL_PENDING → ACTIVE.
                 let activateData = null;
                 let activateResp = null;
                 for (let attempt = 0; attempt < 4; attempt++) {
                     activateResp = await fetch('/api/paypal/activate-subscription', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ organizationId: orgId, planKey: _pendingPayment.planKey })
+                        body: JSON.stringify({
+                            organizationId: orgId,
+                            planKey: _pendingPayment.planKey,
+                            purchaseType: isLicenseSub ? 'license' : 'plan',
+                            tier: isLicenseSub ? _pendingPayment.planKey : null,
+                            subscriptionId: createData.subscriptionId,
+                            isConversion: isConversion
+                        })
                     });
                     activateData = await activateResp.json();
                     if (activateResp.ok && activateData.success) break;
-                    // Only retry while PayPal is still propagating the approval.
                     const stillPending = activateData && (activateData.status === 'APPROVAL_PENDING' || activateData.status === 'APPROVED');
                     if (!stillPending) break;
                     await new Promise(r => setTimeout(r, 2500));
@@ -1029,25 +1087,39 @@
 
                 if (activateResp.ok && activateData.success) {
                     processing.classList.add('d-none');
-                    // Close the payment modal and show an animated success dialog
                     bootstrap.Modal.getInstance(document.getElementById('paymentModal'))?.hide();
                     const nextDate = activateData.nextBilling
                         ? new Date(activateData.nextBilling).toLocaleDateString()
                         : '—';
                     if (typeof window.cpSuccessModal === 'function') {
-                        cpSuccessModal({
-                            title: 'Subscription activated',
-                            message: `Your ${_pendingPayment.planKey} plan is now active.`,
-                            details: [
-                                ['Plan',          _pendingPayment.planKey],
-                                ['Amount',        `$${_pendingPayment.amount.toFixed(2)} / month`],
-                                ['Auto-renews',   'Yes'],
-                                ['Next billing',  nextDate]
-                            ],
-                            primaryText: 'Great'
-                        });
+                        if (isLicenseSub) {
+                            cpSuccessModal({
+                                title: 'License subscription activated',
+                                message: `${_pendingPayment.quantity} ${_pendingPayment.planKey} license(s) added. You'll be charged monthly.`,
+                                details: [
+                                    ['Tier',          _pendingPayment.planKey],
+                                    ['Quantity',      `${_pendingPayment.quantity} license(s)`],
+                                    ['Amount',        `$${_pendingPayment.amount.toFixed(2)} / month`],
+                                    ['Auto-renews',   'Yes (monthly)'],
+                                    ['Next billing',  nextDate]
+                                ],
+                                primaryText: 'Done'
+                            });
+                        } else {
+                            cpSuccessModal({
+                                title: 'Subscription activated',
+                                message: `Your ${_pendingPayment.planKey} plan is now active.`,
+                                details: [
+                                    ['Plan',          _pendingPayment.planKey],
+                                    ['Amount',        `$${_pendingPayment.amount.toFixed(2)} / month`],
+                                    ['Auto-renews',   'Yes'],
+                                    ['Next billing',  nextDate]
+                                ],
+                                primaryText: 'Great'
+                            });
+                        }
                     } else if (typeof window.cpToast === 'function') {
-                        cpToast({ title: 'Subscription activated', message: `${_pendingPayment.planKey} plan is active.`, variant: 'success' });
+                        cpToast({ title: isLicenseSub ? 'Licenses subscribed' : 'Subscription activated', message: `${_pendingPayment.planKey} active.`, variant: 'success' });
                     }
                     loadBilling();
                     loadLicenseInfo();
@@ -1169,42 +1241,83 @@
         }
     };
 
-    window.cancelSubscription = async function() {
+    // Convert legacy one-time licenses to a per-user monthly subscription.
+    // No new licenses are purchased — the existing seat count is attached to a
+    // PayPal recurring subscription. The activation step on the backend skips
+    // the seat increment when isConversion=true.
+    window.convertLicensesToSub = function(tier, count, unitPrice) {
         if (!orgId) return;
+        if (!count || count <= 0) {
+            if (typeof window.cpToast === 'function') cpToast({ title: 'Nothing to convert', message: `You have no ${tier} licenses to switch.`, variant: 'warning' });
+            return;
+        }
+        const total = count * unitPrice;
+        const alertEl = document.getElementById('paymentAlert');
+        const processing = document.getElementById('paymentProcessing');
+        const actions = document.getElementById('paymentActions');
+        document.getElementById('paymentItemName').textContent = `Switch ${count} ${tier} license(s) to monthly subscription`;
+        document.getElementById('paymentItemDesc').textContent = `${count} × $${unitPrice.toFixed(2)}/user • Auto-renews monthly • No new licenses purchased`;
+        document.getElementById('paymentItemPrice').textContent = '$' + total.toFixed(2) + '/mo';
+        alertEl.classList.add('d-none');
+        processing.classList.add('d-none');
+        actions.classList.remove('d-none');
+        document.getElementById('paymentSuccess').classList.add('d-none');
+        _pendingPayment = {
+            type: 'subscription',
+            planKey: tier,
+            purchaseType: 'license',
+            quantity: count,
+            amount: total,
+            isConversion: true
+        };
+        new bootstrap.Modal(document.getElementById('paymentModal')).show();
+    };
+
+    window.cancelSubscription = async function(tier) {
+        if (!orgId) return;
+        const tierLabel = tier ? `${tier} license` : 'plan';
         // Pull the current next-billing date from the active status banner so the
         // confirmation dialog can show the exact date access will be suspended.
         let nextDateText = 'the end of the current billing period';
         try {
-            const statusResp = await fetch(`/api/paypal/subscription-status?organizationId=${orgId}`);
-            const statusData = await statusResp.json();
-            if (statusData?.nextBillingDate) {
-                nextDateText = new Date(statusData.nextBillingDate).toLocaleDateString();
+            if (!tier) {
+                const statusResp = await fetch(`/api/paypal/subscription-status?organizationId=${orgId}`);
+                const statusData = await statusResp.json();
+                if (statusData?.nextBillingDate) {
+                    nextDateText = new Date(statusData.nextBillingDate).toLocaleDateString();
+                }
             }
         } catch { /* fall back to generic phrasing */ }
 
+        const confirmMessage = tier
+            ? `Auto-renewal for your ${tier} license subscription will be turned off. Assigned users keep full access until the next billing date — no refund is issued for the current period.`
+            : `Auto-renewal will be turned off. Your plan and all assigned licenses will remain active until ${nextDateText}.`;
         const ok = typeof window.cpConfirm === 'function'
             ? await cpConfirm({
-                title: 'Cancel subscription at period end?',
-                message: `Auto-renewal will be turned off. Your plan and all assigned licenses will remain active until ${nextDateText}.`,
-                subtext: `After ${nextDateText} the subscription will be suspended and your organization will be downgraded to the Free plan. You can resubscribe at any time before then to keep your plan.`,
+                title: tier ? `Cancel ${tier} license subscription?` : 'Cancel subscription at period end?',
+                message: confirmMessage,
+                subtext: tier
+                    ? 'After the next billing date, the affected licenses are revoked. You can resubscribe any time.'
+                    : `After ${nextDateText} the subscription will be suspended and your organization will be downgraded to the Free plan.`,
                 icon: 'bi-x-circle',
                 variant: 'danger',
                 confirmText: 'Cancel at period end',
                 cancelText: 'Keep subscription'
               })
-            : confirm(`Cancel your monthly subscription? Auto-renewal will be turned off. Your plan and all licenses remain active until ${nextDateText}, and the subscription will be suspended after that date.`);
+            : confirm(`Cancel your ${tierLabel} subscription? ${confirmMessage}`);
         if (!ok) return;
         try {
             const resp = await fetch('/api/paypal/cancel-subscription', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ organizationId: orgId, reason: 'Customer requested cancellation' })
+                body: JSON.stringify({ organizationId: orgId, reason: 'Customer requested cancellation', tier: tier || null })
             });
             const data = await resp.json();
             if (resp.ok && data.success) {
                 if (typeof window.cpToast === 'function') cpToast({ title: 'Subscription cancelled', message: data.message, variant: 'success' });
                 else alert(data.message);
                 loadBilling();
+                loadLicenseInfo();
             } else {
                 if (typeof window.cpToast === 'function') cpToast({ title: 'Cancel failed', message: data.error || 'Failed to cancel subscription.', variant: 'danger' });
                 else alert(data.error || 'Failed to cancel subscription.');
@@ -1517,7 +1630,9 @@
             if (d.error) {
                 alertEl.className = 'alert alert-danger'; alertEl.textContent = d.error; alertEl.classList.remove('d-none');
             } else {
-                const msg = d.credentialsSent ? 'User created and credentials sent by email.' : 'User created. (Email not sent — SMTP not configured.)';
+                const msg = d.credentialsSent
+                    ? 'User created. Login details were emailed to them.'
+                    : 'User created successfully. Email delivery is not enabled, so please share the login details with the user manually (or configure SMTP under Settings to send emails automatically).';
                 bootstrap.Modal.getInstance(document.getElementById('createUserModal')).hide();
                 loadUsers();
                 setTimeout(() => alert(msg), 300);
@@ -1618,7 +1733,26 @@
         const price = type === 'Enterprise' ? 45.00 : 25.00;
         const total = count * price;
         bootstrap.Modal.getInstance(document.getElementById('buyLicensesModal'))?.hide();
-        openPayPalPayment('license', total, `${count} ${type} License(s)`, { quantity: count, planKey: type });
+
+        // License purchases are now monthly recurring PayPal subscriptions
+        // (quantity = number of seats), so reuse the subscription payment flow.
+        document.getElementById('paymentItemName').textContent = `${count} ${type} License(s) — Monthly Subscription`;
+        document.getElementById('paymentItemDesc').textContent = `$${price.toFixed(2)}/license/month • Auto-renews monthly`;
+        document.getElementById('paymentItemPrice').textContent = '$' + total.toFixed(2) + '/mo';
+        document.getElementById('paymentAlert').classList.add('d-none');
+        document.getElementById('paymentProcessing').classList.add('d-none');
+        document.getElementById('paymentActions').classList.remove('d-none');
+        document.getElementById('paymentSuccess').classList.add('d-none');
+        _pendingPayment = {
+            type: 'subscription',
+            planKey: type,
+            amount: total,
+            quantity: count,
+            purchaseType: 'license',
+            tokenAmount: 0,
+            description: `${count} ${type} License(s) Monthly Subscription`
+        };
+        new bootstrap.Modal(document.getElementById('paymentModal')).show();
     });
 
     // Buy Token Pack Modal

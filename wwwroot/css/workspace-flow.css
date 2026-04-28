@@ -875,3 +875,22 @@
     .wf-setup-field textarea,
     .wf-setup-field select { font-size: 16px; } /* prevents iOS zoom on focus */
 }
+
+/* AI Insights cascade-delete button */
+.wf-flow-node { position: relative; }
+.wf-agent-delete-btn {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px; padding: 0;
+    border: none; background: transparent;
+    color: var(--cp-text-muted, #6b7280);
+    border-radius: 4px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .15s, background .15s, color .15s;
+    font-size: .82rem; line-height: 1;
+}
+.wf-flow-node:hover .wf-agent-delete-btn,
+.wf-artifact-list-item:hover .wf-agent-delete-btn { opacity: 1; }
+.wf-agent-delete-btn:hover { background: rgba(220, 53, 69, .12); color: #dc3545; }
+.wf-artifact-list-item .wf-agent-delete-btn { position: static; opacity: .55; margin-left: 4px; }
+.wf-artifact-list-item:hover .wf-agent-delete-btn { opacity: 1; }
+

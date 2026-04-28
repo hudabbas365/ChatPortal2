@@ -13,6 +13,9 @@ public class PaymentRecord
     public string Status { get; set; } = ""; // "succeeded", "failed", "pending", "refunded"
     public string? PayPalOrderId { get; set; }
     public string? PayPalSubscriptionId { get; set; }
+    // Webhook idempotency — PayPal event.id, unique filtered index in AppDbContext.
+    // Used to dedupe replayed/duplicated webhook deliveries (B5).
+    public string? PayPalEventId { get; set; }
     public string? Description { get; set; }
     public string? ErrorMessage { get; set; }
     public string? PlanKey { get; set; }

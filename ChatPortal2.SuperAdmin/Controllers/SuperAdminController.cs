@@ -57,7 +57,30 @@ public class SuperAdminController : Controller
         ViewBag.Wau = stats.Wau;
         ViewBag.Mau = stats.Mau;
 
+        // Recent organizations list — surfaces the OrganizationGuid on the dashboard so
+        // SuperAdmin can copy it without having to navigate into the Organizations page.
+        ViewBag.RecentOrganizations = await _db.Organizations
+            .OrderByDescending(o => o.CreatedAt)
+            .ThenBy(o => o.Id)
+            .Select(o => new OrgGuidRow
+            {
+                Id = o.Id,
+                Name = o.Name,
+                OrganizationGuid = o.OrganizationGuid,
+                CreatedAt = o.CreatedAt
+            })
+            .Take(10)
+            .ToListAsync();
+
         return View("~/Views/Admin/Index.cshtml");
+    }
+
+    public class OrgGuidRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public Guid OrganizationGuid { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
     [HttpGet("/api/superadmin/dashboard-stats")]
@@ -220,6 +243,162 @@ public class SuperAdminController : Controller
             plan = org.Plan.ToString(),
             purchasedLicenses = org.PurchasedLicenses
         });
+    }
+
+    /// <summary>
+    /// Permanently deletes an organization and all of its related data:
+    /// users, subscriptions, workspaces, agents, datasources, dashboards,
+    /// reports, chat messages, pinned results, token usage, payment records,
+    /// activity logs, notifications, support tickets, etc.
+    /// Many relationships already cascade via the model configuration; this
+    /// method explicitly cleans up the rest inside a single transaction.
+    /// </summary>
+    [HttpDelete("/api/admin/super/orgs/{id}")]
+    public async Task<IActionResult> DeleteOrganization(int id, [FromQuery] string? confirm)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+
+        // Require an explicit name match to guard against accidental deletes.
+        if (string.IsNullOrWhiteSpace(confirm) ||
+            !string.Equals(confirm.Trim(), org.Name, StringComparison.Ordinal))
+        {
+            return BadRequest(new { error = "Confirmation text does not match the organization name." });
+        }
+
+        var actorId = GetCurrentUserId();
+        var orgName = org.Name;
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // ── Collect dependent IDs up-front
+            var userIds = await _db.Users
+                .Where(u => u.OrganizationId == id)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            var workspaceIds = await _db.Workspaces
+                .Where(w => w.OrganizationId == id)
+                .Select(w => w.Id)
+                .ToListAsync();
+
+            var reportIds = workspaceIds.Count > 0
+                ? await _db.Reports.Where(r => workspaceIds.Contains(r.WorkspaceId)).Select(r => r.Id).ToListAsync()
+                : new List<int>();
+
+            // ── Tables that don't cascade — clean them explicitly.
+            // ActivityLog (Org or User)
+            await _db.ActivityLogs
+                .Where(l => l.OrganizationId == id || (l.UserId != null && userIds.Contains(l.UserId)))
+                .ExecuteDeleteAsync();
+
+            // SupportTickets
+            await _db.SupportTickets
+                .Where(t => t.OrganizationId == id
+                            || (t.UserId != null && userIds.Contains(t.UserId))
+                            || (t.AssignedToUserId != null && userIds.Contains(t.AssignedToUserId)))
+                .ExecuteDeleteAsync();
+
+            // Notifications + UserNotifications
+            await _db.UserNotifications
+                .Where(n => userIds.Contains(n.UserId))
+                .ExecuteDeleteAsync();
+
+            await _db.Notifications
+                .Where(n => n.OrganizationId == id
+                            || (n.TargetUserId != null && userIds.Contains(n.TargetUserId)))
+                .ExecuteDeleteAsync();
+
+            // ChatMessages (per workspace and per user)
+            if (workspaceIds.Count > 0)
+            {
+                await _db.ChatMessages
+                    .Where(m => workspaceIds.Contains(m.WorkspaceId))
+                    .ExecuteDeleteAsync();
+            }
+            if (userIds.Count > 0)
+            {
+                await _db.ChatMessages
+                    .Where(m => userIds.Contains(m.UserId))
+                    .ExecuteDeleteAsync();
+            }
+
+            // PinnedResults (per workspace and per user)
+            if (workspaceIds.Count > 0)
+            {
+                await _db.PinnedResults
+                    .Where(p => workspaceIds.Contains(p.WorkspaceId))
+                    .ExecuteDeleteAsync();
+            }
+            if (userIds.Count > 0)
+            {
+                await _db.PinnedResults
+                    .Where(p => userIds.Contains(p.UserId))
+                    .ExecuteDeleteAsync();
+            }
+
+            // SharedReports for the org's reports (cascade also handles this, but
+            // we delete here defensively before report rows go away).
+            if (reportIds.Count > 0)
+            {
+                await _db.SharedReports
+                    .Where(sr => reportIds.Contains(sr.ReportId))
+                    .ExecuteDeleteAsync();
+                await _db.ReportRevisions
+                    .Where(rr => reportIds.Contains(rr.ReportId))
+                    .ExecuteDeleteAsync();
+            }
+
+            // Identity-related: detach users from org so cascade-on-delete on the
+            // org row doesn't try to SetNull-then-Cascade across competing paths,
+            // and so we can hard-delete the user rows ourselves.
+            if (userIds.Count > 0)
+            {
+                // SubscriptionPlans cascade with User, but delete explicitly to
+                // avoid SQL Server multiple-cascade-path errors on some schemas.
+                await _db.SubscriptionPlans
+                    .Where(s => userIds.Contains(s.UserId))
+                    .ExecuteDeleteAsync();
+
+                await _db.WorkspaceUsers
+                    .Where(wu => userIds.Contains(wu.UserId))
+                    .ExecuteDeleteAsync();
+
+                // Identity user rows
+                await _db.Users
+                    .Where(u => userIds.Contains(u.Id))
+                    .ExecuteDeleteAsync();
+            }
+
+            // Finally remove the organization itself. Remaining dependents
+            // (Workspaces, Agents, Datasources, TokenUsages, PaymentRecords,
+            // PlanChangeLogs, Dashboards/Reports under workspaces, etc.) are
+            // wired with cascade in OnModelCreating and will be removed by SQL.
+            _db.Organizations.Remove(org);
+            await _db.SaveChangesAsync();
+
+            // Audit trail (after the org row is gone — log carries no FK on Org).
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "OrganizationDeleted",
+                Description = $"SuperAdmin deleted organization '{orgName}' (Id={id}) and all related data.",
+                UserId = actorId ?? "",
+                OrganizationId = null,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+
+            await tx.CommitAsync();
+            return Ok(new { success = true, deletedOrgId = id, name = orgName });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, new { error = "Failed to delete organization.", detail = ex.Message });
+        }
     }
 
     [HttpGet("/superadmin/activity")]

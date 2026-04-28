@@ -2254,6 +2254,20 @@ body.dashboard-body {
     cursor: grabbing;
     transform: none;
 }
+/* Cross-filter dim effect: when a chart drives a cross-filter, related
+   charts re-fetch their filtered data and unrelated/source charts get a
+   subtle visual treatment. The source chart stays full-opacity (focus);
+   every OTHER card dims to 50% so the user's eye lands on the active
+   filter context (Power BI parity). */
+.chart-card.cf-dimmed {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
+.chart-card.cf-source {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--cp-primary), var(--chart-card-shadow);
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
+}
 .chart-card-header {
     display: flex;
     align-items: center;
@@ -2266,9 +2280,20 @@ body.dashboard-body {
 }
 .chart-title {
     flex: 1;
-    white-space: nowrap;
+    min-width: 0;
+    /* Allow the title to wrap to 2 lines instead of being truncated to a
+       single ellipsis ("Distinct ...") even when the card has plenty of
+       horizontal space. Falls back to standard overflow on older browsers. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-clamp: 2;
+    white-space: normal;
     overflow: hidden;
     text-overflow: ellipsis;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
     color: var(--cp-text);
     cursor: default;
     border-radius: 4px;
@@ -3831,6 +3856,38 @@ body.embed-body {
     background: #f1f5f9;
     margin: 4px 0;
 }
+.cp-user-menu-org-guid {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 4px;
+}
+.cp-org-guid-code {
+    font-size: 0.72rem;
+    color: #334155;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    word-break: break-all;
+    max-width: 170px;
+    display: inline-block;
+}
+.cp-guid-copy-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    transition: color 0.12s ease;
+}
+.cp-guid-copy-btn:hover {
+    color: var(--cp-primary, #5b9bd5);
+}
 @media (max-width: 576px) {
     .cp-user-menu-welcome { max-width: 110px; }
     .cp-user-menu-dropdown { right: -8px; min-width: 220px; }
@@ -4025,6 +4082,37 @@ body.embed-body {
     font-size: 0.78rem;
     padding: 0 4px;
     text-decoration: none;
+}
+/* Keep the Send/Cancel buttons at their natural width so the label
+   "Send to AI" never wraps letter-by-letter when chips share the row. */
+.dr-analyze-row .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+/* Suggestion chips always wrap onto their own row beneath the input,
+   so they cannot squeeze the input + send button when both are visible. */
+.dr-suggest-chips {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.dr-suggest-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--cp-primary-light, rgba(91,155,213,0.10));
+    border: 1px solid var(--cp-border, rgba(91,155,213,0.25));
+    color: var(--cp-primary, #2563eb);
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s ease;
+}
+.dr-suggest-chip:hover {
+    background: var(--cp-primary, #2563eb);
+    color: #fff;
 }
 
 /* ============================================================

@@ -15,6 +15,11 @@
     <link rel="stylesheet" href="~/css/workspace-roles.css" />
     <link rel="stylesheet" href="~/css/workspace-settings.css" />
     <link rel="stylesheet" href="~/css/cp-about.css" />
+    <!-- Per-datasource-type stylesheets — scoped via [data-ds-type="..."] -->
+    <link rel="stylesheet" href="~/css/datasources/datasource-sql.css" />
+    <link rel="stylesheet" href="~/css/datasources/datasource-powerbi.css" />
+    <link rel="stylesheet" href="~/css/datasources/datasource-restapi.css" />
+    <link rel="stylesheet" href="~/css/datasources/datasource-fileurl.css" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='18' width='6' height='12' rx='1' fill='%236366f1'/%3E%3Crect x='11' y='10' width='6' height='20' rx='1' fill='%236366f1'/%3E%3Crect x='20' y='4' width='6' height='26' rx='1' fill='%236366f1' opacity='0.8'/%3E%3C/svg%3E">
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-M7E9RXEQL5"></script>
@@ -73,6 +78,12 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="~/js/cp-confirm.js" asp-append-version="true"></script>
     <script src="~/js/cp-about.js" asp-append-version="true"></script>
+    <!-- Per-datasource-type front-end modules. Must load before workspaceFlow.js / workspaceWizard.js so the registry is available when those scripts initialize. -->
+    <script src="~/js/datasources/datasource-registry.js" asp-append-version="true"></script>
+    <script src="~/js/datasources/datasource-sql.js" asp-append-version="true"></script>
+    <script src="~/js/datasources/datasource-powerbi.js" asp-append-version="true"></script>
+    <script src="~/js/datasources/datasource-restapi.js" asp-append-version="true"></script>
+    <script src="~/js/datasources/datasource-fileurl.js" asp-append-version="true"></script>
     <script src="~/js/workspaceFlow.js" asp-append-version="true"></script>
     <script src="~/js/workspaceWizard.js" asp-append-version="true"></script>
     <script src="~/js/workspaceEnhanced.js" asp-append-version="true"></script>

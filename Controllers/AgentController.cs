@@ -141,8 +141,6 @@ public class AgentController : ControllerBase
             OrganizationId = orgId
         };
         _db.Agents.Add(agent);
-        await _db.SaveChangesAsync();
-
         _db.ActivityLogs.Add(new ActivityLog
         {
             Action = "agent_created",
@@ -150,6 +148,7 @@ public class AgentController : ControllerBase
             UserId = userId,
             OrganizationId = orgId
         });
+        // Single round-trip — EF will INSERT the agent first (FK-safe) then the log.
         await _db.SaveChangesAsync();
 
         return Ok(new { agent.Id, agent.Guid, agent.Name, agent.SystemPrompt, agent.DatasourceId, agent.WorkspaceId, agent.OrganizationId });
@@ -224,6 +223,124 @@ public class AgentController : ControllerBase
         _db.Agents.Remove(agent);
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Cascade-delete an entire "AI Insights" instance:
+    ///   • all reports tied to this agent (and their SharedReports)
+    ///   • dashboards owned by this agent
+    ///   • the agent itself
+    ///   • the bound datasource if no other agent in the workspace references it
+    /// Returns a summary the client uses to clean up local state (e.g. cp_last_chat).
+    /// </summary>
+    [HttpDelete("{guid}/cascade")]
+    [RequireActiveSubscription]
+    public async Task<IActionResult> DeleteCascade(string guid)
+    {
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Guid == guid);
+        if (agent == null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var appUser = await _db.Users.FindAsync(userId);
+        var callerOrgId = appUser?.OrganizationId ?? 0;
+
+        if (appUser?.Role == "SuperAdmin")
+            return StatusCode(403, new { error = "SuperAdmin does not have access to the AI Insights portal." });
+
+        if (callerOrgId > 0 && agent.OrganizationId != callerOrgId)
+            return StatusCode(403, new { error = "You do not have access to this agent." });
+
+        var wsId = agent.WorkspaceId ?? 0;
+        if (wsId > 0 && !await _permissions.CanDeleteAsync(wsId, userId))
+            return StatusCode(403, new { error = "Only Admins can delete AI Insights." });
+
+        var datasourceId = agent.DatasourceId;
+        var workspaceGuid = wsId > 0
+            ? await _db.Workspaces.Where(w => w.Id == wsId).Select(w => w.Guid).FirstOrDefaultAsync()
+            : null;
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // 1. Reports owned by this agent → drop their SharedReports + the reports themselves.
+            var reports = await _db.Reports.Where(r => r.AgentId == agent.Id).ToListAsync();
+            var reportIds = reports.Select(r => r.Id).ToList();
+            var deletedReportCount = reports.Count;
+            if (reportIds.Count > 0)
+            {
+                var shared = await _db.SharedReports.Where(sr => reportIds.Contains(sr.ReportId)).ToListAsync();
+                if (shared.Count > 0) _db.SharedReports.RemoveRange(shared);
+                _db.Reports.RemoveRange(reports);
+            }
+
+            // 2. Dashboards owned by this agent. Null out any remaining reports that pointed
+            //    at one of these dashboards (e.g. a report from another agent re-using it)
+            //    so the FK doesn't trip.
+            var dashboards = await _db.Dashboards.Where(d => d.AgentId == agent.Id).ToListAsync();
+            if (dashboards.Count > 0)
+            {
+                var dashIds = dashboards.Select(d => d.Id).ToList();
+                var orphanReports = await _db.Reports
+                    .Where(r => r.DashboardId != null && dashIds.Contains(r.DashboardId.Value))
+                    .ToListAsync();
+                foreach (var r in orphanReports) r.DashboardId = null;
+                _db.Dashboards.RemoveRange(dashboards);
+            }
+
+            // 3. The agent itself.
+            _db.Agents.Remove(agent);
+
+            // 4. Datasource — only delete if no other agent references it.
+            //    We stage the changes and flush them together with the agent + log
+            //    in a single SaveChangesAsync round-trip below.
+            bool datasourceDeleted = false;
+            if (datasourceId.HasValue)
+            {
+                var stillUsed = await _db.Agents
+                    .AnyAsync(a => a.Id != agent.Id && a.DatasourceId == datasourceId.Value);
+                if (!stillUsed)
+                {
+                    var ds = await _db.Datasources.FindAsync(datasourceId.Value);
+                    if (ds != null)
+                    {
+                        var dsReports = await _db.Reports
+                            .Where(r => r.DatasourceId == datasourceId.Value)
+                            .ToListAsync();
+                        foreach (var r in dsReports) r.DatasourceId = null;
+                        _db.Datasources.Remove(ds);
+                        datasourceDeleted = true;
+                    }
+                }
+            }
+
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "agent_cascade_deleted",
+                Description = $"AI Insights '{agent.Name}' removed (reports: {deletedReportCount}, datasource removed: {datasourceDeleted}).",
+                UserId = userId,
+                OrganizationId = agent.OrganizationId
+            });
+
+            // Single round-trip for: report + shared-report deletes, dashboard deletes,
+            // dashboard-id null-outs, agent delete, datasource delete + report null-outs,
+            // and the activity log.
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                success = true,
+                agentGuid = guid,
+                workspaceGuid,
+                deletedReportCount,
+                datasourceDeleted
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, new { error = "Failed to delete AI Insights instance." });
+        }
     }
 
     [HttpPost("generate-prompt")]

@@ -17,6 +17,11 @@ public class Report
     public string? CanvasJson { get; set; } // Snapshot of canvas state for this report
     public string Status { get; set; } = "Draft"; // Draft, Published
     public string? ShareToken { get; set; } // Token for share-link viewer access
+    // Monotonic counter used to revoke outstanding signed embed tokens. Each
+    // outstanding embed JWT carries a `tv` claim equal to the value at mint
+    // time; bumping this column instantly invalidates every previously-issued
+    // token without rotating the global signing key.
+    public int EmbedTokenVersion { get; set; } = 0;
     public string? CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

@@ -45,7 +45,7 @@ public class SuperAdminAuthController : Controller
         Response.Cookies.Append("sa_jwt", token, new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = Request.IsHttps, // don't mark Secure on plain-HTTP local IIS testing
             SameSite = SameSiteMode.Strict,
             Expires = DateTime.UtcNow.AddHours(8)
         });

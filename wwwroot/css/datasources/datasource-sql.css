@@ -1,0 +1,20 @@
+/* ============================================================
+   SQL Server datasource — per-type styles.
+   Scoped via [data-ds-type="sql"] so additions stay isolated
+   from Power BI / REST API / File URL.
+   ============================================================ */
+
+[data-ds-type="sql"] {
+    /* Accent stripe used as the visual cue for SQL Server connection forms. */
+    --ds-accent: #0078d4;
+}
+
+[data-ds-type="sql"].wfe-ds-block,
+[data-ds-type="sql"] .wfe-ds-block {
+    border-left: 3px solid var(--ds-accent);
+    padding-left: 10px;
+}
+
+/* Add SQL-Server-specific tweaks (icon overrides, badge colors, helper text
+   styling, etc.) here. Keeping them out of site.css avoids regressions in
+   the shared wizard layout. */

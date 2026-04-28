@@ -496,7 +496,7 @@
                                             </div>
                                             <div id="pp-conditions"></div>
                                         </div>
-                                        <div class="prop-subgroup bg-alt">
+                                        <div class="prop-subgroup bg-alt" style="display:none">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
                                                 <label class="form-label mb-0">SQL Query<i class="bi bi-info-circle prop-help-icon" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Optional custom SELECT that overrides the field pickers. Use AI Generate to draft it, then Use this SQL to apply. Avoid ORDER BY on columns you haven't selected." tabindex="0"></i></label>
                                                 <div class="d-flex gap-1">
@@ -831,6 +831,8 @@
     window.currentDatasourceId = null;
     window.currentDatasourceType = null;
     window.currentAgentGuid = null;
+    window.currentWorkspaceGuid = null;
+    window.currentOrganizationGuid = null;
     window._realTableNames = null;
     window._dashboardWsData = null;
     window._currentReportGuid = null;
@@ -850,6 +852,14 @@
     @if (ViewBag.AgentGuid != null)
     {
         <text>window.currentAgentGuid = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.AgentGuid));</text>
+    }
+    @if (ViewBag.WorkspaceGuid != null)
+    {
+        <text>window.currentWorkspaceGuid = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.WorkspaceGuid));</text>
+    }
+    @if (ViewBag.OrganizationGuid != null)
+    {
+        <text>window.currentOrganizationGuid = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(ViewBag.OrganizationGuid));</text>
     }
 
     document.addEventListener('DOMContentLoaded', async function() {
@@ -1208,10 +1218,12 @@
                     wsName.textContent = wsGuid;
                     wsTag.style.display = '';
                     wsTag.title = 'Back to workspace';
+                            wsTag.style.cursor = 'pointer';
                             wsTag.addEventListener('click', () => {
-                                const returnUrl = '/chat?workspace=' + encodeURIComponent(wsGuid);
-                                const agentP = new URLSearchParams(window.location.search).get('agent');
-                                window.location.href = agentP ? returnUrl + '&agent=' + encodeURIComponent(agentP) : returnUrl;
+                                // Workspace landing page lives at root ('/') and auto-selects via
+                                // ?workspace=<guid>; do NOT include ?agent= (that would route to the
+                                // agent chat instead of the workspace overview).
+                                window.location.href = '/?workspace=' + encodeURIComponent(wsGuid);
                             });
                     fetch('/api/workspaces/' + encodeURIComponent(wsGuid))
                         .then(r => r.ok ? r.json() : null)

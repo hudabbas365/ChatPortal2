@@ -13,9 +13,21 @@ public interface IPayPalService
     Task<PayPalCaptureResult> CaptureOrderAsync(string orderId);
     Task<PayPalProductResult> CreateProductAsync(string name, string description);
     Task<PayPalPlanResult> CreatePlanAsync(string productId, string planName, decimal monthlyPrice, string currency = "USD");
-    Task<PayPalSubscriptionResult> CreateSubscriptionAsync(string planId, string returnUrl, string cancelUrl);
+    Task<PayPalSubscriptionResult> CreateSubscriptionAsync(string planId, string returnUrl, string cancelUrl, int quantity = 1);
     Task<PayPalSubscriptionDetails?> GetSubscriptionDetailsAsync(string subscriptionId);
+
+    // Same as GetSubscriptionDetailsAsync but also reports whether PayPal
+    // returned 404 (subscription unknown — typically a stale id from a wiped
+    // sandbox / different client). Lets callers self-heal a stuck row instead
+    // of treating the null as a transient error and looping forever.
+    Task<(PayPalSubscriptionDetails? Details, bool NotFound)> TryGetSubscriptionDetailsAsync(string subscriptionId);
     Task<bool> CancelSubscriptionAsync(string subscriptionId, string reason);
+
+    // Richer cancel that also reports PayPal's HTTP status, the PayPal error
+    // name (e.g. SUBSCRIPTION_STATUS_INVALID, RESOURCE_NOT_FOUND) and the raw
+    // body. Lets callers distinguish "already cancelled" / "stale id" from a
+    // real PayPal failure and self-heal accordingly.
+    Task<PayPalCancelResult> TryCancelSubscriptionAsync(string subscriptionId, string reason);
 
     // Webhook signature verification (PayPal v1/notifications/verify-webhook-signature)
     Task<bool> VerifyWebhookSignatureAsync(IHeaderDictionary headers, string rawBody);
@@ -136,12 +148,45 @@ public class PayPalService : IPayPalService
         var doc = JsonDocument.Parse(json);
         var status = doc.RootElement.GetProperty("status").GetString() ?? "";
 
+        // Pull the captured amount & currency from purchase_units[0].payments.captures[0].amount
+        // so callers can verify the buyer paid the expected price (B4). Best-effort —
+        // missing fields fall through to 0/"" and the caller treats that as a mismatch.
+        decimal capturedAmount = 0;
+        string capturedCurrency = "";
+        try
+        {
+            if (doc.RootElement.TryGetProperty("purchase_units", out var pu) &&
+                pu.ValueKind == JsonValueKind.Array && pu.GetArrayLength() > 0)
+            {
+                var unit = pu[0];
+                if (unit.TryGetProperty("payments", out var payments) &&
+                    payments.TryGetProperty("captures", out var captures) &&
+                    captures.ValueKind == JsonValueKind.Array && captures.GetArrayLength() > 0)
+                {
+                    var cap = captures[0];
+                    if (cap.TryGetProperty("amount", out var amt))
+                    {
+                        if (amt.TryGetProperty("value", out var val) &&
+                            decimal.TryParse(val.GetString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d))
+                        {
+                            capturedAmount = d;
+                        }
+                        if (amt.TryGetProperty("currency_code", out var cc))
+                            capturedCurrency = cc.GetString() ?? "";
+                    }
+                }
+            }
+        }
+        catch { /* best-effort */ }
+
         return new PayPalCaptureResult
         {
             Success = status == "COMPLETED",
             Status = status,
             OrderId = orderId,
-            Error = status != "COMPLETED" ? $"Order status: {status}" : null
+            Error = status != "COMPLETED" ? $"Order status: {status}" : null,
+            CapturedAmount = capturedAmount,
+            CapturedCurrency = capturedCurrency
         };
     }
 
@@ -216,12 +261,14 @@ public class PayPalService : IPayPalService
         };
     }
 
-    public async Task<PayPalSubscriptionResult> CreateSubscriptionAsync(string planId, string returnUrl, string cancelUrl)
+    public async Task<PayPalSubscriptionResult> CreateSubscriptionAsync(string planId, string returnUrl, string cancelUrl, int quantity = 1)
     {
         var token = await GetAccessTokenAsync();
+        var qty = Math.Max(1, quantity);
         var body = new
         {
             plan_id = planId,
+            quantity = qty.ToString(),
             application_context = new
             {
                 brand_name = "AIInsights",
@@ -262,13 +309,20 @@ public class PayPalService : IPayPalService
 
     public async Task<PayPalSubscriptionDetails?> GetSubscriptionDetailsAsync(string subscriptionId)
     {
+        var (details, _) = await TryGetSubscriptionDetailsAsync(subscriptionId);
+        return details;
+    }
+
+    public async Task<(PayPalSubscriptionDetails? Details, bool NotFound)> TryGetSubscriptionDetailsAsync(string subscriptionId)
+    {
         var token = await GetAccessTokenAsync();
         var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/v1/billing/subscriptions/{subscriptionId}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var response = await _http.SendAsync(request);
         var json = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode) return null;
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return (null, true);
+        if (!response.IsSuccessStatusCode) return (null, false);
 
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -281,17 +335,29 @@ public class PayPalService : IPayPalService
                 nextBilling = dt;
         }
 
-        return new PayPalSubscriptionDetails
+        int qty = 1;
+        if (root.TryGetProperty("quantity", out var qEl) && int.TryParse(qEl.GetString(), out var qv) && qv > 0)
+            qty = qv;
+
+        var details = new PayPalSubscriptionDetails
         {
             SubscriptionId = root.GetProperty("id").GetString() ?? "",
             Status = root.GetProperty("status").GetString() ?? "",
             PlanId = root.GetProperty("plan_id").GetString() ?? "",
             StartTime = root.TryGetProperty("start_time", out var st) ? st.GetString() : null,
-            NextBillingTime = nextBilling
+            NextBillingTime = nextBilling,
+            Quantity = qty
         };
+        return (details, false);
     }
 
     public async Task<bool> CancelSubscriptionAsync(string subscriptionId, string reason)
+    {
+        var result = await TryCancelSubscriptionAsync(subscriptionId, reason);
+        return result.Success;
+    }
+
+    public async Task<PayPalCancelResult> TryCancelSubscriptionAsync(string subscriptionId, string reason)
     {
         var token = await GetAccessTokenAsync();
         var body = new { reason };
@@ -300,7 +366,47 @@ public class PayPalService : IPayPalService
         request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
         var response = await _http.SendAsync(request);
-        return response.IsSuccessStatusCode || (int)response.StatusCode == 204;
+        var status = (int)response.StatusCode;
+
+        // Success — PayPal returns 204 No Content.
+        if (response.IsSuccessStatusCode || status == 204)
+            return new PayPalCancelResult { Success = true, StatusCode = status };
+
+        var raw = "";
+        try { raw = await response.Content.ReadAsStringAsync(); } catch { }
+
+        var errName = "";
+        var errMessage = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
+            if (doc.RootElement.TryGetProperty("name", out var n)) errName = n.GetString() ?? "";
+            if (doc.RootElement.TryGetProperty("message", out var m)) errMessage = m.GetString() ?? "";
+            // PayPal sometimes nests detail[].issue (e.g. SUBSCRIPTION_STATUS_INVALID).
+            if (string.IsNullOrEmpty(errName) &&
+                doc.RootElement.TryGetProperty("details", out var details) &&
+                details.ValueKind == JsonValueKind.Array && details.GetArrayLength() > 0)
+            {
+                var first = details[0];
+                if (first.TryGetProperty("issue", out var iss)) errName = iss.GetString() ?? "";
+                if (string.IsNullOrEmpty(errMessage) && first.TryGetProperty("description", out var desc))
+                    errMessage = desc.GetString() ?? "";
+            }
+        }
+        catch { /* non-JSON body — leave fields empty */ }
+
+        return new PayPalCancelResult
+        {
+            Success = false,
+            StatusCode = status,
+            ErrorName = errName,
+            ErrorMessage = errMessage,
+            RawBody = raw,
+            // Treat "already cancelled / suspended / expired" and "doesn't exist"
+            // as terminal — caller can mark the local row cancelled and move on.
+            AlreadyCancelled = string.Equals(errName, "SUBSCRIPTION_STATUS_INVALID", StringComparison.OrdinalIgnoreCase),
+            NotFound = status == 404 || string.Equals(errName, "RESOURCE_NOT_FOUND", StringComparison.OrdinalIgnoreCase)
+        };
     }
 
     // ── Webhook signature verification ─────────────────────────────
@@ -456,6 +562,10 @@ public class PayPalCaptureResult
     public string Status { get; set; } = "";
     public string OrderId { get; set; } = "";
     public string? Error { get; set; }
+    // Captured amount + currency from PayPal's response — used by the
+    // capture-order endpoint to verify the buyer paid the expected price (B4).
+    public decimal CapturedAmount { get; set; }
+    public string CapturedCurrency { get; set; } = "";
 }
 
 public class PayPalProductResult
@@ -480,6 +590,20 @@ public class PayPalSubscriptionResult
     public string? Error { get; set; }
 }
 
+public class PayPalCancelResult
+{
+    public bool Success { get; set; }
+    public int StatusCode { get; set; }
+    public string ErrorName { get; set; } = "";
+    public string ErrorMessage { get; set; } = "";
+    public string RawBody { get; set; } = "";
+    // True when PayPal says the subscription is no longer in a cancellable state
+    // (already CANCELLED / SUSPENDED / EXPIRED).
+    public bool AlreadyCancelled { get; set; }
+    // True when PayPal returned 404 / RESOURCE_NOT_FOUND for this subscription id.
+    public bool NotFound { get; set; }
+}
+
 public class PayPalSubscriptionDetails
 {
     public string SubscriptionId { get; set; } = "";
@@ -487,4 +611,5 @@ public class PayPalSubscriptionDetails
     public string PlanId { get; set; } = "";
     public string? StartTime { get; set; }
     public DateTime? NextBillingTime { get; set; }
+    public int Quantity { get; set; } = 1;
 }

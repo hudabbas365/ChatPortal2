@@ -35,6 +35,10 @@ class PropertiesPanel {
             await this.loadFields(chartDef.datasetName);
             // Guard: if another load() started while we were awaiting, abort
             if (this._loadSeq !== loadId) return;
+            // Auto-pick sensible default mapping for freshly-dropped charts whose
+            // mapping is empty — otherwise the Legend/Value selects show "none"
+            // and the chart renders nothing until the user manually configures.
+            this._autoFillDefaultMapping();
             this.populate();
             this.bindAutoApply();
             this._wireMultiValueBtn();
@@ -51,11 +55,24 @@ class PropertiesPanel {
     async loadFields(datasetName) {
         // Try real datasource fields first
         const dsId = this.currentChart?.datasourceId || window.currentDatasourceId || null;
+        // Reset any prior introspection error before re-attempting; it will be
+        // re-set below if /schema or /fields surface a new error envelope.
+        const errNote = document.getElementById('pp-sql-err-note');
+        if (errNote) { errNote.textContent = ''; errNote.style.display = 'none'; }
+        let schemaError = null;
         if (dsId) {
             try {
                 const resp = await fetch('/api/datasources/' + dsId + '/schema');
                 if (resp.ok) {
                     const schema = await resp.json();
+                    // Backend now returns { tables: [], error: "..." } when
+                    // introspection fails on a real-DB datasource. Capture
+                    // that error so the user can see why the field dropdowns
+                    // are empty (instead of seeing the old fake placeholders).
+                    if (schema && schema.error) {
+                        schemaError = schema.error;
+                        try { console.warn('[propertiesPanel] /schema introspection error:', schemaError); } catch(_) {}
+                    }
                     const tables = schema.tables || [];
                     // Store full table structure for grouped rendering
                     this._schemaTables = tables.map(t => ({
@@ -84,13 +101,32 @@ class PropertiesPanel {
                     }
                 }
             } catch(e) {}
-            // Fallback: try plain fields endpoint
+            // Fallback: try plain fields endpoint.
+            // Response shape is either a plain string[] (success) or
+            // { error: string, fields: [] } (introspection failure on a
+            // real-DB datasource — backend refuses to fabricate placeholder
+            // field names so the UI doesn't lead users to map charts to
+            // columns that don't exist on their actual table).
             try {
                 const resp = await fetch('/api/datasources/' + dsId + '/fields');
                 if (resp.ok) {
-                    this.fields = await resp.json();
+                    const json = await resp.json();
+                    let fieldList = [];
+                    let fieldsError = null;
+                    if (Array.isArray(json)) {
+                        fieldList = json;
+                    } else if (json && Array.isArray(json.fields)) {
+                        fieldList = json.fields;
+                        fieldsError = json.error || null;
+                    }
+                    this.fields = fieldList;
                     this._schemaColumns = this.fields.map(f => ({ name: f, dataType: '', table: '', isPrimaryKey: false }));
                     this._schemaTables = null;
+                    if (fieldsError) {
+                        try { console.warn('[propertiesPanel] /fields introspection error:', fieldsError); } catch(_) {}
+                        const note = document.getElementById('pp-sql-err-note');
+                        if (note) { note.textContent = fieldsError; note.style.display = ''; }
+                    }
                     if (this.fields.length > 0) {
                         this.updateFieldSelects(datasetName);
                         this.renderDataFields();
@@ -103,6 +139,15 @@ class PropertiesPanel {
         this.fields = [];
         this._schemaColumns = [];
         this._schemaTables = null;
+        // If /schema returned an error envelope but /fields didn't override it,
+        // surface that error now so the user can see why the dropdowns are empty.
+        if (schemaError) {
+            const note = document.getElementById('pp-sql-err-note');
+            if (note && !note.textContent) {
+                note.textContent = schemaError;
+                note.style.display = '';
+            }
+        }
         this.updateFieldSelects(datasetName);
         this.renderDataFields();
     }
@@ -159,15 +204,48 @@ class PropertiesPanel {
         const selects = document.querySelectorAll('.field-select');
         selects.forEach(sel => {
             const current = sel.value;
+            // If the previously-selected value isn't in the new field list
+            // (e.g. dropped from a different table, or schema doesn't expose
+            // it), preserve it as a synthetic option so the select doesn't
+            // silently blank out and lose the user's mapping.
+            const merged = fieldList.slice();
+            if (current && !merged.some(f => String(f).toLowerCase() === current.toLowerCase())) {
+                merged.push(current);
+            }
             sel.innerHTML = '<option value="">-- none --</option>' +
-                fieldList.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+                merged.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
             if (current) sel.value = current;
         });
+    }
+
+    // Map chartType aliases (e.g. emitted by auto-report or older saves) to
+    // the canonical option values used by the prop-chart-type <select>.
+    _normalizeChartType(t) {
+        if (!t) return t;
+        const map = {
+            'doughnut': 'donut',
+            'kpi': 'kpiCard',
+            'column': 'bar',
+            'columnChart': 'bar',
+            'horizontal-bar': 'horizontalBar',
+            'stacked-bar': 'stackedBar',
+            'pie-chart': 'pie',
+            'donut-chart': 'donut',
+            'bar-chart': 'bar',
+            'line-chart': 'line',
+            'area-chart': 'area'
+        };
+        return map[t] || t;
     }
 
     populate() {
         if (!this.currentChart) return;
         const c = this.currentChart;
+        // Coerce any alias the chartType to the canonical dropdown value so
+        // the Chart Type select reflects the actual chart (auto-report often
+        // emits "doughnut"/"kpi" which aren't in the dropdown verbatim).
+        const canonicalType = this._normalizeChartType(c.chartType);
+        if (canonicalType !== c.chartType) c.chartType = canonicalType;
         this.setVal('prop-title', c.title);
         this.setVal('prop-chart-type', c.chartType);
         this.setVal('prop-dataset', c.datasetName);
@@ -188,6 +266,8 @@ class PropertiesPanel {
         this.setVal('prop-agg-enabled', primaryAgg !== 'None', 'checkbox');
         this.setVal('prop-agg-function', primaryAgg);
         this._updateAggVisibility(c.chartType);
+        // Hide agg options that SQL Server can't apply to non-numeric fields
+        this._filterAggOptions('prop-value-field-agg', c.mapping?.valueField || '');
         this.setVal('prop-row-limit', c.rowLimit || 15);
         // Populate condition builder from filterWhere
         this._populateConditions(c.filterWhere || '');
@@ -362,8 +442,20 @@ class PropertiesPanel {
         const match = [...el.options].find(o => o.value.toLowerCase() === lowerVal);
         if (match) {
             el.value = match.value;
+            return;
+        }
+        // No match — append a synthetic option so the saved field name persists
+        // visibly in the dropdown. Without this, <select>.value silently no-ops
+        // when the value isn't in <option> list, leaving the UI looking blank
+        // even though chartDef.mapping holds the real field name.
+        if (el.tagName === 'SELECT') {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            el.appendChild(opt);
+            el.value = val;
         } else {
-            el.value = val; // keep the original even if no match
+            el.value = val;
         }
     }
 
@@ -379,34 +471,78 @@ class PropertiesPanel {
 
     collect() {
         if (!this.currentChart) return null;
+        const newMapping = {
+            ...this.currentChart.mapping,
+            labelField: this._resolveFieldName(this.getVal('prop-label-field')),
+            valueField: this._resolveFieldName(this.getVal('prop-value-field')),
+            lineValueField: this._resolveFieldName(this.getVal('prop-line-value-field')),
+            xField: this._resolveFieldName(this.getVal('prop-x-field')),
+            yField: this._resolveFieldName(this.getVal('prop-y-field')),
+            rField: this._resolveFieldName(this.getVal('prop-r-field')),
+            groupByField: this._resolveFieldName(this.getVal('prop-group-by-field')),
+            valueFieldAgg: this.getVal('prop-value-field-agg') || 'SUM',
+            multiValueFields: this._collectMultiValueFields(),
+            tableFields: this._collectTableFields(),
+        };
+        // Detect whether the user changed any data-binding field (label/value/x/y/r/groupBy/agg
+        // /datasetName). If so, the chart must rebuild its SQL from these mappings — otherwise
+        // an AI-generated dataQuery (which has fixed column aliases) keeps returning its old
+        // shape and the new selection visibly "doesn't reflect". Style-only edits (legend toggle,
+        // colors, etc.) still preserve the AI SQL.
+        const oldMapping = this.currentChart.mapping || {};
+        const newDataset = this.getVal('prop-dataset');
+        const newChartType = this.getVal('prop-chart-type');
+        // Treat KPI-family vs chart-family transitions as binding changes too —
+        // a KPI's AI-generated dataQuery aliases its scalar to [Value] and the
+        // mapping is forced to {labelField:'Value', valueField:'Value'}. Carrying
+        // those into a bar/line agg query produces SQL referencing columns that
+        // don't exist on the real table ("Invalid column name 'Value'").
+        const kpiFamily = new Set(['kpi', 'kpiCard', 'card', 'metricTile']);
+        const chartTypeChanged = (newChartType || '') !== (this.currentChart.chartType || '');
+        const kpiBoundaryCrossed = chartTypeChanged
+            && (kpiFamily.has(this.currentChart.chartType) || kpiFamily.has(newChartType));
+        const mappingChanged =
+            (newMapping.labelField || '')   !== (oldMapping.labelField || '') ||
+            (newMapping.valueField || '')   !== (oldMapping.valueField || '') ||
+            (newMapping.lineValueField || '') !== (oldMapping.lineValueField || '') ||
+            (newMapping.xField || '')       !== (oldMapping.xField || '') ||
+            (newMapping.yField || '')       !== (oldMapping.yField || '') ||
+            (newMapping.rField || '')       !== (oldMapping.rField || '') ||
+            (newMapping.groupByField || '') !== (oldMapping.groupByField || '') ||
+            (newMapping.valueFieldAgg || '') !== (oldMapping.valueFieldAgg || '') ||
+            (newDataset || '') !== (this.currentChart.datasetName || '') ||
+            kpiBoundaryCrossed;
+        // Only honor pp-sql-area when it is actually visible to the user.
+        // The SQL subgroup is hidden via display:none in the dashboard view,
+        // but a previously AI-generated value lingers in the textarea — if we
+        // read it unconditionally, sqlAreaVal always wins and mapping dropdown
+        // changes (Legend/Value field) appear to have no effect on the chart.
+        const sqlAreaEl = document.getElementById('pp-sql-area');
+        const sqlSubgroup = sqlAreaEl?.closest('.prop-subgroup');
+        const sqlVisible = !!sqlSubgroup && sqlSubgroup.offsetParent !== null;
+        const sqlAreaVal = (sqlVisible && sqlAreaEl?.value.trim()) || '';
+        // Resolved dataQuery: explicit SQL from a VISIBLE textarea wins, else
+        // clear when bindings changed so renderer regenerates SQL from mappings,
+        // else preserve existing (AI-generated) SQL.
+        const resolvedDataQuery = sqlAreaVal
+            || (mappingChanged ? '' : (this.currentChart.dataQuery || ''));
         return {
             ...this.currentChart,
             title: this.getVal('prop-title'),
             chartType: this.getVal('prop-chart-type'),
-            datasetName: this.getVal('prop-dataset'),
+            datasetName: newDataset,
             width: parseInt(this.getVal('prop-width')) || 6,
             height: parseInt(this.getVal('prop-height')) || 300,
-            mapping: {
-                ...this.currentChart.mapping,
-                labelField: this._resolveFieldName(this.getVal('prop-label-field')),
-                valueField: this._resolveFieldName(this.getVal('prop-value-field')),
-                lineValueField: this._resolveFieldName(this.getVal('prop-line-value-field')),
-                xField: this._resolveFieldName(this.getVal('prop-x-field')),
-                yField: this._resolveFieldName(this.getVal('prop-y-field')),
-                rField: this._resolveFieldName(this.getVal('prop-r-field')),
-                groupByField: this._resolveFieldName(this.getVal('prop-group-by-field')),
-                valueFieldAgg: this.getVal('prop-value-field-agg') || 'SUM',
-                multiValueFields: this._collectMultiValueFields(),
-                tableFields: this._collectTableFields(),
-            },
+            mapping: newMapping,
             aggregation: {
-                enabled: (this.getVal('prop-value-field-agg') || 'None') !== 'None',
-                function: this.getVal('prop-value-field-agg') || 'None',
+                // Default to SUM (not None) so charts always emit GROUP BY when
+                // the dropdown can't be read — otherwise charts render raw rows.
+                enabled: (this.getVal('prop-value-field-agg') || 'SUM') !== 'None',
+                function: this.getVal('prop-value-field-agg') || 'SUM',
             },
             rowLimit: parseInt(this.getVal('prop-row-limit')) || 15,
             filterWhere: this._collectConditionsSQL(),
-            // Use SQL from the sql area if provided; otherwise clear so it rebuilds from mappings
-            dataQuery: (document.getElementById('pp-sql-area')?.value.trim()) || '',
+            dataQuery: resolvedDataQuery,
             style: {
                 ...this.currentChart.style,
                 showLegend: this.getVal('prop-show-legend', 'checkbox'),
@@ -455,8 +591,93 @@ class PropertiesPanel {
         if (!aggSel) return;
         if (this._isNumericField(valueFieldName)) {
             if (aggSel.value === 'None') aggSel.value = 'SUM';
+        } else if (valueFieldName) {
+            // Non-numeric value field (text/date/etc.). Defaulting to None makes
+            // the renderer parseFloat() each value, which on dates yields the
+            // year (e.g. "2008-06-01..." -> 2008) and produces uniform garbage
+            // bars. Default to COUNT so SQL emits COUNT([field]) per group,
+            // which is the meaningful aggregation for non-numeric columns.
+            aggSel.value = 'COUNT';
         } else {
             aggSel.value = 'None';
+        }
+        this._filterAggOptions(aggSel, valueFieldName);
+    }
+
+    /**
+     * Filter aggregation dropdown options based on the value field's data type.
+     * SQL Server rejects SUM/AVG/STDEV/VAR/MEDIAN on non-numeric (date/text)
+     * columns. Without filtering, the chart renderer's silent SELECT * fallback
+     * masks the error and the user perceives the function as "not working".
+     * COUNT/COUNT_DISTINCT/MIN/MAX accept any type in SQL Server.
+     */
+    _filterAggOptions(selectOrId, fieldName) {
+        const sel = typeof selectOrId === 'string'
+            ? document.getElementById(selectOrId)
+            : selectOrId;
+        if (!sel) return;
+        const numeric = !fieldName || this._isNumericField(fieldName);
+        const numericOnly = new Set(['SUM', 'AVG', 'STDEV', 'VAR', 'MEDIAN']);
+        let needsReset = false;
+        [...sel.options].forEach(o => {
+            const disable = !numeric && numericOnly.has(o.value);
+            o.disabled = disable;
+            o.hidden = disable;
+            if (disable && sel.value === o.value) needsReset = true;
+        });
+        if (needsReset) {
+            sel.value = 'COUNT';
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
+    /**
+     * When a chart is freshly dropped onto the canvas its mapping is empty
+     * (labelField='', valueField=''). Pick sensible defaults from the loaded
+     * schema so the Legend/Value selects don't appear as "none" to the user.
+     * Mirrors the field-picking logic in datasetChanged().
+     */
+    _autoFillDefaultMapping() {
+        const c = this.currentChart;
+        if (!c) return;
+        // Only auto-fill for chart types that use label/value mapping.
+        const isShape = window.ShapeManager && ShapeManager.isShape(c.chartType);
+        if (isShape || c.chartType === 'navigation') return;
+        if (!c.mapping) c.mapping = {};
+        const hasLabel = !!c.mapping.labelField;
+        const hasValue = !!c.mapping.valueField;
+        if (hasLabel && hasValue) return;
+        const cols = this._schemaColumns || [];
+        if (cols.length === 0) return;
+        const ds = (c.datasetName || '').toLowerCase();
+        const tableCols = cols.filter(col => {
+            if (!col.table) return true;
+            const ct = col.table.toLowerCase();
+            return ct === ds || ct.endsWith('.' + ds) || ds.endsWith('.' + ct);
+        });
+        const effective = tableCols.length > 0 ? tableCols : cols;
+        const isNumeric = (dt) => {
+            const t = (dt || '').toLowerCase();
+            return t.includes('int') || t.includes('decimal') || t.includes('float') ||
+                   t.includes('numeric') || t.includes('money') || t.includes('double') || t.includes('real');
+        };
+        if (!hasLabel) {
+            const textCol = effective.find(col => !isNumeric(col.dataType) && !col.isPrimaryKey);
+            c.mapping.labelField = textCol?.name || effective[0]?.name || '';
+        }
+        if (!hasValue) {
+            const numericCol = effective.find(col => isNumeric(col.dataType));
+            c.mapping.valueField = numericCol?.name
+                || (effective.length > 1 ? effective[1].name : effective[0]?.name)
+                || '';
+            // If we ended up with a non-numeric value field, default agg to COUNT
+            // so the chart renders meaningfully instead of parseFloat-ing strings.
+            if (c.mapping.valueField && !isNumeric((effective.find(col => col.name === c.mapping.valueField) || {}).dataType)) {
+                c.mapping.valueFieldAgg = 'COUNT';
+                if (!c.aggregation) c.aggregation = {};
+                c.aggregation.function = 'COUNT';
+                c.aggregation.enabled = true;
+            }
         }
     }
 
@@ -524,6 +745,7 @@ class PropertiesPanel {
             // Auto-toggle aggregation when value field changes
             if (el.id === 'prop-value-field') {
                 this._autoAggregation(el.value);
+                this._filterAggOptions('prop-value-field-agg', el.value);
             }
             if (el.id === 'prop-nav-target') {
                 this._toggleNavigationTargetUrl();
@@ -563,6 +785,7 @@ class PropertiesPanel {
     }
 
     updateTypeSpecificFields(chartType) {
+        const isSlicer = chartType === 'slicer';
         document.querySelectorAll('.chart-type-field').forEach(el => {
             const types = (el.dataset.chartTypes || '').split(',').map(t => t.trim());
             el.style.display = types.includes(chartType) ? '' : 'none';
@@ -578,7 +801,44 @@ class PropertiesPanel {
                 el.style.display = '';
             }
         });
+        this._updateSlicerVisibility(isSlicer);
         this._updateAggVisibility(chartType);
+    }
+
+    /**
+     * Slicer chart needs only a single dimension/label field — no legend,
+     * value field, multi-values, row limit, SQL editor, custom JSON, or
+     * style section. Hide everything else when chartType === 'slicer'.
+     */
+    _updateSlicerVisibility(isSlicer) {
+        const disp = isSlicer ? 'none' : '';
+        const hideParent = (id, sel = '.mb-2') => {
+            const el = document.getElementById(id);
+            const p = el ? el.closest(sel) : null;
+            if (p) p.style.display = disp;
+        };
+        // Value field row (contains both prop-value-field and prop-value-field-agg)
+        hideParent('prop-value-field');
+        // Additional value fields, row limit, custom JSON
+        const mv = document.getElementById('multi-value-fields-section');
+        if (mv) mv.style.display = disp;
+        hideParent('prop-row-limit');
+        hideParent('prop-custom-json');
+        // WHERE conditions and SQL editor subgroups (both wrapped in .prop-subgroup)
+        const where = document.getElementById('pp-conditions');
+        const whereSub = where ? where.closest('.prop-subgroup') : null;
+        if (whereSub) whereSub.style.display = disp;
+        const sql = document.getElementById('pp-sql-area');
+        const sqlSub = sql ? sql.closest('.prop-subgroup') : null;
+        if (sqlSub) sqlSub.style.display = disp;
+        // Entire Style section (legend, tooltips, animation, fonts, palette, etc.)
+        const styleSec = document.getElementById('prop-show-legend');
+        const styleSection = styleSec ? styleSec.closest('.prop-section') : null;
+        if (styleSection) styleSection.style.display = disp;
+        // Relabel "Legend Field" -> "Field" for slicer to match the simplified UX.
+        const labelEl = document.getElementById('prop-label-field');
+        const lbl = labelEl ? labelEl.closest('.mb-2')?.querySelector('label.form-label') : null;
+        if (lbl) lbl.textContent = isSlicer ? 'Field' : 'Legend Field';
     }
 
     renderDataFields() {
@@ -670,12 +930,28 @@ class PropertiesPanel {
             select.addEventListener('dragleave', () => { select.style.outline = ''; });
             select.addEventListener('drop', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 select.style.outline = '';
                 const fieldName = e.dataTransfer.getData('fieldName');
-                if (fieldName && [...select.options].some(o => o.value === fieldName)) {
+                if (!fieldName) return;
+                // Case-insensitive match against existing options (option values
+                // can come from differently-cased schema sources).
+                const exact = [...select.options].find(o => o.value === fieldName);
+                const ci = exact || [...select.options].find(o => o.value.toLowerCase() === fieldName.toLowerCase());
+                if (ci) {
+                    select.value = ci.value;
+                } else {
+                    // Field isn't in the current option list — likely came from a
+                    // different table than the chart's current dataset, or the
+                    // schema list was filtered. Append it so the user's drop is
+                    // never silently lost (drops back to "none" was the symptom).
+                    const opt = document.createElement('option');
+                    opt.value = fieldName;
+                    opt.textContent = fieldName;
+                    select.appendChild(opt);
                     select.value = fieldName;
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
                 }
+                select.dispatchEvent(new Event('change', { bubbles: true }));
             });
         });
     }
@@ -1347,6 +1623,11 @@ class PropertiesPanel {
         // Hide agg for table charts
         const isTable = this.currentChart?.chartType === 'table';
         aggSel.style.display = isTable ? 'none' : '';
+        // Filter options based on this field's data type so users can't pick
+        // numeric-only aggs (AVG/STDEV/VAR/MEDIAN/SUM) on date/text columns.
+        this._filterAggOptions(aggSel, fieldVal);
+        // Re-filter when the field selection changes within this row
+        sel.addEventListener('change', () => this._filterAggOptions(aggSel, sel.value));
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'btn btn-xs';
@@ -1363,6 +1644,37 @@ class PropertiesPanel {
         wrapper.appendChild(aggSel);
         wrapper.appendChild(removeBtn);
         container.appendChild(wrapper);
+        // Wire drag-drop on this newly-added select. initFieldDropTargets()
+        // only sees selects that exist at load() time, so dynamic rows added
+        // via "+" must wire their own drop handlers or drops silently fail.
+        this._wireDropOnSelect(sel);
+    }
+
+    /** Attach drag-drop handlers to a single .field-select element. */
+    _wireDropOnSelect(select) {
+        if (!select || select._fieldDropWired) return;
+        select._fieldDropWired = true;
+        select.addEventListener('dragover', (e) => { e.preventDefault(); select.style.outline = '2px solid var(--primary)'; });
+        select.addEventListener('dragleave', () => { select.style.outline = ''; });
+        select.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            select.style.outline = '';
+            const fieldName = e.dataTransfer.getData('fieldName');
+            if (!fieldName) return;
+            const exact = [...select.options].find(o => o.value === fieldName);
+            const ci = exact || [...select.options].find(o => o.value.toLowerCase() === fieldName.toLowerCase());
+            if (ci) {
+                select.value = ci.value;
+            } else {
+                const opt = document.createElement('option');
+                opt.value = fieldName;
+                opt.textContent = fieldName;
+                select.appendChild(opt);
+                select.value = fieldName;
+            }
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
     }
 
     /** Set value on a specific select element with case-insensitive matching. */
@@ -1371,8 +1683,16 @@ class PropertiesPanel {
         if ([...sel.options].some(o => o.value === val)) { sel.value = val; return; }
         const lower = val.toLowerCase();
         const match = [...sel.options].find(o => o.value.toLowerCase() === lower);
-        if (match) sel.value = match.value;
-        else sel.value = val;
+        if (match) { sel.value = match.value; return; }
+        // Fallback: append a synthetic option so the select can actually
+        // display `val`. Plain `sel.value = val` silently no-ops when no
+        // option matches, which is how dropped/unknown fields previously
+        // "disappeared" from the slot after a re-render.
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = val;
+        sel.appendChild(opt);
+        sel.value = val;
     }
 
     /** Collect all additional value fields with per-field aggregation from the UI. */
@@ -1394,25 +1714,27 @@ class PropertiesPanel {
     }
 
     _wireAggMenu() {
-        // Per-field agg is now inline selects; wire change on primary agg select
-        const aggSel = document.getElementById('prop-value-field-agg');
-        if (aggSel) {
-            aggSel.addEventListener('change', () => {
-                this.setVal('prop-agg-function', aggSel.value);
-                this.setVal('prop-agg-enabled', aggSel.value !== 'None', 'checkbox');
-                this.apply();
-            });
-        }
+        // bindAutoApply()'s form-level 'change' listener already triggers
+        // apply() on every <select> change (including this one). Adding a
+        // dedicated listener here would (a) double-fire apply() per change
+        // and (b) accumulate one extra listener per chart-select cycle (load()
+        // calls _wireAggMenu() each time), so after N selections one agg
+        // change fires N+1 PUT/render/fetch round-trips — observed as the
+        // "192 requests" pile-up in the network panel.
+        // Keep just the visibility refresh; sync of legacy hidden mirrors
+        // (prop-agg-function / prop-agg-enabled) happens inside collect().
         this._updateAggVisibility(this.currentChart?.chartType);
     }
 
-    /** Show/hide aggregation selects based on chart type (table = no agg). */
+    /** Show/hide aggregation selects based on chart type (table/slicer = no agg). */
     _updateAggVisibility(chartType) {
         const isTable = chartType === 'table';
+        const isSlicer = chartType === 'slicer';
+        const hide = isTable || isSlicer;
         const primaryAgg = document.getElementById('prop-value-field-agg');
-        if (primaryAgg) primaryAgg.style.display = isTable ? 'none' : '';
+        if (primaryAgg) primaryAgg.style.display = hide ? 'none' : '';
         document.querySelectorAll('.multi-value-agg-select').forEach(el => {
-            el.style.display = isTable ? 'none' : '';
+            el.style.display = hide ? 'none' : '';
         });
     }
 
@@ -1505,7 +1827,17 @@ class PropertiesPanel {
         const container = document.getElementById('table-fields-container');
         if (!container) return;
         const esc = (v) => typeof escapeHtml === 'function' ? escapeHtml(v) : String(v ?? '');
-        const optionsHtml = this.fields.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+        // Make sure the saved fieldName has a corresponding <option> even when
+        // it isn't in this.fields (cross-table drag-drop, schema not loaded
+        // yet, or AI-built reports). Without this, the select silently shows
+        // empty after a re-render and the user perceives the dropped field
+        // as "gone".
+        const fieldList = Array.isArray(this.fields) ? this.fields.slice() : [];
+        const savedName = fieldDef?.fieldName;
+        if (savedName && !fieldList.some(f => String(f).toLowerCase() === String(savedName).toLowerCase())) {
+            fieldList.push(savedName);
+        }
+        const optionsHtml = fieldList.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
         const row = document.createElement('div');
         row.className = 'border rounded p-2 mb-1 table-field-row';
         row.innerHTML = `
@@ -1537,6 +1869,8 @@ class PropertiesPanel {
         const sel = row.querySelector('.table-field-name');
         if (fieldDef?.fieldName) this.setFieldValOnEl(sel, fieldDef.fieldName);
         if (!row.querySelector('.table-field-label').value && sel.value) row.querySelector('.table-field-label').value = sel.value;
+        // Wire drag-drop from Data Fields panel onto this dynamically-created select.
+        this._wireDropOnSelect(sel);
         sel.addEventListener('change', () => {
             const lbl = row.querySelector('.table-field-label');
             if (!lbl.value) lbl.value = sel.value;

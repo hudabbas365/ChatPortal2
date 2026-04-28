@@ -135,6 +135,50 @@
         </div>
     </div>
     <div class="col-lg-8">
+        @{
+            var recentOrgs = ViewBag.RecentOrganizations as System.Collections.IEnumerable;
+        }
+        <div class="card-panel mb-3">
+            <div class="card-panel-title" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Organizations</span>
+                <a href="/superadmin/organizations" style="font-size:.75rem;color:var(--primary)">View all →</a>
+            </div>
+            @if (recentOrgs != null)
+            {
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Organization GUID</th>
+                            <th class="text-end">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (dynamic org in recentOrgs)
+                        {
+                            var guidStr = ((Guid)org.OrganizationGuid).ToString();
+                            var guidShort = guidStr.Substring(0, 8) + "…" + guidStr.Substring(guidStr.Length - 4);
+                            <tr>
+                                <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
+                                <td>
+                                    <span class="d-inline-flex align-items-center gap-1">
+                                        <code class="sa-org-guid" title="@guidStr" style="font-size:.75rem">@guidShort</code>
+                                        <button type="button" class="sa-guid-copy-btn" data-guid="@guidStr" title="Copy full Org ID" aria-label="Copy Org ID">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </span>
+                                </td>
+                                <td class="text-end" style="color:var(--text-muted)">@(((DateTime)org.CreatedAt).ToString("MMM d, yyyy"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <span style="font-size:.8rem;color:var(--text-muted)">No organizations yet.</span>
+            }
+        </div>
         <!-- Integration health strip (D27) -->
         <div class="card-panel mb-3">
             <div class="card-panel-title" style="display:flex;align-items:center;justify-content:space-between">
@@ -273,9 +317,37 @@ function loadIntHealth() {
         .catch(function(){});
 }
 loadIntHealth();
+
+// Org GUID copy buttons (mirrors Organizations.cshtml behaviour)
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.sa-guid-copy-btn');
+    if (!btn) return;
+    var guid = btn.dataset.guid;
+    if (!guid || !navigator.clipboard) return;
+    navigator.clipboard.writeText(guid).then(function () {
+        var icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.replace('bi-clipboard', 'bi-check');
+            setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+        }
+    });
+});
 </script>
 <style>
     @@keyframes spin { to { transform: rotate(360deg); } }
     #refreshIcon { display: inline-block; }
+    .sa-guid-copy-btn {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        padding: 2px 4px;
+        cursor: pointer;
+        border-radius: 4px;
+        line-height: 1;
+        font-size: 0.8rem;
+        transition: color 0.12s ease;
+    }
+    .sa-guid-copy-btn:hover { color: var(--primary, #4a8ec9); }
+    .sa-org-guid { cursor: default; }
 </style>
 }

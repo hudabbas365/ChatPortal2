@@ -2,6 +2,7 @@ using AIInsights.Data;
 using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
+using AIInsights.Services.Datasources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -49,8 +50,9 @@ public class DatasourceController : ControllerBase
     private readonly IEncryptionService _encryption;
     private readonly IRelationshipService _relationships;
     private readonly IQueryCacheInvalidator _cacheInvalidator;
+    private readonly IEnumerable<IDatasourceTypeService> _datasourceServices;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices)
     {
         _db = db;
         _queryService = queryService;
@@ -58,7 +60,11 @@ public class DatasourceController : ControllerBase
         _encryption = encryption;
         _relationships = relationships;
         _cacheInvalidator = cacheInvalidator;
+        _datasourceServices = datasourceServices;
     }
+
+    private IDatasourceTypeService? ResolveTypeService(string? type) =>
+        _datasourceServices.FirstOrDefault(s => s.CanHandle(type));
 
     // Manual cache refresh — flushes every cached query result for this datasource so the
     // next request re-runs against the live database. Surfaced to the UI via a refresh
@@ -168,36 +174,26 @@ public class DatasourceController : ControllerBase
     public async Task<IActionResult> TestConnection([FromBody] DatasourceRequest req)
     {
         var type = req.Type ?? "SQL Server";
-        var isRestApi = string.Equals(type, "REST API", StringComparison.OrdinalIgnoreCase);
-        var isFileUrl = QueryExecutionService.FileUrlTypes.Contains(type);
+        var svc = ResolveTypeService(type);
+        if (svc == null)
+            return BadRequest(new { connected = false, error = $"Datasource type '{type}' is not supported." });
 
-        if (isRestApi)
+        var info = new DatasourceConnectionInfo
         {
-            var (success, error) = await _queryService.TestRestApiAsync(req.ApiUrl, req.ApiKey, req.ApiMethod);
-            if (!success)
-                return BadRequest(new { connected = false, error = error ?? "REST API connection failed." });
-            return Ok(new { connected = true });
-        }
+            Type = type,
+            ConnectionString = req.ConnectionString,
+            DbUser = req.DbUser,
+            DbPassword = req.DbPassword,
+            XmlaEndpoint = req.XmlaEndpoint,
+            MicrosoftAccountTenantId = req.MicrosoftAccountTenantId,
+            ApiUrl = req.ApiUrl,
+            ApiKey = req.ApiKey,
+            ApiMethod = req.ApiMethod
+        };
 
-        if (isFileUrl)
-        {
-            var (success, error) = await _queryService.TestFileUrlAsync(req.ApiUrl);
-            if (!success)
-                return BadRequest(new { connected = false, error = error ?? "File URL connection failed." });
-            return Ok(new { connected = true });
-        }
-
-        var (dbSuccess, dbError) = await _queryService.TestConnectionAsync(
-            type,
-            req.ConnectionString ?? "",
-            req.DbUser,
-            req.DbPassword,
-            req.XmlaEndpoint,
-            req.MicrosoftAccountTenantId);
-
-        if (!dbSuccess)
-            return BadRequest(new { connected = false, error = dbError ?? "Connection failed." });
-
+        var (ok, error) = await svc.TestConnectionAsync(info);
+        if (!ok)
+            return BadRequest(new { connected = false, error = error ?? "Connection failed." });
         return Ok(new { connected = true });
     }
 
@@ -255,98 +251,27 @@ public class DatasourceController : ControllerBase
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
 
-        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var svc = ResolveTypeService(ds.Type);
+        if (svc == null)
+            return Ok(new { error = $"Field introspection is not supported for datasource type '{ds.Type}'.", fields = Array.Empty<string>() });
+
+        var (fields, error) = await svc.GetFieldsAsync(ds);
+        if (fields.Count > 0) return Ok(fields);
+
+        // Real-DB datasources (SQL Server / Power BI / Postgres / MySQL …):
+        // NEVER serve a hardcoded placeholder list. Surface the real error so
+        // the user can fix the connection rather than mapping charts to
+        // columns that don't exist (which produced SQL like
+        //   SELECT TOP 15 [Value], AVG([Value]) FROM [SalesLT].[Product]
+        // failing with "Invalid column name").
+        return Ok(new
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
-            {
-                var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
-                    return StatusCode(403, new { error = "You do not have access to this datasource." });
-            }
-        }
-
-        // REST API: extract field names from a sample API call
-        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
-                if (apiResult.Success && apiResult.Data.Count > 0)
-                {
-                    var fields = apiResult.Data.First().Keys.ToList();
-                    if (fields.Count > 0) return Ok(fields);
-                }
-            }
-            catch { /* fall through */ }
-            return Ok(new List<string> { "id", "name", "value", "status" });
-        }
-
-        // File URL (CSV/XLSX): extract column names from a sample parse
-        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
-        {
-            try
-            {
-                var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
-                if (fileResult.Success && fileResult.Data.Count > 0)
-                {
-                    var fields = fileResult.Data.First().Keys.ToList();
-                    if (fields.Count > 0) return Ok(fields);
-                }
-                if (!fileResult.Success)
-                    return Ok(new List<string> { "column1", "column2", "column3" });
-            }
-            catch { /* fall through */ }
-            return Ok(new List<string> { "column1", "column2", "column3" });
-        }
-
-        var isPbiFields = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
-        var hasConnFields = isPbiFields
-            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
-            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
-
-        if (hasConnFields)
-        {
-            try
-            {
-                var sql = GetFieldsQuery(ds.Type, ds.SelectedTables);
-                if (sql != null)
-                {
-                    var result = await _queryService.ExecuteReadOnlyAsync(ds, sql);
-                    if (result.Success && result.Data.Count > 0)
-                    {
-                        var fields = result.Data
-                            .Select(r => r.Values.First()?.ToString() ?? "")
-                            .Where(f => !string.IsNullOrEmpty(f))
-                            .Distinct()
-                            .ToList();
-                        if (fields.Count > 0) return Ok(fields);
-                    }
-                }
-            }
-            catch { /* fall through to placeholder */ }
-        }
-
-        // Power BI: never serve the generic SQL-style placeholder fields —
-        // they belong to no real connection and look like a different datasource.
-        if (isPbiFields) return Ok(Array.Empty<string>());
-
-        var placeholderFields = new List<string> { "id", "name", "region", "revenue", "date", "category", "quantity", "price", "status" };
-        return Ok(placeholderFields);
-    }
-
-    private static string? GetFieldsQuery(string type, string? selectedTables)
-    {
-        var t = type?.Trim() ?? "";
-        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
-            return "EVALUATE SELECTCOLUMNS(FILTER(INFO.COLUMNS(), NOT [IsHidden]), \"COLUMN_NAME\", [ExplicitName])";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
-            return "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS ORDER BY COLUMN_NAME";
-        if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
-            return "SELECT DISTINCT column_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY column_name";
-        if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
-            return "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY COLUMN_NAME";
-        return null;
+            error = error ?? "No fields were returned by the datasource. Verify the connection settings and that the user has SELECT/metadata permission.",
+            fields = Array.Empty<string>()
+        });
     }
 
     [HttpGet("{id}/tables")]
@@ -355,134 +280,62 @@ public class DatasourceController : ControllerBase
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
 
-        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
-        {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
-            {
-                var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
-                    return StatusCode(403, new { error = "You do not have access to this datasource." });
-            }
-        }
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
 
-        // REST API: return a single virtual "table" representing the API endpoint
-        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
+        // Honour the user's curated allow-list. When the workspace wizard
+        // saved `SelectedTables`, those are the tables the user explicitly
+        // chose for this datasource — return them as-is so downstream UIs
+        // (auto-report modal, properties panel, etc.) never see an empty
+        // list just because a fresh introspection round-trip didn't fire.
+        // Applies to SQL/PBI; REST/File services treat SelectedTables as
+        // irrelevant since they expose a single virtual table.
+        if (!string.IsNullOrWhiteSpace(ds.SelectedTables)
+            && !QueryExecutionService.RestApiTypes.Contains(ds.Type ?? "")
+            && !QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
         {
-            try
-            {
-                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
-                if (apiResult.Success && apiResult.Data.Count > 0)
+            var selected = ds.SelectedTables
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(name => new
                 {
-                    var tableName = ds.Name.Replace(" ", "_");
-                    return Ok(new[] { new { name = tableName, type = "API Endpoint", rowCount = apiResult.Data.Count } });
-                }
-                // API returned an error — include the virtual table but attach the error message
-                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", rowCount = 0, error = apiResult.Error ?? "REST API returned no data." } });
-            }
-            catch (Exception ex)
-            {
-                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", rowCount = 0, error = $"REST API connection failed: {ex.Message}" } });
-            }
+                    name,
+                    type = name.StartsWith("vw_", StringComparison.OrdinalIgnoreCase) ? "View" : "Table",
+                    rowCount = 0
+                })
+                .ToList();
+            if (selected.Count > 0) return Ok(selected);
         }
 
-        // File URL (CSV/XLSX): return a single virtual "table" representing the file
-        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
+        var svc = ResolveTypeService(ds.Type);
+        if (svc == null)
+            return Ok(new { error = $"Datasource type '{ds.Type}' is not supported.", tables = Array.Empty<object>() });
+
+        var (tables, error) = await svc.GetTablesAsync(ds);
+
+        // REST / File services always return one virtual entry — surface as-is
+        // so the UI shows the per-row error attached to that virtual table.
+        if (tables.Count > 0)
         {
-            try
-            {
-                var fileResult = await _queryService.ExecuteFileUrlAsync(ds);
-                var tableName = ds.Name.Replace(" ", "_");
-                if (fileResult.Success)
-                    return Ok(new[] { new { name = tableName, type = "File", rowCount = fileResult.RowCount } });
-                return Ok(new[] { new { name = tableName, type = "File", rowCount = 0, error = fileResult.Error ?? "File could not be parsed." } });
-            }
-            catch (Exception ex)
-            {
-                return Ok(new[] { new { name = ds.Name.Replace(" ", "_"), type = "File", rowCount = 0, error = $"File URL connection failed: {ex.Message}" } });
-            }
+            var projected = tables.Select(t => t.Error == null
+                ? (object)new { name = t.Name, type = t.Type, rowCount = t.RowCount }
+                : new { name = t.Name, type = t.Type, rowCount = t.RowCount, error = t.Error }).ToList();
+            return Ok(projected);
         }
 
-        var isPbi = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
-        var hasConnection = isPbi
-            ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
-            : !string.IsNullOrWhiteSpace(ds.ConnectionString);
-
-        string? introspectionError = null;
-        if (hasConnection)
+        // Real-DB datasources (SQL Server / Power BI): never substitute a
+        // SQL-Server-shaped placeholder list (Customers / Orders / Products …)
+        // — that used to leak into AI prompts as if it were the real schema,
+        // causing the auto-report generator to emit FROM clauses against
+        // tables that do not exist. Return an empty list with the real
+        // introspection error instead.
+        return Ok(new
         {
-            try
-            {
-                var sql = GetTablesQuery(ds.Type);
-                if (sql != null)
-                {
-                    var result = await _queryService.ExecuteReadOnlyAsync(ds, sql);
-                    if (result.Success && result.Data.Count > 0)
-                    {
-                        var tables = result.Data.Select(r =>
-                        {
-                            var name = r.ContainsKey("table_name") ? r["table_name"]?.ToString()
-                                     : r.ContainsKey("TABLE_NAME") ? r["TABLE_NAME"]?.ToString()
-                                     : r.ContainsKey("name") ? r["name"]?.ToString()
-                                     : r.Values.FirstOrDefault()?.ToString() ?? "";
-                            var rawType = r.ContainsKey("table_type") ? r["table_type"]?.ToString()
-                                        : r.ContainsKey("TABLE_TYPE") ? r["TABLE_TYPE"]?.ToString()
-                                        : r.ContainsKey("type") ? r["type"]?.ToString()
-                                        : "Table";
-                            var ttype = rawType?.Contains("VIEW", StringComparison.OrdinalIgnoreCase) == true ? "View" : "Table";
-                            return new { name, type = ttype, rowCount = 0 };
-                        }).Where(t => !string.IsNullOrEmpty(t.name)).ToList();
-                        if (tables.Count > 0) return Ok(tables);
-                    }
-                    else if (!result.Success)
-                    {
-                        introspectionError = result.Error;
-                    }
-                }
-            }
-            catch (Exception ex) { introspectionError = ex.Message; }
-        }
-
-        // Power BI / REST API: never substitute the SQL-Server-shaped placeholder
-        // (Customers / Orders / Products / ...). It looks like another connection's
-        // data and confuses users. Return an empty list with the real error instead.
-        if (isPbi)
-        {
-            return Ok(new
-            {
-                error = introspectionError
-                    ?? (hasConnection ? "Power BI returned no tables. Verify the XMLA endpoint, semantic model (catalog), tenant ID, client ID, and client secret."
-                                       : "Power BI datasource is missing the XMLA Endpoint."),
-                tables = Array.Empty<object>()
-            });
-        }
-
-        var placeholderTables = new List<object>
-        {
-            new { name = "Customers", type = "Table", rowCount = 15420 },
-            new { name = "Orders", type = "Table", rowCount = 89230 },
-            new { name = "Products", type = "Table", rowCount = 3500 },
-            new { name = "Sales", type = "Table", rowCount = 245600 },
-            new { name = "Employees", type = "Table", rowCount = 580 },
-            new { name = "vw_MonthlyRevenue", type = "View", rowCount = 0 },
-            new { name = "vw_CustomerSummary", type = "View", rowCount = 0 },
-            new { name = "vw_TopProducts", type = "View", rowCount = 0 }
-        };
-        return Ok(placeholderTables);
-    }
-
-    private static string? GetTablesQuery(string type)
-    {
-        var t = type?.Trim() ?? "";
-        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
-            return "EVALUATE SELECTCOLUMNS(FILTER(INFO.TABLES(), NOT [IsHidden]), \"table_name\", [Name], \"table_type\", \"Table\")";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
-            return "SELECT TABLE_SCHEMA + '.' + TABLE_NAME as table_name, TABLE_TYPE as table_type FROM INFORMATION_SCHEMA.TABLES ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME";
-        if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
-            return "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_type, table_name";
-        if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
-            return "SELECT TABLE_NAME as table_name, TABLE_TYPE as table_type FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_TYPE, TABLE_NAME";
-        return null;
+            error = error ?? "No tables were returned by the datasource. Verify the connection settings and that the user has SELECT/metadata permission.",
+            tables = Array.Empty<object>()
+        });
     }
 
     [HttpGet("{id}/schema")]
@@ -491,228 +344,61 @@ public class DatasourceController : ControllerBase
         var ds = await _db.Datasources.FindAsync(id);
         if (ds == null) return NotFound();
 
-        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var svc = ResolveTypeService(ds.Type);
+        if (svc == null)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            return Ok(new
             {
-                var appUser = await _db.Users.FindAsync(userId);
-                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
-                    return StatusCode(403, new { error = "You do not have access to this datasource." });
-            }
+                datasourceId = ds.Id,
+                datasourceGuid = ds.Guid,
+                datasourceName = ds.Name,
+                datasourceType = ds.Type,
+                error = $"Schema introspection is not supported for datasource type '{ds.Type}'.",
+                tables = Array.Empty<object>()
+            });
         }
 
-        List<object>? schema = null;
+        var (tables, error) = await svc.GetSchemaAsync(ds);
 
-        // REST API: build schema from sample response
-        if (string.Equals(ds.Type, "REST API", StringComparison.OrdinalIgnoreCase))
+        if (tables.Count > 0)
         {
-            try
+            var projected = tables.Select(t => (object)new
             {
-                var apiResult = await _queryService.ExecuteRestApiAsync(ds);
-                if (apiResult.Success && apiResult.Data.Count > 0)
-                {
-                    var firstRow = apiResult.Data.First();
-                    var columns = firstRow.Select(kv => (object)new
-                    {
-                        name = kv.Key,
-                        dataType = InferJsonType(kv.Value),
-                        isPrimaryKey = string.Equals(kv.Key, "id", StringComparison.OrdinalIgnoreCase)
-                    }).ToList();
-                    schema = new List<object>
-                    {
-                        new { name = ds.Name.Replace(" ", "_"), type = "API Endpoint", columns }
-                    };
-                }
-            }
-            catch { /* fall through */ }
-            schema ??= new List<object>();
-        }
-        // File URL (CSV/XLSX): build schema from column headers in the parsed file
-        else if (QueryExecutionService.FileUrlTypes.Contains(ds.Type ?? ""))
-        {
-            try
-            {
-                var fileResult = await _queryService.ExecuteFileUrlAsync(ds, 5);
-                if (fileResult.Success && fileResult.Data.Count > 0)
-                {
-                    var firstRow = fileResult.Data.First();
-                    var columns = firstRow.Select(kv => (object)new
-                    {
-                        name = kv.Key,
-                        dataType = InferJsonType(kv.Value),
-                        isPrimaryKey = false
-                    }).ToList();
-                    schema = new List<object>
-                    {
-                        new { name = ds.Name.Replace(" ", "_"), type = "File", columns }
-                    };
-                }
-            }
-            catch { /* fall through */ }
-            schema ??= new List<object>();
-        }
-        else
-        {
-            // Try real DB introspection
-            var isPbiSchema = QueryExecutionService.PowerBiTypes.Contains(ds.Type ?? "");
-            var hasConnSchema = isPbiSchema
-                ? !string.IsNullOrWhiteSpace(ds.XmlaEndpoint)
-                : !string.IsNullOrWhiteSpace(ds.ConnectionString);
+                name = t.Name,
+                type = t.Type,
+                columns = t.Columns.Select(c => new { name = c.Name, dataType = c.DataType, isPrimaryKey = c.IsPrimaryKey }).ToList()
+            }).ToList();
 
-            if (hasConnSchema)
+            return Ok(new
             {
-                try
-                {
-                    schema = await BuildRealSchemaAsync(ds);
-                }
-                catch { /* fall through to placeholder */ }
-            }
-
-            // For Power BI, do NOT substitute the SQL-Server-shaped placeholder
-            // (Customers/Orders/Products/...). Returning fake tables makes the
-            // datasource look like an unrelated connection. Return an empty
-            // schema so the UI surfaces the real problem instead.
-            if (schema == null)
-            {
-                schema = isPbiSchema ? new List<object>() : BuildPlaceholderSchema(ds);
-            }
+                datasourceId = ds.Id,
+                datasourceGuid = ds.Guid,
+                datasourceName = ds.Name,
+                datasourceType = ds.Type,
+                tables = projected
+            });
         }
 
+        // Real-DB datasources (SQL Server / Power BI): NEVER substitute a
+        // placeholder schema. Hardcoded generic columns (Id / Name / Value /
+        // CreatedAt) used to leak into the Properties Panel field dropdowns
+        // whenever introspection failed, and users would map charts to
+        // columns that don't exist on their real tables — producing SQL like
+        //     SELECT TOP 15 [Value], AVG([Value]) FROM [SalesLT].[Product] GROUP BY [Value]
+        // which fails with "Invalid column name 'Value'". Surface the real
+        // introspection error instead so the user can fix the connection.
         return Ok(new
         {
             datasourceId = ds.Id,
             datasourceGuid = ds.Guid,
             datasourceName = ds.Name,
             datasourceType = ds.Type,
-            tables = schema
+            error = error ?? "No columns were returned by the datasource. Verify the connection settings and that the user has SELECT/metadata permission on the selected tables.",
+            tables = Array.Empty<object>()
         });
-    }
-
-    private async Task<List<object>?> BuildRealSchemaAsync(Datasource ds)
-    {
-        var sql = GetSchemaQuery(ds.Type);
-        if (sql == null) return null;
-
-        var result = await _queryService.ExecuteReadOnlyAsync(ds, sql);
-        if (!result.Success || result.Data.Count == 0) return null;
-
-        var grouped = result.Data
-            .GroupBy(r => r.ContainsKey("table_name") ? r["table_name"]?.ToString() ?? "" : "")
-            .Where(g => !string.IsNullOrEmpty(g.Key))
-            .Select(g => (object)new
-            {
-                name = g.Key,
-                type = g.First().ContainsKey("table_type")
-                    ? (g.First()["table_type"]?.ToString()?.Contains("VIEW", StringComparison.OrdinalIgnoreCase) == true ? "View" : "Table")
-                    : "Table",
-                columns = g.Select(r => new
-                {
-                    name = r.ContainsKey("column_name") ? r["column_name"]?.ToString() ?? "" : "",
-                    dataType = r.ContainsKey("data_type") ? r["data_type"]?.ToString() ?? "" : "",
-                    isPrimaryKey = false
-                }).Where(c => !string.IsNullOrEmpty(c.name)).ToList()
-            }).ToList();
-
-        return grouped.Count > 0 ? grouped : null;
-    }
-
-    private static string? GetSchemaQuery(string type)
-    {
-        var t = type?.Trim() ?? "";
-        if (t.Contains("Power BI", StringComparison.OrdinalIgnoreCase) || t.Equals("PowerBI", StringComparison.OrdinalIgnoreCase))
-            return "EVALUATE VAR _tables = SELECTCOLUMNS(FILTER(INFO.TABLES(), NOT [IsHidden]), \"TableID\", [ID], \"table_name\", [Name]) " +
-                   "VAR _cols = SELECTCOLUMNS(FILTER(INFO.COLUMNS(), NOT [IsHidden]), \"TableID\", [TableID], \"column_name\", [ExplicitName], " +
-                   "\"data_type\", SWITCH([DataType], 2, \"String\", 6, \"Int64\", 8, \"Double\", 9, \"DateTime\", 10, \"Decimal\", 11, \"Boolean\", \"Other\")) " +
-                   "RETURN SELECTCOLUMNS(NATURALLEFTOUTERJOIN(_tables, _cols), \"table_name\", [table_name], \"table_type\", \"Table\", \"column_name\", [column_name], \"data_type\", [data_type])";
-        if (t.Contains("SQL Server", StringComparison.OrdinalIgnoreCase) || t.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || t.Equals("MSSQL", StringComparison.OrdinalIgnoreCase))
-            return "SELECT t.TABLE_SCHEMA + '.' + t.TABLE_NAME as table_name, t.TABLE_TYPE as table_type, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION";
-        if (t.Contains("Postgre", StringComparison.OrdinalIgnoreCase))
-            return "SELECT t.table_name, t.table_type, c.column_name, c.data_type FROM information_schema.tables t JOIN information_schema.columns c ON c.table_name = t.table_name AND c.table_schema = t.table_schema WHERE t.table_schema = 'public' ORDER BY t.table_name, c.ordinal_position";
-        if (t.Contains("MySQL", StringComparison.OrdinalIgnoreCase) || t.Contains("MariaDB", StringComparison.OrdinalIgnoreCase))
-            return "SELECT t.TABLE_NAME as table_name, t.TABLE_TYPE as table_type, c.COLUMN_NAME as column_name, c.DATA_TYPE as data_type FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON c.TABLE_NAME = t.TABLE_NAME AND c.TABLE_SCHEMA = t.TABLE_SCHEMA WHERE t.TABLE_SCHEMA = DATABASE() ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
-        return null;
-    }
-
-    private static List<object> BuildPlaceholderSchema(Datasource ds)
-    {
-        var tableNames = string.IsNullOrEmpty(ds.SelectedTables)
-            ? new[] { "Customers", "Orders", "Products", "Sales", "Employees" }
-            : ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries);
-
-        var knownSchemas = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Customers"] = new object[] {
-                new { name = "Id", dataType = "int", isPrimaryKey = true },
-                new { name = "Name", dataType = "nvarchar(200)", isPrimaryKey = false },
-                new { name = "Email", dataType = "nvarchar(200)", isPrimaryKey = false },
-                new { name = "Region", dataType = "nvarchar(50)", isPrimaryKey = false },
-                new { name = "CreatedAt", dataType = "datetime", isPrimaryKey = false }
-            },
-            ["Orders"] = new object[] {
-                new { name = "Id", dataType = "int", isPrimaryKey = true },
-                new { name = "CustomerId", dataType = "int", isPrimaryKey = false },
-                new { name = "OrderDate", dataType = "datetime", isPrimaryKey = false },
-                new { name = "TotalAmount", dataType = "decimal(18,2)", isPrimaryKey = false },
-                new { name = "Status", dataType = "nvarchar(20)", isPrimaryKey = false },
-                new { name = "Region", dataType = "nvarchar(50)", isPrimaryKey = false }
-            },
-            ["Products"] = new object[] {
-                new { name = "Id", dataType = "int", isPrimaryKey = true },
-                new { name = "Name", dataType = "nvarchar(200)", isPrimaryKey = false },
-                new { name = "Category", dataType = "nvarchar(50)", isPrimaryKey = false },
-                new { name = "Price", dataType = "decimal(18,2)", isPrimaryKey = false },
-                new { name = "StockQuantity", dataType = "int", isPrimaryKey = false }
-            },
-            ["Sales"] = new object[] {
-                new { name = "Id", dataType = "int", isPrimaryKey = true },
-                new { name = "ProductId", dataType = "int", isPrimaryKey = false },
-                new { name = "CustomerId", dataType = "int", isPrimaryKey = false },
-                new { name = "Quantity", dataType = "int", isPrimaryKey = false },
-                new { name = "TotalRevenue", dataType = "decimal(18,2)", isPrimaryKey = false },
-                new { name = "SaleDate", dataType = "datetime", isPrimaryKey = false },
-                new { name = "Region", dataType = "nvarchar(50)", isPrimaryKey = false }
-            },
-            ["Employees"] = new object[] {
-                new { name = "Id", dataType = "int", isPrimaryKey = true },
-                new { name = "Name", dataType = "nvarchar(100)", isPrimaryKey = false },
-                new { name = "Department", dataType = "nvarchar(50)", isPrimaryKey = false },
-                new { name = "HireDate", dataType = "datetime", isPrimaryKey = false },
-                new { name = "Salary", dataType = "decimal(18,2)", isPrimaryKey = false }
-            },
-            ["vw_MonthlyRevenue"] = new object[] {
-                new { name = "Month", dataType = "nvarchar(20)", isPrimaryKey = false },
-                new { name = "TotalRevenue", dataType = "decimal(18,2)", isPrimaryKey = false },
-                new { name = "OrderCount", dataType = "int", isPrimaryKey = false }
-            },
-            ["vw_CustomerSummary"] = new object[] {
-                new { name = "CustomerId", dataType = "int", isPrimaryKey = false },
-                new { name = "CustomerName", dataType = "nvarchar(200)", isPrimaryKey = false },
-                new { name = "TotalOrders", dataType = "int", isPrimaryKey = false },
-                new { name = "TotalSpent", dataType = "decimal(18,2)", isPrimaryKey = false }
-            },
-            ["vw_TopProducts"] = new object[] {
-                new { name = "ProductId", dataType = "int", isPrimaryKey = false },
-                new { name = "ProductName", dataType = "nvarchar(200)", isPrimaryKey = false },
-                new { name = "TotalSold", dataType = "int", isPrimaryKey = false },
-                new { name = "Revenue", dataType = "decimal(18,2)", isPrimaryKey = false }
-            }
-        };
-
-        var genericColumns = new object[] {
-            new { name = "Id", dataType = "int", isPrimaryKey = true },
-            new { name = "Name", dataType = "nvarchar(200)", isPrimaryKey = false },
-            new { name = "Value", dataType = "decimal(18,2)", isPrimaryKey = false },
-            new { name = "CreatedAt", dataType = "datetime", isPrimaryKey = false }
-        };
-
-        return tableNames.Select(t =>
-        {
-            var trimmed = t.Trim();
-            var isView = trimmed.StartsWith("vw_", StringComparison.OrdinalIgnoreCase);
-            var cols = knownSchemas.TryGetValue(trimmed, out var c) ? c : genericColumns;
-            return (object)new { name = trimmed, type = isView ? "View" : "Table", columns = cols };
-        }).ToList();
     }
 
     [HttpPut("{guid}")]
@@ -787,6 +473,27 @@ public class DatasourceController : ControllerBase
         return Ok(new { success = true });
     }
 
+    /// <summary>
+    /// Workspace-scoped view-access guard shared by the introspection
+    /// endpoints (fields / tables / schema). Returns a 403 result when the
+    /// caller is not allowed to view the datasource, or null when access
+    /// is granted.
+    /// </summary>
+    private async Task<IActionResult?> EnsureViewAccessAsync(Datasource ds)
+    {
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanViewAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
+        return null;
+    }
+
     private static string MaskConnectionString(string connStr)
     {
         if (string.IsNullOrEmpty(connStr)) return "";
@@ -797,17 +504,6 @@ public class DatasourceController : ControllerBase
             "$1=••••••",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return masked;
-    }
-
-    private static string InferJsonType(object? value)
-    {
-        if (value == null) return "string";
-        if (value is bool) return "boolean";
-        if (value is int or long or short or byte) return "integer";
-        if (value is float or double or decimal) return "decimal";
-        var s = value.ToString() ?? "";
-        if (DateTime.TryParse(s, out _)) return "datetime";
-        return "string";
     }
 
     [HttpGet("{id}/relationships")]

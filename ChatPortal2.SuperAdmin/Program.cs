@@ -9,6 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using System.Security.Claims;
+using Microsoft.AspNetCore.DataProtection;
 
 // Set QuestPDF community license
 QuestPDF.Settings.License = LicenseType.Community;
@@ -92,6 +93,21 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.HttpOnly = false; // Must be JS-readable for SPA-style AJAX
     options.Cookie.SameSite = SameSiteMode.Strict;
 });
+
+// Persist Data Protection keys to a stable filesystem path so the antiforgery
+// middleware (which runs on every request) can issue/validate the XSRF-TOKEN
+// cookie under IIS. The default key-ring location
+// (%LOCALAPPDATA%\ASP.NET\DataProtection-Keys) is typically not writable by
+// ApplicationPoolIdentity, which causes a 500 on the very first GET / and
+// surfaces in Chrome as "Unsafe attempt to load URL ... from frame with URL
+// chrome-error://chromewebdata/". Grant the App Pool identity Modify on the
+// directory below (override via DataProtection:KeyPath in appsettings if needed).
+var dpKeyPath = builder.Configuration["DataProtection:KeyPath"]
+    ?? @"C:\inetpub\dpkeys\superadmin";
+try { Directory.CreateDirectory(dpKeyPath); } catch { /* fall back to default if path is invalid */ }
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dpKeyPath))
+    .SetApplicationName("ChatPortal2.SuperAdmin");
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
@@ -126,14 +142,52 @@ builder.Services.AddControllersWithViews()
 
 var app = builder.Build();
 
-// Show detailed errors in Development only; use a generic error page in Production.
+// Show detailed errors in Development; in Production use a lambda-based handler
+// so we don't depend on a "/superadmin/error" endpoint actually existing — if
+// that endpoint is missing, UseExceptionHandler("/path") re-executes, fails,
+// and turns every error into a bare 500 with no output anywhere.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
 else
 {
-    app.UseExceptionHandler("/superadmin/error");
+    app.UseExceptionHandler(errApp =>
+    {
+        errApp.Run(async context =>
+        {
+            var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+            var logger  = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                                                  .CreateLogger("UnhandledException");
+            if (feature?.Error != null)
+                logger.LogError(feature.Error, "Unhandled exception on {Path}", context.Request.Path);
+
+            // TEMP DIAGNOSTIC: dump the real exception so we can see what is failing
+            // under IIS publish (debug works, publish doesn't). Also persist it to a
+            // log file so it survives if the response is replaced by IIS.
+            try
+            {
+                var logDir = @"C:\inetpub\dpkeys\superadmin\logs";
+                Directory.CreateDirectory(logDir);
+                var logPath = Path.Combine(logDir, "superadmin-errors.log");
+                var line = $"[{DateTime.UtcNow:O}] {context.Request.Method} {context.Request.Path}{context.Request.QueryString}\n{feature?.Error}\n\n";
+                await File.AppendAllTextAsync(logPath, line);
+            }
+            catch { /* best-effort */ }
+
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            if (feature?.Error != null)
+            {
+                await context.Response.WriteAsync(
+                    "Unhandled exception (diagnostic mode):\n\n" + feature.Error.ToString());
+            }
+            else
+            {
+                await context.Response.WriteAsync("An internal error occurred. Please contact support.");
+            }
+        });
+    });
 }
 
 app.UseStaticFiles();
@@ -141,7 +195,11 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Issue XSRF-TOKEN cookie on every request so JS can read it for fetch calls
+// Issue XSRF-TOKEN cookie on every request so JS can read it for fetch calls.
+// `Secure` is gated on the actual request scheme so the cookie isn't dropped
+// silently when the site is reached over plain HTTP (e.g. http://localhost:88
+// during local IIS testing); a Secure cookie on an HTTP origin is rejected by
+// the browser, which can cascade into antiforgery validation failures.
 app.Use(async (context, next) =>
 {
     var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
@@ -149,7 +207,7 @@ app.Use(async (context, next) =>
     context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
     {
         HttpOnly = false,
-        Secure = true,
+        Secure = context.Request.IsHttps,
         SameSite = SameSiteMode.Strict,
         Path = "/"
     });

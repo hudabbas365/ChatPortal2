@@ -693,7 +693,16 @@ namespace AIInsights.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid>("OrganizationGuid")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayPalEntSubscriptionId")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("PayPalPlanId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PayPalProSubscriptionId")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PayPalSubscriptionId")
@@ -722,6 +731,9 @@ namespace AIInsights.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationGuid")
+                        .IsUnique();
 
                     b.ToTable("Organizations");
                 });
@@ -795,6 +807,9 @@ namespace AIInsights.Migrations
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("PayPalEventId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("PayPalOrderId")
                         .HasColumnType("nvarchar(max)");
 
@@ -852,6 +867,10 @@ namespace AIInsights.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId");
+
+                    b.HasIndex("PayPalEventId")
+                        .IsUnique()
+                        .HasFilter("[PayPalEventId] IS NOT NULL");
 
                     b.ToTable("PaymentRecords");
                 });
@@ -970,6 +989,9 @@ namespace AIInsights.Migrations
                         .HasColumnType("int");
 
                     b.Property<int?>("DatasourceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EmbedTokenVersion")
                         .HasColumnType("int");
 
                     b.Property<string>("Guid")

@@ -43,6 +43,10 @@ public class NotificationsController : ControllerBase
         var now = DateTime.UtcNow;
         var orgId = user.OrganizationId;
         var uid = user.Id;
+        // Role string lives directly on ApplicationUser ("SuperAdmin" / "OrgAdmin" / "User").
+        // We bracket it with commas so a CSV check via Contains is exact-match safe
+        // (e.g. "OrgAdmin" must not match "Admin" or "OrgAdminAssistant" if those ever appear).
+        var roleToken = $",{user.Role ?? ""},";
 
         return _db.Notifications
             .AsNoTracking()
@@ -52,7 +56,13 @@ public class NotificationsController : ControllerBase
                 && (n.ExpiresAt == null || n.ExpiresAt > now)
                 && (
                     n.Scope == "All"
-                    || (n.Scope == "Org" && n.OrganizationId != null && n.OrganizationId == orgId)
+                    || (n.Scope == "Org" && n.OrganizationId != null && n.OrganizationId == orgId
+                        // Honour role targeting on org-scoped system notifications:
+                        // when TargetRolesCsv is set, only users whose Role appears in
+                        // the CSV see the row (used to send trial / email-verify alerts
+                        // to OrgAdmins only, not to every member of the organization).
+                        && (n.TargetRolesCsv == null || n.TargetRolesCsv == ""
+                            || ("," + n.TargetRolesCsv + ",").Contains(roleToken)))
                     || (n.Scope == "User" && n.TargetUserId == uid)
                     || ((n.Scope == "User" || n.Scope == "Role") &&
                         _db.UserNotifications.Any(un => un.UserId == uid && un.NotificationId == n.Id))

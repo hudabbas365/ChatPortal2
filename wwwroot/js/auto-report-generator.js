@@ -28,6 +28,193 @@
             global._dashboardWsData?.guid || global.currentWorkspaceGuid || null;
     }
 
+    // Allow-list ADVISORY (non-destructive). Previously this filter silently
+    // dropped any chart whose dataQuery referenced a table outside the agent's
+    // SelectedTables list — which hid the real issue from the user (e.g. AI
+    // hallucinated a table, server returned "Invalid object name X", but the
+    // chart never even rendered so they couldn't see why nothing appeared).
+    //
+    // We now KEEP every chart and only log a console warning + return the list
+    // of suspect charts so the caller can show a soft toast. Each chart still
+    // renders on the canvas with whatever error the server returns when its
+    // query executes — which is exactly what the user needs to debug.
+    function _filterPlanByAllowedTables(plan, allowedTables) {
+        if (!plan || !Array.isArray(plan.pages)) return { plan: plan, dropped: [] };
+        if (!allowedTables || !allowedTables.length) return { plan: plan, dropped: [] };
+
+        function _strip(s) {
+            if (!s) return '';
+            s = String(s).trim();
+            if (s.length >= 2) {
+                var f = s[0], l = s[s.length - 1];
+                if ((f === '[' && l === ']') || (f === '"' && l === '"') || (f === '`' && l === '`')) {
+                    s = s.substring(1, s.length - 1);
+                }
+            }
+            return s.trim();
+        }
+        function _bare(s) {
+            s = _strip(s);
+            var dot = s.lastIndexOf('.');
+            if (dot >= 0) s = s.substring(dot + 1);
+            return _strip(s).toLowerCase();
+        }
+        var allowSet = new Set(allowedTables.map(_bare).filter(Boolean));
+        if (!allowSet.size) return { plan: plan, dropped: [] };
+
+        // Build a bare-name → qualified-name map (e.g. "customer" → "SalesLT.Customer").
+        // Also register pluralised variants ("customers" → "SalesLT.Customer") so that
+        // AI hallucinations like FROM [Customers] still resolve to the real schema.
+        var qualifiedByBare = {};
+        allowedTables.forEach(function (t) {
+            var raw = _strip(t);
+            if (!raw) return;
+            var bare = _bare(t);
+            if (!bare) return;
+            // Build the canonical bracketed form. If the original had a schema,
+            // preserve it; otherwise leave as a single-segment bracketed name.
+            var dot = raw.lastIndexOf('.');
+            var schema = dot >= 0 ? _strip(raw.substring(0, dot)) : '';
+            var bareSeg = _strip(dot >= 0 ? raw.substring(dot + 1) : raw);
+            var bracketed = schema ? '[' + schema + '].[' + bareSeg + ']' : '[' + bareSeg + ']';
+            if (!qualifiedByBare[bare]) qualifiedByBare[bare] = bracketed;
+            // Plural variant: register "<bare>s" / "<bare>es" → same qualified target,
+            // unless that plural is itself a real table in the allow-list.
+            var pl1 = bare + 's';
+            var pl2 = bare + 'es';
+            if (!allowSet.has(pl1) && !qualifiedByBare[pl1]) qualifiedByBare[pl1] = bracketed;
+            if (!allowSet.has(pl2) && !qualifiedByBare[pl2]) qualifiedByBare[pl2] = bracketed;
+        });
+
+        // Match FROM/JOIN <table-ref> where ref is [a].[b] / "a"."b" / a.b / [a] / a.
+        var fromJoinRegex = /\b(FROM|JOIN)\s+((?:\[[^\]]+\]|\"[^\"]+\"|`[^`]+`|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|\"[^\"]+\"|`[^`]+`|\w+))*)/gi;
+
+        // Suspected charts (likely to fail at SQL execution) — reported but NOT removed.
+        var suspect = [];
+        plan.pages.forEach(function (page) {
+            if (!Array.isArray(page.charts)) return;
+            page.charts.forEach(function (chart) {
+                if (chart.chartType === 'shape-textbox') return;
+                var q = chart.dataQuery || '';
+                if (!q || q === 'REST_API' || q === 'FILE_URL') return;
+                var rewritten = q;
+                var rewroteAny = false;
+                rewritten = rewritten.replace(fromJoinRegex, function (full, kw, ref) {
+                    var name = _bare(ref);
+                    if (!name) return full;
+                    var canonical = qualifiedByBare[name];
+                    if (!canonical) return full;            // unknown table — leave for suspect[] reporting
+                    // Compare current ref's normalised form to canonical's normalised form.
+                    var canonicalNoBrackets = canonical.replace(/\[|\]/g, '').toLowerCase();
+                    var currentNoBrackets = _strip(ref).replace(/\[|\]|\"|`/g, '').toLowerCase();
+                    if (currentNoBrackets === canonicalNoBrackets) return full; // already correct
+                    rewroteAny = true;
+                    return kw + ' ' + canonical;
+                });
+                if (rewroteAny && rewritten !== q) {
+                    console.warn('[auto-report] Rewrote table refs in query for chart "' + (chart.title || '') + '":\n  before: ' + q + '\n  after:  ' + rewritten);
+                    chart.dataQuery = rewritten;
+                    q = rewritten;
+                }
+                // Re-scan rewritten query for any remaining unknown refs → suspect.
+                fromJoinRegex.lastIndex = 0;
+                var m, badTable = null;
+                while ((m = fromJoinRegex.exec(q)) !== null) {
+                    var name2 = _bare(m[2]);
+                    if (!name2) continue;
+                    if (!allowSet.has(name2) && !qualifiedByBare[name2]) { badTable = name2; break; }
+                }
+                if (badTable) {
+                    suspect.push({ page: page.name, title: chart.title, table: badTable, query: q });
+                }
+            });
+        });
+        // dropped[] kept for backwards-compatible call sites — but we no longer
+        // remove anything from the plan. Return suspect list so the caller can
+        // show a non-blocking advisory.
+        return { plan: plan, dropped: [], suspect: suspect };
+    }
+
+    // Defense-in-depth: the AI sometimes invents column names that match the
+    // desired output alias (e.g. SUM([AddressCount]) AS [AddressCount] on a
+    // table that has no [AddressCount] column). Prompt rules push back against
+    // this, but LLMs still slip up. After receiving the plan we fetch the real
+    // schema once and rewrite any aggregate over a non-existent column to
+    // COUNT(*) (preserving the alias) so the chart actually executes instead
+    // of erroring with "Invalid column name".
+    async function _repairColumnHallucinations(plan, datasourceId) {
+        if (!plan || !Array.isArray(plan.pages) || !datasourceId) return plan;
+
+        // Fetch schema once. Use the same /schema endpoint the properties panel uses.
+        var schema = null;
+        try {
+            var resp = await fetch('/api/datasources/' + datasourceId + '/schema');
+            if (resp.ok) schema = await resp.json();
+        } catch (e) { /* best-effort */ }
+        if (!schema || !Array.isArray(schema.tables) || schema.tables.length === 0) return plan;
+
+        // Build (bare-table-name → Set<lowercase column>) lookup.
+        var colsByTable = {};
+        schema.tables.forEach(function (t) {
+            var raw = String(t.name || '').trim();
+            if (!raw) return;
+            var dot = raw.lastIndexOf('.');
+            var bare = (dot >= 0 ? raw.substring(dot + 1) : raw).replace(/\[|\]/g, '').toLowerCase();
+            var set = new Set();
+            (t.columns || []).forEach(function (c) {
+                if (c && c.name) set.add(String(c.name).toLowerCase());
+            });
+            if (bare) colsByTable[bare] = set;
+        });
+        if (Object.keys(colsByTable).length === 0) return plan;
+
+        // Match the table name in `FROM [schema].[table]` / `FROM [table]` / `FROM table`.
+        var fromRegex = /\bFROM\s+(?:\[[^\]]+\]|"[^"]+"|`[^`]+`|\w+)(?:\s*\.\s*(\[[^\]]+\]|"[^"]+"|`[^`]+`|\w+))?/i;
+        // Match aggregate calls with a single bracketed column argument:
+        //   SUM([Foo]) / AVG([Foo]) / MIN([Foo]) / MAX([Foo]) / STDEV([Foo]) /
+        //   VAR([Foo]) / MEDIAN([Foo]) / COUNT([Foo])
+        // For COUNT we still validate the inner column — `COUNT([Hallucinated])`
+        // raises "Invalid column name" just like SUM does. `COUNT(*)` and
+        // `COUNT(DISTINCT ...)` are not matched and pass through untouched.
+        var aggRegex = /\b(SUM|AVG|MIN|MAX|STDEV|VAR|MEDIAN|COUNT)\s*\(\s*\[([^\]]+)\]\s*\)/gi;
+        var repairedCharts = 0;
+
+        plan.pages.forEach(function (page) {
+            if (!Array.isArray(page.charts)) return;
+            page.charts.forEach(function (chart) {
+                var q = chart.dataQuery || '';
+                if (!q || q === 'REST_API' || q === 'FILE_URL') return;
+                var fromMatch = fromRegex.exec(q);
+                if (!fromMatch) return;
+                // Extract bare table name from whatever the regex captured (last segment).
+                var refSegments = fromMatch[0].replace(/^\s*FROM\s+/i, '').split('.');
+                var lastSeg = refSegments[refSegments.length - 1] || '';
+                var bareTable = lastSeg.trim().replace(/^\[|\]$|^"|"$|^`|`$/g, '').toLowerCase();
+                var cols = colsByTable[bareTable];
+                if (!cols) return; // unknown table — handled by _filterPlanByAllowedTables
+
+                var changed = false;
+                var rewritten = q.replace(aggRegex, function (full, fn, colName) {
+                    if (cols.has(String(colName).toLowerCase())) return full;
+                    // Hallucinated source column — replace the whole aggregate with COUNT(*),
+                    // which is the AI's actual intent when it invented an alias-as-column.
+                    changed = true;
+                    return 'COUNT(*)';
+                });
+                if (changed) {
+                    console.warn('[auto-report] Repaired hallucinated column refs in chart "' +
+                        (chart.title || '') + '":\n  before: ' + q + '\n  after:  ' + rewritten);
+                    chart.dataQuery = rewritten;
+                    repairedCharts++;
+                }
+            });
+        });
+        if (repairedCharts > 0) {
+            console.info('[auto-report] Repaired ' + repairedCharts + ' chart(s) with hallucinated columns.');
+        }
+        return plan;
+    }
+
     // Validate that every chart on the current page sits fully inside the
     // chart-canvas-drop element horizontally. Vertical bounds are NOT clamped —
     // the drop zone grows/scrolls vertically, so forcing posY to fit the current
@@ -689,8 +876,12 @@
         _setProgress(5);
 
         _abortController = new AbortController();
-        // Auto-timeout after 2 minutes to prevent stuck state
-        var _fetchTimeout = setTimeout(function () { if (_abortController) _abortController.abort(); }, 120000);
+        // Auto-timeout after 10 minutes. Multi-page plans now use server-side
+        // JSON-continuation rounds (Controllers/AutoReportController.Generate)
+        // which can comfortably exceed the original 2-minute cap. The per-chunk
+        // stall watchdog below still aborts within 30s of stream silence so a
+        // truly hung request never blocks the UI for the full 10 minutes.
+        var _fetchTimeout = setTimeout(function () { if (_abortController) _abortController.abort(); }, 600000);
         var user = null;
         try { user = JSON.parse(localStorage.getItem('cp_user') || 'null'); } catch (e) {}
 
@@ -738,25 +929,45 @@
 
             // 2. Stream and accumulate the response
             var fullText = '';
-            if (global.aiStream && global.aiStream.readSseText) {
-                var result = await global.aiStream.readSseText(response, function (chunk) {
-                    fullText += chunk;
-                    _setStatus('Receiving report plan… (' + fullText.length + ' chars)');
-                    _setProgress(10 + Math.min(30, fullText.length / 50));
-                });
-                fullText = result.fullText || fullText;
-            } else {
-                var body = await response.text();
-                // Parse SSE manually
-                body.split('\n').forEach(function (line) {
-                    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                        try {
-                            var obj = JSON.parse(line.substring(6));
-                            if (obj.text) fullText += obj.text;
-                            if (obj.error) throw new Error(obj.error);
-                        } catch (e) {}
-                    }
-                });
+            // Per-chunk watchdog: if no SSE chunk arrives for 30s, the model
+            // has stalled mid-generation (most often token-budget exhaustion).
+            // Abort early and salvage whatever JSON we already received instead
+            // of leaving the user staring at the modal for the full 2 minutes.
+            var _lastChunkAt = Date.now();
+            var _stallTimer = setInterval(function () {
+                if (Date.now() - _lastChunkAt > 30000 && _abortController) {
+                    console.warn('[auto-report] No stream activity for 30s — aborting and attempting to salvage partial plan.');
+                    try { _abortController.abort(); } catch (e) {}
+                }
+            }, 5000);
+            try {
+                if (global.aiStream && global.aiStream.readSseText) {
+                    var result = await global.aiStream.readSseText(response, function (chunk) {
+                        fullText += chunk;
+                        _lastChunkAt = Date.now();
+                        _setStatus('Receiving report plan… (' + fullText.length + ' chars)');
+                        _setProgress(10 + Math.min(30, fullText.length / 50));
+                    });
+                    fullText = result.fullText || fullText;
+                } else {
+                    var body = await response.text();
+                    // Parse SSE manually
+                    body.split('\n').forEach(function (line) {
+                        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                            try {
+                                var obj = JSON.parse(line.substring(6));
+                                if (obj.text) fullText += obj.text;
+                                if (obj.error) throw new Error(obj.error);
+                            } catch (e) {}
+                        }
+                    });
+                }
+            } catch (streamErr) {
+                // AbortError or network blip — fall through and try to salvage
+                // partial JSON from whatever fullText we already accumulated.
+                console.warn('[auto-report] Stream interrupted:', streamErr && streamErr.message);
+            } finally {
+                clearInterval(_stallTimer);
             }
 
             _setProgress(40);
@@ -765,7 +976,45 @@
             // 3. Parse the JSON plan from AI response
             var plan = _extractJson(fullText);
             if (!plan || !plan.pages || !plan.pages.length) {
-                throw new Error('AI did not return a valid report plan. Please try again.');
+                // Log the raw AI response so the user/devs can see WHY parsing failed
+                // (truncation, plain-text refusal, malformed JSON, etc.) instead of
+                // just a generic "AI did not return a valid plan" toast.
+                console.warn('[auto-report] AI did not return a valid plan. Raw response (first 2000 chars):',
+                    (fullText || '').substring(0, 2000));
+                var hint = (fullText && fullText.length > 2000)
+                    ? ' The model stopped before completing the JSON (received ' + fullText.length + ' chars). Try a shorter prompt or fewer tables.'
+                    : '';
+                throw new Error('AI did not return a valid report plan.' + hint + ' Please try again.');
+            }
+
+            // 3a. Defence-in-depth: strip charts that reference tables outside
+            // the agent's allow-list before they reach the canvas. Without this
+            // filter, hallucinated tables (e.g. 'vw_CustomerSummary', 'Customers')
+            // pass through and surface as "Connection Error" / "Invalid object
+            // name" cards on the dashboard.
+            var filterResult = _filterPlanByAllowedTables(plan, tables);
+            plan = filterResult.plan;
+            // Advisory only — we no longer drop charts here. Each chart whose
+            // query references an unknown table will still render on the canvas
+            // and surface its own per-card SQL error so the user can see WHY it
+            // failed (instead of the chart silently disappearing).
+            if (filterResult.suspect && filterResult.suspect.length) {
+                console.warn('[auto-report] ' + filterResult.suspect.length +
+                    ' chart(s) reference tables outside the agent allow-list — they will be rendered but are likely to fail at query time:',
+                    filterResult.suspect);
+            }
+            if (!plan.pages || !plan.pages.length) {
+                throw new Error('All AI-generated charts referenced tables that don\'t exist in this datasource. Try a different prompt or add more tables in the agent settings.');
+            }
+
+            // 3b. Defence-in-depth: repair AI-hallucinated column references
+            // (e.g. `SUM([AddressCount])` on a table without an [AddressCount]
+            // column → rewritten to `COUNT(*)`). Runs only when we have a
+            // datasourceId so we can fetch the real schema.
+            try {
+                plan = await _repairColumnHallucinations(plan, global.currentDatasourceId);
+            } catch (e) {
+                console.warn('[auto-report] Column-hallucination repair failed (non-fatal):', e && e.message);
             }
 
             // 3.5 Phase 31: Interactive plan preview — let the user review
@@ -1123,6 +1372,91 @@
 
             await new Promise(function (r) { setTimeout(r, 400); });
 
+            // Persist the freshly generated canvas as a Report so it survives
+            // session expiry / reload. Without this step the auto-generated
+            // canvas only lives in HttpSession and disappears when the user
+            // navigates away and comes back later.
+            try {
+                var wsGuid = _getWorkspaceId();
+                if (wsGuid && global.canvasManager && Array.isArray(global.canvasManager.pages)) {
+                    var cm = global.canvasManager;
+                    // Sync active-page charts back into pages[] before serialising.
+                    if (cm.pages[cm.activePageIndex]) {
+                        cm.pages[cm.activePageIndex].charts = cm.charts;
+                    }
+                    var canvasJson = JSON.stringify({
+                        pages: cm.pages,
+                        activePageIndex: cm.activePageIndex
+                    });
+                    var allChartIds = [];
+                    cm.pages.forEach(function (p) {
+                        (p.charts || []).forEach(function (c) { if (c && c.id) allChartIds.push(c.id); });
+                    });
+                    // Resolve the numeric AgentId from the currently-active agent
+                    // GUID. The dashboard sets `currentAgentGuid` (string), not
+                    // `currentAgentId` (int). Without this resolution every
+                    // auto-generated report was persisted with AgentId = NULL,
+                    // which meant the cascade "Delete AI Insights" endpoint
+                    // couldn't find them via the agent path and any drift on the
+                    // datasource binding left these reports orphaned in the DB.
+                    var _wsData = global._dashboardWsData || {};
+                    var _resolvedAgentId = null;
+                    var _resolvedAgentName = null;
+                    if (global.currentAgentGuid && Array.isArray(_wsData.agents)) {
+                        var _agent = _wsData.agents.find(function (a) { return a.guid === global.currentAgentGuid; });
+                        if (_agent) {
+                            if (_agent.id) _resolvedAgentId = _agent.id;
+                            if (_agent.name) _resolvedAgentName = _agent.name;
+                        }
+                    }
+                    if (_resolvedAgentId == null && global.currentAgentId) {
+                        _resolvedAgentId = global.currentAgentId;
+                    }
+
+                    // Use a STABLE per-agent name so the server's upsert-by-name
+                    // overwrites the previous auto-report instead of creating a new
+                    // Report row on every run. The previous CanvasJson is preserved
+                    // by the server in ReportRevisions (Kind="Auto"), so users can
+                    // still retrieve prior versions from the report's revisions
+                    // list. This collapses the cascading "Auto Report — 5/4/2026…"
+                    // tiles down to a single tile per agent in the workspace flow,
+                    // while keeping full history retrievable from the dashboard.
+                    var defaultName = _resolvedAgentName
+                        ? ('Auto Report \u00B7 ' + _resolvedAgentName)
+                        : 'Auto Report';
+                    var _resolvedDsId = global.currentDatasourceId
+                        || ((_wsData.datasources || [])[0] && _wsData.datasources[0].id)
+                        || null;
+
+                    var saveResp = await fetch('/api/reports', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '')
+                        },
+                        body: JSON.stringify({
+                            workspaceGuid: wsGuid,
+                            name: defaultName,
+                            datasourceId: _resolvedDsId,
+                            agentId: _resolvedAgentId,
+                            chartIds: allChartIds,
+                            canvasJson: canvasJson,
+                            createdBy: user?.id || null
+                        })
+                    });
+                    if (saveResp.ok) {
+                        var saved = await saveResp.json();
+                        global._lastAutoReport = saved;
+                        _toast('Report saved as “' + defaultName + '”.', 'success');
+                    } else {
+                        console.warn('[auto-report] Save failed (HTTP ' + saveResp.status + ')');
+                        _toast('Report generated but could not be saved automatically. Use Save to keep it.', 'warn');
+                    }
+                }
+            } catch (saveErr) {
+                console.error('[auto-report] Save error:', saveErr);
+            }
+
             clearTimeout(_fetchTimeout);
             if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
             _showDone(plan.pages.length, chartsDone);
@@ -1190,6 +1524,58 @@
                 var parsedRepaired = JSON.parse(repaired);
                 if (parsedRepaired && parsedRepaired.pages) return parsedRepaired;
             } catch (e) {}
+        }
+
+        // Salvage: stream may have been aborted mid-object, so no top-level
+        // {...} balanced. Walk forward from the first '{' and try to close
+        // the structure by appending the right number of ']' and '}' tokens.
+        // This lets a stuck/truncated stream still surface whatever pages and
+        // charts the AI managed to emit before stalling.
+        var firstBrace = jsonStr.indexOf('{');
+        if (firstBrace >= 0) {
+            var tail = jsonStr.slice(firstBrace);
+            var d2 = 0, b2 = 0, inS = false, esc2 = false;
+            // Truncate at the last complete "}," or "}" inside an array so
+            // we don't leave a half-written chart object dangling.
+            var lastSafe = -1;
+            for (var p = 0; p < tail.length; p++) {
+                var c = tail[p];
+                if (esc2) { esc2 = false; continue; }
+                if (c === '\\' && inS) { esc2 = true; continue; }
+                if (c === '"') { inS = !inS; continue; }
+                if (inS) continue;
+                if (c === '{') d2++;
+                else if (c === '}') { d2--; if (d2 >= 0 && b2 >= 0) lastSafe = p; }
+                else if (c === '[') b2++;
+                else if (c === ']') b2--;
+            }
+            if (lastSafe > 0) {
+                var trimmed = tail.slice(0, lastSafe + 1);
+                // Re-count after trim and append closers
+                var d3 = 0, b3 = 0, inS3 = false, esc3 = false;
+                for (var q = 0; q < trimmed.length; q++) {
+                    var cc = trimmed[q];
+                    if (esc3) { esc3 = false; continue; }
+                    if (cc === '\\' && inS3) { esc3 = true; continue; }
+                    if (cc === '"') { inS3 = !inS3; continue; }
+                    if (inS3) continue;
+                    if (cc === '{') d3++;
+                    else if (cc === '}') d3--;
+                    else if (cc === '[') b3++;
+                    else if (cc === ']') b3--;
+                }
+                // Strip trailing comma if any, then append closers (arrays then objects).
+                var candidate = trimmed.replace(/,(\s*)$/, '$1');
+                while (b3-- > 0) candidate += ']';
+                while (d3-- > 0) candidate += '}';
+                try {
+                    var salvaged = JSON.parse(candidate.replace(/,(\s*[}\]])/g, '$1'));
+                    if (salvaged && salvaged.pages && salvaged.pages.length) {
+                        console.warn('[auto-report] Recovered partial plan from truncated stream (' + salvaged.pages.length + ' page(s)).');
+                        return salvaged;
+                    }
+                } catch (e) {}
+            }
         }
 
         return null;

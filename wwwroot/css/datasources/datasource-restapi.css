@@ -1,0 +1,21 @@
+/* ============================================================
+   REST API datasource — per-type styles.
+   Scoped via [data-ds-type="restapi"].
+   ============================================================ */
+
+[data-ds-type="restapi"] {
+    --ds-accent: #2ecc71; /* green — "connected to live API" cue */
+}
+
+[data-ds-type="restapi"].wfe-ds-block,
+[data-ds-type="restapi"] .wfe-ds-block {
+    border-left: 3px solid var(--ds-accent);
+    padding-left: 10px;
+}
+
+/* HTTP method dropdown — render with monospace for visual parity with curl-
+   style requests. */
+[data-ds-type="restapi"] select {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
+}

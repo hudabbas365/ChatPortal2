@@ -283,7 +283,7 @@ public class AuthController : Controller
         }
 
         var comingSoon = _config.GetValue<bool>("App:ComingSoon");
-        var redirectUrl = comingSoon ? "/" : "/chat";
+        var redirectUrl = comingSoon ? "/" : "/chat?home=1";
 
         // Load org name for UI display
         string? orgName = null;

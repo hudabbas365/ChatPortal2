@@ -3,6 +3,7 @@ namespace AIInsights.Models;
 public class Organization
 {
     public int Id { get; set; }
+    public Guid OrganizationGuid { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
     public string? LogoUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -17,12 +18,19 @@ public class Organization
     public int PurchasedProfessionalLicenses { get; set; } = 0; // Professional licenses bought by OrgAdmin
     public int PurchasedEnterpriseLicenses { get; set; } = 0;   // Enterprise licenses bought by OrgAdmin
 
-    // ── PayPal Recurring Subscription ──
+    // ── PayPal Recurring Subscription (plan-level: Professional / Enterprise tier subscription for the org) ──
     public string? PayPalSubscriptionId { get; set; }
     public string? PayPalPlanId { get; set; }
     public string SubscriptionStatus { get; set; } = "NONE"; // NONE, APPROVAL_PENDING, ACTIVE, SUSPENDED, CANCELLED, EXPIRED, PAST_DUE
     public DateTime? SubscriptionStartDate { get; set; }
     public DateTime? SubscriptionNextBillingDate { get; set; }
+
+    // ── Per-tier license subscriptions ──
+    // One PayPal recurring subscription per tier, with quantity = number of licenses.
+    // Charged at (tier price * quantity) every 30 days. Independent of the plan-level
+    // subscription above — an org can hold license subs without a plan sub.
+    public string? PayPalProSubscriptionId { get; set; }
+    public string? PayPalEntSubscriptionId { get; set; }
 
     // ── Recurring-payment grace tracking ──
     // Counts consecutive failed recurring charges. Reset to 0 on a successful

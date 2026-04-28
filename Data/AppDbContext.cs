@@ -63,6 +63,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(w => w.OwnerId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Entity<Organization>()
+            .HasIndex(o => o.OrganizationGuid)
+            .IsUnique();
+
         builder.Entity<Workspace>()
             .HasIndex(w => w.Guid)
             .IsUnique();
@@ -181,6 +185,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<SeoEntry>()
             .HasIndex(s => s.PageUrl)
             .IsUnique();
+
+        // Webhook idempotency: dedupe replayed PayPal events by event.id (B5).
+        builder.Entity<PaymentRecord>()
+            .HasIndex(p => p.PayPalEventId)
+            .IsUnique()
+            .HasFilter("[PayPalEventId] IS NOT NULL");
 
         builder.Entity<SubscriptionPlan>()
             .Ignore(s => s.IsTrialActive)

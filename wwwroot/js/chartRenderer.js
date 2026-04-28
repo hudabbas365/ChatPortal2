@@ -94,6 +94,25 @@ class ChartRenderer {
         return d.innerHTML;
     }
 
+    // Compact numeric formatter — turns 1234 → "1.2k", 1500000 → "1.5M", etc.
+    // Used on y-axis labels, tooltips, and data labels so charts don't render
+    // walls of "100000.000000000000" digits. Keeps small values (<1000)
+    // readable with up to 2 fraction digits, drops trailing zeros.
+    _formatNumber(raw) {
+        const v = Number(raw);
+        if (!isFinite(v)) return String(raw ?? '');
+        const abs = Math.abs(v);
+        const sign = v < 0 ? '-' : '';
+        const trim = (n, d) => n.toFixed(d).replace(/\.?0+$/, '');
+        if (abs >= 1e12) return sign + trim(abs / 1e12, 2) + 'T';
+        if (abs >= 1e9)  return sign + trim(abs / 1e9, 2)  + 'B';
+        if (abs >= 1e6)  return sign + trim(abs / 1e6, 2)  + 'M';
+        if (abs >= 1e3)  return sign + trim(abs / 1e3, 2)  + 'k';
+        if (abs === 0)   return '0';
+        if (abs >= 1)    return sign + trim(abs, 2);
+        return sign + trim(abs, 4);
+    }
+
     // Shorten long ISO/date-like strings so chart axes don't overlap.
     // "2008-06-01T00:00:00(.xxx)(Z)" → "2008-06-01" ; "2008-06-01 00:00:00" → "2008-06-01".
     // Pure numeric and short labels pass through unchanged.
@@ -160,8 +179,19 @@ class ChartRenderer {
 
     destroy(chartId) {
         if (this.instances[chartId]) {
-            this.instances[chartId].destroy();
+            try { this.instances[chartId].destroy(); } catch (_) {}
             delete this.instances[chartId];
+        }
+        // Remove document-level filter listeners registered for this chart
+        // so deleted charts don't keep handling cross-filter / filter-panel
+        // events (memory leak + potential errors operating on disposed instance).
+        if (this._crossFilterListener && this._crossFilterListener[chartId]) {
+            try { document.removeEventListener('crossfilter:change', this._crossFilterListener[chartId]); } catch (_) {}
+            delete this._crossFilterListener[chartId];
+        }
+        if (this._filterPanelListener && this._filterPanelListener[chartId]) {
+            try { document.removeEventListener('filters:change', this._filterPanelListener[chartId]); } catch (_) {}
+            delete this._filterPanelListener[chartId];
         }
     }
 
@@ -213,10 +243,15 @@ class ChartRenderer {
         const sk = wrap.querySelector('.chart-loading-skeleton');
         if (sk) sk.remove();
 
-        // Show empty-data overlay when no data is available
+        // Show empty-data overlay when no data is available, OR when the
+        // datasource returned a hard error (defensive — a partial labels/values
+        // array can survive a failed fetch and would otherwise plot as bogus).
         const hasRawRows = Array.isArray(data.rawData) && data.rawData.length > 0;
         const skipNoData = chartDef.chartType === 'navigation';
-        if (!skipNoData && !hasRawRows && (!data.labels || !data.labels.length) && (!data.values || !data.values.length)) {
+        const noUsableData = !hasRawRows
+            && (!data.labels || !data.labels.length)
+            && (!data.values || !data.values.length);
+        if (!skipNoData && (noUsableData || data.error)) {
             const noData = document.createElement('div');
             noData.className = 'chart-no-data-overlay';
             const errMsg = data.error
@@ -224,18 +259,35 @@ class ChartRenderer {
                 : '<i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>No records returned on this query.';
             noData.innerHTML = '<div class="chart-no-data">' + errMsg + '</div>';
             wrap.appendChild(noData);
+            // Even with no data, custom-rendered charts must keep listening
+            // to crossfilter:change / filters:change so they can RECOVER when
+            // a filter is cleared (or when a different filter brings data
+            // back). Without this, a transient empty result permanently
+            // disconnects the chart from the filter cascade.
+            if (this._customRenderTypes.has(chartDef.chartType)) {
+                this._attachCustomChartFilters(chartDef, wrap, data);
+            }
             return;
         }
 
         // Custom chart types use their own HTML/canvas rendering (unchanged)
         if (this._customRenderTypes.has(chartDef.chartType)) {
-            const existing = wrap.querySelector('.custom-chart-render');
-            if (existing) existing.remove();
+            // Strip ALL prior renders — both custom and ApexCharts — otherwise
+            // when a chart type changes from Apex to custom (e.g. bar → treemap)
+            // the previous .apex-chart-wrap stays mounted behind the new custom
+            // render and shows through as a "hidden chart behind it".
+            wrap.querySelectorAll('.custom-chart-render, .apex-chart-wrap').forEach(n => n.remove());
             const div = document.createElement('div');
             div.className = 'custom-chart-render';
             div.style.cssText = 'position:absolute;inset:0;overflow:hidden;';
             wrap.appendChild(div);
             this.renderCustomChart(chartDef, div, data);
+            // Custom-rendered charts (KPI, Card, MetricTile, Table, Treemap,
+            // Heatmap, Sankey, Slicer, …) ALSO need to react to slicer / filter-panel
+            // changes. The Apex path below registers its own listeners further
+            // down, but this branch returns early — so without this call those
+            // chart types would never participate in the filter cascade.
+            this._attachCustomChartFilters(chartDef, wrap, data);
             return;
         }
 
@@ -259,11 +311,11 @@ class ChartRenderer {
         this._renderSeq = this._renderSeq || {};
         const mySeq = (this._renderSeq[chartDef.id] = (this._renderSeq[chartDef.id] || 0) + 1);
 
-        // Remove any previous ApexCharts mount and custom render
-        const existingApex = wrap.querySelector('.apex-chart-wrap');
-        if (existingApex) existingApex.remove();
-        const existingCustom = wrap.querySelector('.custom-chart-render');
-        if (existingCustom) existingCustom.remove();
+        // Remove any previous ApexCharts mount and custom render. Use
+        // querySelectorAll so racing re-renders (theme switches / rapid resize)
+        // never leave stale .apex-chart-wrap or .custom-chart-render layers
+        // behind the new chart.
+        wrap.querySelectorAll('.apex-chart-wrap, .custom-chart-render').forEach(n => n.remove());
 
         // Create a fresh div for ApexCharts
         const apexDiv = document.createElement('div');
@@ -279,8 +331,19 @@ class ChartRenderer {
             options.colors = this.colorPalettes.default.slice();
         }
 
-        // Wire up cross-filter click events via ApexCharts events
-        const labelField = chartDef.mapping?.labelField || 'label';
+        // Wire up cross-filter click events via ApexCharts events.
+        // Resolve the actual SQL column name. When mapping.labelField is empty
+        // (legacy chart, AI-built chart with missing mapping, etc.) the literal
+        // string "label" used to leak into CrossFilter.apply, which then built
+        // WHERE clauses like [label] = 'Europe' — invalid because no real
+        // table has a column called "label". Fall back to the first key of
+        // rawData (the real column name returned by the executed query) so
+        // downstream filterWhere fragments use [Region] = 'Europe'.
+        let labelField = chartDef.mapping?.labelField;
+        if (!labelField && Array.isArray(data.rawData) && data.rawData.length > 0) {
+            labelField = Object.keys(data.rawData[0])[0] || '';
+        }
+        if (!labelField) labelField = 'label';
         if (!options.chart) options.chart = {};
         if (!options.chart.events) options.chart.events = {};
         const _onDataPointSelection = (event, chartCtx, config) => {
@@ -455,52 +518,49 @@ class ChartRenderer {
             const filter = e.detail;
             const inst = this.instances[chartDef.id];
             if (!inst) return;
-            let newValues, newLabels;
-            if (filter && data.rawData) {
-                // Translate the filter field/value when the source chart's table
-                // differs from this chart's table, using the datasource's
-                // relationship graph. No translation needed for the clicked
-                // chart itself (sourceChartId match) or same-table charts.
-                let fField = filter.field;
-                let fValue = filter.value;
-                const srcTable = filter.sourceDatasetName;
-                const myTable = chartDef.datasetName;
-                const sameChart = filter.sourceChartId && filter.sourceChartId === chartDef.id;
-                const sameTable = srcTable && myTable && String(srcTable).toLowerCase() === String(myTable).toLowerCase();
-                if (!sameChart && !sameTable && srcTable && myTable && window.CrossFilter) {
-                    const rel = window.CrossFilter.findRelationship(filter.sourceDatasourceId, srcTable, myTable);
-                    if (rel && rel.sourceColumn && rel.thisColumn && filter.sourceRow) {
-                        const keys = Object.keys(filter.sourceRow);
-                        const srcKey = keys.find(k => k.toLowerCase() === String(rel.sourceColumn).toLowerCase());
-                        const srcVal = srcKey ? filter.sourceRow[srcKey] : filter.sourceRow[rel.sourceColumn];
-                        if (srcVal !== undefined && srcVal !== null) {
-                            fField = rel.thisColumn;
-                            fValue = srcVal;
-                        } else {
-                            // No usable foreign-key value on the source row — leave chart unfiltered.
-                            newLabels = data.labels || [];
-                            newValues = data.values || [];
-                            _updateApex(inst, newLabels, newValues);
-                            return;
-                        }
-                    } else {
-                        // No relationship between these tables — leave chart unfiltered.
-                        newLabels = data.labels || [];
-                        newValues = data.values || [];
-                        _updateApex(inst, newLabels, newValues);
-                        return;
-                    }
-                }
-                const rowKeys = data.rawData[0] ? Object.keys(data.rawData[0]) : [];
-                const resolvedField = rowKeys.find(k => k.toLowerCase() === String(fField).toLowerCase()) || fField;
-                const fData = data.rawData.filter(row => String(row[resolvedField]) === String(fValue));
-                newLabels = fData.map(r => String(r[labelField] ?? ''));
-                newValues = fData.map(r => parseFloat(r[chartDef.mapping?.valueField || 'value']) || 0);
-            } else {
-                newLabels = data.labels || [];
-                newValues = data.values || [];
+
+            // Stash the original filterWhere on first invocation so we can
+            // restore it when the cross-filter is cleared.
+            if (chartDef._origFilterWhere === undefined) {
+                chartDef._origFilterWhere = chartDef.filterWhere || '';
             }
-            _updateApex(inst, newLabels, newValues);
+
+            // Filter cleared
+            if (!filter) {
+                if (chartDef._cfServerApplied) {
+                    chartDef.filterWhere = chartDef._origFilterWhere || '';
+                    chartDef._cfServerApplied = false;
+                    this.render(chartDef, wrap);
+                    return;
+                }
+                _updateApex(inst, data.labels || [], data.values || []);
+                return;
+            }
+
+            // SOURCE chart: don't mutate or refilter its own data — keep all
+            // bars visible so the user sees the clicked category in context
+            // (ApexCharts already paints the selection state on the clicked
+            // point).
+            if (filter.sourceChartId && filter.sourceChartId === chartDef.id) {
+                return;
+            }
+
+            // Power BI HIGHLIGHT MODE (UI parity):
+            // Related charts keep their FULL original data on screen. The
+            // global `.cf-dimmed` class on `.chart-card` (added by the
+            // canvasManager listener) already provides the visual cue that
+            // these charts are related-but-not-the-source. Mutating their
+            // data to the filtered subset (previous behaviour) made charts
+            // shrink to one or two bars and looked broken. We intentionally
+            // do NOTHING here for related charts.
+            //
+            // If a previous run had pushed a server-side WHERE into this
+            // chart, restore its original filter so it shows full data again.
+            if (chartDef._cfServerApplied) {
+                chartDef.filterWhere = chartDef._origFilterWhere || '';
+                chartDef._cfServerApplied = false;
+                this.render(chartDef, wrap);
+            }
         };
         document.addEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
 
@@ -511,22 +571,271 @@ class ChartRenderer {
         }
         this._filterPanelListener[chartDef.id] = () => {
             if (!window.filterPanel) return;
-            const filters = filterPanel.getFiltersForChart(chartDef.id);
+            const filters = filterPanel.getFiltersForChart(chartDef.id) || [];
             const inst = this.instances[chartDef.id];
             if (!inst) return;
-            let newValues, newLabels;
-            if (filters.length > 0 && data.rawData) {
-                const vField = chartDef.mapping?.valueField || 'value';
-                const fData = FilterPanel.filterData(data.rawData, filters);
-                newLabels = fData.map(r => String(r[labelField] ?? ''));
-                newValues = fData.map(r => parseFloat(r[vField]) || 0);
-            } else {
-                newLabels = data.labels || [];
-                newValues = data.values || [];
+
+            if (chartDef._origFilterWhere === undefined) {
+                chartDef._origFilterWhere = chartDef.filterWhere || '';
             }
-            _updateApex(inst, newLabels, newValues);
+
+            // No filters — clear server-applied state if needed
+            if (filters.length === 0) {
+                if (chartDef._fpServerApplied) {
+                    chartDef.filterWhere = chartDef._origFilterWhere || '';
+                    chartDef._fpServerApplied = false;
+                    this.render(chartDef, wrap);
+                    return;
+                }
+                _updateApex(inst, data.labels || [], data.values || []);
+                return;
+            }
+
+            const vField = chartDef.mapping?.valueField || 'value';
+
+            // In-memory fast path: only when ALL filter fields exist in rawData
+            if (data.rawData && data.rawData.length > 0) {
+                const rowKeys = Object.keys(data.rawData[0]);
+                const allApplicable = filters.every(f => {
+                    const fld = f && (f.field || f.column || f.name);
+                    if (!fld) return false;
+                    return rowKeys.some(k => k.toLowerCase() === String(fld).toLowerCase());
+                });
+                if (allApplicable) {
+                    const fData = FilterPanel.filterData(data.rawData, filters);
+                    if (fData && fData.length > 0) {
+                        const newLabels = fData.map(r => String(r[labelField] ?? ''));
+                        const newValues = fData.map(r => parseFloat(r[vField]) || 0);
+                        // If we'd previously pushed the filter to the server,
+                        // restore filterWhere now that local can handle it.
+                        if (chartDef._fpServerApplied) {
+                            chartDef.filterWhere = chartDef._origFilterWhere || '';
+                            chartDef._fpServerApplied = false;
+                            this.render(chartDef, wrap);
+                            return;
+                        }
+                        _updateApex(inst, newLabels, newValues);
+                        return;
+                    }
+                }
+            }
+
+            // Server-refetch fallback for SQL-backed datasources
+            if (this._isSqlBackedDatasource()) {
+                const frags = filters.map(f => this._filterToWhereFragment(f)).filter(Boolean);
+                if (frags.length > 0) {
+                    const base = chartDef._origFilterWhere || '';
+                    const combined = frags.map(f => `(${f})`).join(' AND ');
+                    chartDef.filterWhere = base ? `(${base}) AND ${combined}` : combined;
+                    chartDef._fpServerApplied = true;
+                    this.render(chartDef, wrap);
+                    return;
+                }
+            }
+
+            // Last resort: leave chart visible with original data
+            _updateApex(inst, data.labels || [], data.values || []);
         };
         document.addEventListener('filters:change', this._filterPanelListener[chartDef.id]);
+    }
+
+    // Register cross-filter and filter-panel listeners for custom-rendered
+    // charts (KPI, Card, MetricTile, Table, Treemap, Heatmap, Sankey, Slicer,
+    // Marimekko, Dumbbell, etc.). Custom renderers don't have an ApexCharts
+    // instance to update incrementally, so we re-render the chart in place
+    // after pushing the translated WHERE clause into chartDef.filterWhere.
+    _attachCustomChartFilters(chartDef, wrap, data) {
+        this._crossFilterListener = this._crossFilterListener || {};
+        this._filterPanelListener = this._filterPanelListener || {};
+        if (this._crossFilterListener[chartDef.id]) {
+            document.removeEventListener('crossfilter:change', this._crossFilterListener[chartDef.id]);
+        }
+        if (this._filterPanelListener[chartDef.id]) {
+            document.removeEventListener('filters:change', this._filterPanelListener[chartDef.id]);
+        }
+        if (chartDef._origFilterWhere === undefined) {
+            chartDef._origFilterWhere = chartDef.filterWhere || '';
+        }
+        // Stash the unfiltered dataset so the in-memory fast path can re-derive
+        // labels/values without a server round-trip on every cross-filter event.
+        const origData = data && Array.isArray(data.rawData) && data.rawData.length > 0
+            ? data
+            : (chartDef._origData || data);
+        if (origData && Array.isArray(origData.rawData) && origData.rawData.length > 0) {
+            chartDef._origData = origData;
+        }
+
+        // In-memory re-render: filter rawData by (field,value) and redraw
+        // the custom chart in place. Works for ALL datasource kinds (SQL,
+        // REST API, File URL) and avoids a server round-trip.
+        const _renderInMemory = (fField, fValue) => {
+            const od = chartDef._origData;
+            if (!od || !Array.isArray(od.rawData) || od.rawData.length === 0) return false;
+            const rowKeys = Object.keys(od.rawData[0]);
+            // null fField/fValue ⇒ restore original
+            if (fField == null) {
+                const div = wrap.querySelector('.custom-chart-render');
+                if (!div) return false;
+                this.renderCustomChart(chartDef, div, od);
+                return true;
+            }
+            const resolved = rowKeys.find(k => k.toLowerCase() === String(fField).toLowerCase());
+            if (!resolved) return false;
+            const filteredRows = od.rawData.filter(r => String(r[resolved]) === String(fValue));
+            if (filteredRows.length === 0) return false;
+            const m = chartDef.mapping || {};
+            const labelKey = rowKeys.find(k => k.toLowerCase() === String(m.labelField || '').toLowerCase()) || rowKeys[0];
+            const valueKey = rowKeys.find(k => k.toLowerCase() === String(m.valueField || '').toLowerCase()) || rowKeys[1] || rowKeys[0];
+            const filteredData = {
+                ...od,
+                labels: filteredRows.map(r => r[labelKey]),
+                values: filteredRows.map(r => { const n = Number(r[valueKey]); return isNaN(n) ? r[valueKey] : n; }),
+                rawData: filteredRows
+            };
+            const div = wrap.querySelector('.custom-chart-render');
+            if (!div) return false;
+            this.renderCustomChart(chartDef, div, filteredData);
+            return true;
+        };
+
+        const cfHandler = (e) => {
+            const filter = e.detail;
+            // Self-fire guard: a slicer must not re-render itself when it
+            // emits its own filter (would wipe its chip active state mid-click).
+            if (filter && filter.sourceChartId === chartDef.id) return;
+
+            // Filter cleared — restore original
+            if (!filter) {
+                if (chartDef._cfInMemoryApplied) {
+                    if (_renderInMemory(null, null)) {
+                        chartDef._cfInMemoryApplied = false;
+                        return;
+                    }
+                }
+                if (chartDef._cfServerApplied) {
+                    chartDef.filterWhere = chartDef._origFilterWhere || '';
+                    chartDef._cfServerApplied = false;
+                    this.render(chartDef, wrap);
+                }
+                return;
+            }
+
+            // SOURCE chart: don't refilter itself — keep its full data so the
+            // user sees the click in context (Power BI parity).
+            if (filter.sourceChartId && filter.sourceChartId === chartDef.id) {
+                return;
+            }
+
+            // Power BI HIGHLIGHT MODE (UI parity):
+            // Related charts keep their full original data; the .cf-dimmed
+            // class on `.chart-card` is the only visual signal of relation.
+            // No data mutation, no server refetch. If a previous run pushed
+            // an in-memory or server filter, restore the original view.
+            if (chartDef._cfInMemoryApplied) {
+                if (_renderInMemory(null, null)) chartDef._cfInMemoryApplied = false;
+            }
+            if (chartDef._cfServerApplied) {
+                chartDef.filterWhere = chartDef._origFilterWhere || '';
+                chartDef._cfServerApplied = false;
+                this.render(chartDef, wrap);
+            }
+        };
+
+        const fpHandler = () => {
+            if (!window.filterPanel) return;
+            const filters = filterPanel.getFiltersForChart(chartDef.id) || [];
+            if (filters.length === 0) {
+                if (chartDef._fpServerApplied) {
+                    chartDef.filterWhere = chartDef._origFilterWhere || '';
+                    chartDef._fpServerApplied = false;
+                    this.render(chartDef, wrap);
+                }
+                return;
+            }
+            if (this._isSqlBackedDatasource()) {
+                const frags = filters.map(f => this._filterToWhereFragment(f)).filter(Boolean);
+                if (frags.length > 0) {
+                    const base = chartDef._origFilterWhere || '';
+                    const combined = frags.map(f => `(${f})`).join(' AND ');
+                    chartDef.filterWhere = base ? `(${base}) AND ${combined}` : combined;
+                    chartDef._fpServerApplied = true;
+                    this.render(chartDef, wrap);
+                }
+            }
+        };
+
+        this._crossFilterListener[chartDef.id] = cfHandler;
+        this._filterPanelListener[chartDef.id] = fpHandler;
+        document.addEventListener('crossfilter:change', cfHandler);
+        document.addEventListener('filters:change', fpHandler);
+    }
+
+    // SQL-backed datasource = anything that supports SQL WHERE pushdown
+    // (i.e. not Power BI / DAX, not REST API, not File URL).
+    _isSqlBackedDatasource() {
+        return !this._isPowerBi() && !this._isRestApi() && !this._isFileUrl();
+    }
+
+    _sqlEscape(v) {
+        if (v === null || v === undefined) return 'NULL';
+        if (typeof v === 'number' && isFinite(v)) return String(v);
+        if (typeof v === 'boolean') return v ? '1' : '0';
+        return "'" + String(v).replace(/'/g, "''") + "'";
+    }
+
+    // Cross-DB identifier quoting. SQL Server uses [name], PostgreSQL/Oracle
+    // use "name", MySQL/MariaDB use `name`. Falls back to SQL Server style
+    // when the datasource type is unknown (matches the legacy behaviour).
+    _quoteIdentifier(name) {
+        const n = String(name);
+        const dsType = (window.currentDatasourceType || '').toLowerCase();
+        if (dsType.includes('postgres') || dsType.includes('oracle')) {
+            return '"' + n.replace(/"/g, '""') + '"';
+        }
+        if (dsType.includes('mysql') || dsType.includes('mariadb')) {
+            return '`' + n.replace(/`/g, '``') + '`';
+        }
+        return '[' + n.replace(/]/g, ']]') + ']';
+    }
+
+    _cfWhereFragment(field, value) {
+        if (!field) return '';
+        const safeField = this._quoteIdentifier(field);
+        if (value === null || value === undefined) return `${safeField} IS NULL`;
+        return `${safeField} = ${this._sqlEscape(value)}`;
+    }
+
+    _filterToWhereFragment(f) {
+        if (!f) return '';
+        const field = f.field || f.column || f.name;
+        if (!field) return '';
+        const safeField = this._quoteIdentifier(field);
+        const op = String(f.op || f.operator || 'eq').toLowerCase();
+        const v = f.value;
+        switch (op) {
+            case 'eq': case '=': case 'equals':  return `${safeField} = ${this._sqlEscape(v)}`;
+            case 'ne': case '!=': case '<>': case 'notequals': return `${safeField} <> ${this._sqlEscape(v)}`;
+            case 'gt': case '>':  return `${safeField} > ${this._sqlEscape(v)}`;
+            case 'gte': case '>=': return `${safeField} >= ${this._sqlEscape(v)}`;
+            case 'lt': case '<':  return `${safeField} < ${this._sqlEscape(v)}`;
+            case 'lte': case '<=': return `${safeField} <= ${this._sqlEscape(v)}`;
+            case 'contains':   return `${safeField} LIKE ${this._sqlEscape('%' + v + '%')}`;
+            case 'startswith': return `${safeField} LIKE ${this._sqlEscape(v + '%')}`;
+            case 'endswith':   return `${safeField} LIKE ${this._sqlEscape('%' + v)}`;
+            case 'in': {
+                const vals = Array.isArray(f.values) ? f.values : (Array.isArray(v) ? v : [v]);
+                if (!vals.length) return '';
+                return `${safeField} IN (${vals.map(x => this._sqlEscape(x)).join(', ')})`;
+            }
+            case 'between': {
+                const vals = Array.isArray(f.values) ? f.values : (Array.isArray(v) ? v : []);
+                if (vals.length < 2) return '';
+                return `${safeField} BETWEEN ${this._sqlEscape(vals[0])} AND ${this._sqlEscape(vals[1])}`;
+            }
+            case 'isnull':    return `${safeField} IS NULL`;
+            case 'isnotnull': return `${safeField} IS NOT NULL`;
+            default: return `${safeField} = ${this._sqlEscape(v)}`;
+        }
     }
 
     // ── Power BI detection helper ──
@@ -539,6 +848,79 @@ class ChartRenderer {
     _isRestApi() {
         var dsType = (window.currentDatasourceType || '').toLowerCase();
         return dsType.indexOf('rest api') !== -1 || dsType.indexOf('restapi') !== -1;
+    }
+
+    // ── File URL detection helper ──
+    // File URL datasources (CSV/XLSX) are parsed by the server which returns
+    // ALL rows raw — any GROUP BY in the SQL is ignored — so we must aggregate
+    // client-side just like REST API.
+    _isFileUrl() {
+        var dsType = (window.currentDatasourceType || '').toLowerCase();
+        return dsType.indexOf('file url') !== -1 || dsType.indexOf('fileurl') !== -1;
+    }
+
+    // Aggregate raw rows in JavaScript — used for File URL and REST API
+    // datasources, which return un-aggregated rows from the server. Groups by
+    // labelField, applies aggFn to valueField (and per-field agg to multi-value
+    // fields), sorts by aggregated primary value desc, and clamps to rowLimit.
+    _aggregateRowsClientSide(rows, labelField, valueField, aggFn, mvFields, mvFieldAggs, rowLimit) {
+        if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+        if (!labelField || !valueField) return rows;
+        if (!aggFn || aggFn === 'None') return rows;
+
+        // Resolve actual keys case-insensitively against the first row.
+        const sampleKeys = Object.keys(rows[0]);
+        const findKey = (n) => n && (sampleKeys.find(k => k.toLowerCase() === String(n).toLowerCase()) || n);
+        const lk = findKey(labelField);
+        const vk = findKey(valueField);
+        const mvk = (mvFields || []).map(findKey);
+
+        const apply = (fn, vals) => {
+            const nums = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+            switch ((fn || 'SUM').toUpperCase()) {
+                case 'SUM':            return nums.reduce((a, b) => a + b, 0);
+                case 'AVG':            return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+                case 'MIN':            return nums.length ? Math.min.apply(null, nums) : 0;
+                case 'MAX':            return nums.length ? Math.max.apply(null, nums) : 0;
+                case 'COUNT':          return vals.filter(v => v !== null && v !== undefined && v !== '').length;
+                case 'COUNT_DISTINCT': return new Set(vals.map(String)).size;
+                case 'MEDIAN': {
+                    const s = nums.slice().sort((a, b) => a - b);
+                    if (s.length === 0) return 0;
+                    const m = Math.floor(s.length / 2);
+                    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+                }
+                case 'STDEV':
+                case 'VAR': {
+                    if (nums.length < 2) return 0;
+                    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+                    const variance = nums.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (nums.length - 1);
+                    return fn.toUpperCase() === 'VAR' ? variance : Math.sqrt(variance);
+                }
+                default: return nums.reduce((a, b) => a + b, 0);
+            }
+        };
+
+        const groups = new Map();
+        rows.forEach(r => {
+            const key = String(r[lk] ?? '');
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(r);
+        });
+
+        const out = [];
+        groups.forEach((grp, key) => {
+            const obj = {};
+            obj[lk] = key;
+            obj[vk] = apply(aggFn, grp.map(r => r[vk]));
+            mvk.forEach((m, i) => {
+                if (m && m !== vk) obj[m] = apply((mvFieldAggs && mvFieldAggs[i]) || 'SUM', grp.map(r => r[m]));
+            });
+            out.push(obj);
+        });
+
+        out.sort((a, b) => (parseFloat(b[vk]) || 0) - (parseFloat(a[vk]) || 0));
+        return rowLimit > 0 ? out.slice(0, rowLimit) : out;
     }
 
     // ── DAX table name: single-quoted for Power BI ──
@@ -599,6 +981,63 @@ class ChartRenderer {
         return `SELECT ${cols} FROM ${fmtTable}${where} LIMIT ${limit}`;
     }
 
+    // Resolve the data-execute endpoint. When the report viewer is rendering a
+    // Published report for an anonymous viewer (public link / iframe embed),
+    // /api/data/execute is gated by [Authorize] and would 302 to login, so we
+    // route through the per-report public endpoint instead.
+    _chartDataUrl() {
+        if (typeof window !== 'undefined' && window._rvIsPublic && window._rvReportGuid) {
+            return '/api/reports/public/' + encodeURIComponent(window._rvReportGuid) + '/data';
+        }
+        return '/api/data/execute';
+    }
+
+    // Headers for chart data requests. In public mode the per-report endpoint
+    // requires a signed embed token — preferred via Authorization header so it
+    // never lands in browser history / referer logs. Falls back to whatever
+    // ?t=… is already in the page URL when reload-on-401 hasn't happened yet.
+    _chartDataHeaders() {
+        const h = { 'Content-Type': 'application/json' };
+        if (typeof window !== 'undefined' && window._rvIsPublic && window._rvEmbedToken) {
+            h['Authorization'] = 'Bearer ' + window._rvEmbedToken;
+        }
+        return h;
+    }
+
+    /**
+     * Lazily fetch and cache the column list for a given table on a datasource.
+     * Used by the agg query builder to drop/replace mapping fields that don't
+     * exist on the active table (e.g. stale KPI 'Value' alias, cross-table
+     * drag-drop remnants) before they poison SQL with "Invalid column name".
+     */
+    async _getTableColumns(dsId, tableName) {
+        if (!dsId || !tableName) return [];
+        this._schemaCache = this._schemaCache || {};
+        if (!this._schemaCache[dsId]) {
+            try {
+                const r = await fetch('/api/datasources/' + dsId + '/schema');
+                this._schemaCache[dsId] = r.ok ? await r.json() : { tables: [] };
+            } catch { this._schemaCache[dsId] = { tables: [] }; }
+        }
+        // Strip identifier brackets/quotes so '[SalesLT].[ProductModel]' or
+        // '"dbo"."Product"' match the schema's plain 'SalesLT.ProductModel'.
+        const stripBrackets = (s) => String(s || '').replace(/[\[\]"`]/g, '').trim();
+        const tn = stripBrackets(tableName).toLowerCase();
+        const matchTable = (tables) => (tables || []).find(t => {
+            const n = stripBrackets(t.name).toLowerCase();
+            return n === tn || n.endsWith('.' + tn) || tn.endsWith('.' + n);
+        });
+        let tbl = matchTable(this._schemaCache[dsId].tables);
+        // Fallback: reuse the schema the properties panel already loaded.
+        // Its loadFields() fetches the same endpoint and stores the parsed
+        // shape on _schemaTables; using it avoids a race where this lookup
+        // runs before our own fetch resolves and misses the validation pass.
+        if ((!tbl || !(tbl.columns || []).length) && window.propertiesPanel?._schemaTables) {
+            tbl = matchTable(window.propertiesPanel._schemaTables) || tbl;
+        }
+        return tbl?.columns || [];
+    }
+
     async fetchData(chartDef) {
         if (chartDef.customJsonData) {
             try {
@@ -614,41 +1053,68 @@ class ChartRenderer {
         }
         const mapping = chartDef.mapping || {};
         const agg = chartDef.aggregation || {};
-        const labelField = mapping.labelField || '';
-        const valueField = mapping.valueField || '';
+        // NOTE: declared as `let` (not `const`) — the schema-validation block
+        // below reassigns these when the saved mapping references columns
+        // that don't exist on the active table (e.g. stale KPI alias 'Value'
+        // carried into a bar chart). With `const`, the reassignment throws
+        // TypeError, gets swallowed by the surrounding try/catch, and the
+        // bad column name leaks into SQL like
+        //   SELECT TOP 15 [Value], SUM([Value]) AS [Value] FROM [SalesLT].[Product] GROUP BY [Value]
+        // → "Invalid column name 'Value'".
+        let labelField = mapping.labelField || '';
+        let valueField = mapping.valueField || '';
 
         // ── Real datasource path ──
         const dsId = chartDef.datasourceId || window.currentDatasourceId || null;
 
-        // ── REST API path: fetch all data from the API (no SQL needed) ──
-        if (dsId && this._isRestApi()) {
+        // ── REST API & File URL path ──
+        // Both datasource types return all rows un-aggregated from the server
+        // (the server ignores any SQL/DAX for them), so we fetch the raw rows
+        // and aggregate them client-side using the chart's labelField/valueField
+        // and aggregation function — otherwise the chart plots one point per
+        // row and dimension labels appear duplicated (e.g. "Germany" 30×).
+        if (dsId && (this._isRestApi() || this._isFileUrl())) {
+            const isRest = this._isRestApi();
+            const sentinelQuery = isRest ? 'REST_API' : 'FILE_URL';
             try {
-                const r = await fetch('/api/data/execute', {
+                const r = await fetch(this._chartDataUrl(), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: 'REST_API', datasourceId: dsId })
+                    headers: this._chartDataHeaders(),
+                    body: JSON.stringify({ query: sentinelQuery, datasourceId: dsId })
                 });
                 const result = await r.json();
                 if (result.success && result.data && result.data.length > 0) {
                     const keys = Object.keys(result.data[0]);
                     const resolvedLabel = (labelField && keys.find(k => k.toLowerCase() === labelField.toLowerCase())) || keys.find(k => typeof result.data[0][k] === 'string') || keys[0];
                     const resolvedValue = (valueField && keys.find(k => k.toLowerCase() === valueField.toLowerCase())) || keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
+                    // Aggregate client-side by the dimension. Mirrors the SQL
+                    // GROUP BY path that other datasources get for free.
+                    const mvFieldsRaw = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                    const mvFields = mvFieldsRaw.map(f => typeof f === 'string' ? f : (f.field || ''));
+                    const mvFieldAggs = mvFieldsRaw.map(f => typeof f === 'object' ? (f.agg || 'SUM') : 'SUM');
+                    const primaryAgg = chartDef.mapping?.valueFieldAgg || agg.function || 'SUM';
+                    const rowLimit = chartDef.rowLimit || 15;
+                    const aggregatedRows = (chartDef.chartType === 'table' || primaryAgg === 'None')
+                        ? result.data
+                        : this._aggregateRowsClientSide(result.data, resolvedLabel, resolvedValue, primaryAgg, mvFields, mvFieldAggs, rowLimit);
                     const out = {
-                        labels: result.data.map(r => String(r[resolvedLabel] ?? '')),
-                        values: result.data.map(r => parseFloat(r[resolvedValue]) || 0),
-                        rawData: result.data
+                        labels: aggregatedRows.map(r => String(r[resolvedLabel] ?? '')),
+                        values: aggregatedRows.map(r => parseFloat(r[resolvedValue]) || 0),
+                        rawData: aggregatedRows
                     };
-                    const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
-                    if (mvf.length > 0) {
-                        out.multiValues = mvf.map(f => {
+                    if (mvFields.length > 0) {
+                        out.multiValues = mvFields.map(f => {
                             const rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
-                            return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
+                            return { field: rk, values: aggregatedRows.map(r => parseFloat(r[rk]) || 0) };
                         });
                     }
                     return out;
                 }
-                return { labels: [], values: [], error: result.error || 'REST API returned no data.' };
-            } catch(e) { console.warn('REST API data fetch failed:', e); return { labels: [], values: [], error: e.message || 'REST API request failed.' }; }
+                return { labels: [], values: [], error: result.error || (isRest ? 'REST API returned no data.' : 'File returned no data.') };
+            } catch(e) {
+                console.warn((isRest ? 'REST API' : 'File URL') + ' data fetch failed:', e);
+                return { labels: [], values: [], error: e.message || (isRest ? 'REST API request failed.' : 'File URL request failed.') };
+            }
         }
 
         // ── Table-based path (PRIMARY): always build query from table + current filterWhere/rowLimit ──
@@ -682,18 +1148,77 @@ class ChartRenderer {
                     const whereSQL = whereClause ? ` WHERE ${whereClause}` : '';
                     const dsType = (window.currentDatasourceType || '').toLowerCase();
                     const isSqlServer = dsType.includes('sql server') || dsType.includes('sqlserver') || dsType.includes('mssql');
+                    // Schema-validation guard: drop label/value fields that don't
+                    // exist on the active table and auto-pick replacements from the
+                    // real schema. Without this, stale KPI aliases ('Value') or
+                    // cross-table drag remnants ('Id') produce queries like
+                    // SELECT TOP 15 [Id], COUNT([Value]) ... FROM [SalesLT].[Product]
+                    // → "Invalid column name 'Id'/'Value'" SQL errors.
+                    // Track whether the schema validator could verify columns.
+                    // When schema is unavailable we MUST NOT emit an agg query that
+                    // references possibly-stale fields ([Id]/[Value] from a prior
+                    // KPI mapping) — we'll fall through to a safe SELECT * instead.
+                    let schemaVerified = false;
+                    let validMvFields = mvFields.slice();
+                    let validMvAggs   = mvFieldAggs.slice();
+                    try {
+                        const schemaCols = await this._getTableColumns(dsId, tableName);
+                        if (schemaCols.length > 0) {
+                            schemaVerified = true;
+                            const has = (n) => n && schemaCols.some(c => String(c.name).toLowerCase() === String(n).toLowerCase());
+                            const resolveCase = (n) => {
+                                if (!n) return n;
+                                const m = schemaCols.find(c => String(c.name).toLowerCase() === String(n).toLowerCase());
+                                return m ? m.name : n;
+                            };
+                            const isNum = (c) => /int|decimal|float|numeric|money|double|real/i.test(c.dataType || '');
+                            if (labelField && !has(labelField)) {
+                                const pick = schemaCols.find(c => !isNum(c) && !c.isPrimaryKey) || schemaCols[0];
+                                console.warn(`[chartRenderer] labelField "${labelField}" not on [${tableName}] — using "${pick?.name}"`);
+                                labelField = pick?.name || labelField;
+                            } else if (labelField) {
+                                labelField = resolveCase(labelField);
+                            }
+                            if (valueField && !has(valueField)) {
+                                const pick = schemaCols.find(isNum) || schemaCols.find(c => !c.isPrimaryKey) || schemaCols[0];
+                                console.warn(`[chartRenderer] valueField "${valueField}" not on [${tableName}] — using "${pick?.name}"`);
+                                valueField = pick?.name || valueField;
+                            } else if (valueField) {
+                                valueField = resolveCase(valueField);
+                            }
+                            // Drop mv fields that don't exist on the active table —
+                            // referencing them would poison the agg SQL with the
+                            // same "Invalid column name" error we're guarding against.
+                            validMvFields = [];
+                            validMvAggs   = [];
+                            mvFields.forEach((f, i) => {
+                                if (!f) return;
+                                if (has(f)) {
+                                    validMvFields.push(resolveCase(f));
+                                    validMvAggs.push(mvFieldAggs[i] || 'SUM');
+                                } else {
+                                    console.warn(`[chartRenderer] multi-value field "${f}" not on [${tableName}] — dropped`);
+                                }
+                            });
+                        }
+                    } catch (e) { /* schema lookup is best-effort */ }
                     let selectedCols;
                     if (chartDef.chartType === 'table') {
                         selectedCols = '*';
                     } else if (labelField && valueField) {
                         const allCols = [`[${labelField}]`, `[${valueField}]`];
-                        mvFields.forEach(f => { if (f && f !== valueField) allCols.push(`[${f}]`); });
+                        validMvFields.forEach(f => { if (f && f !== valueField) allCols.push(`[${f}]`); });
                         selectedCols = allCols.join(', ');
                     } else {
                         selectedCols = '*';
                     }
-                    // Build per-field aggregated query when aggregation is enabled
-                    const useAgg = primaryAgg !== 'None' && labelField && valueField && chartDef.chartType !== 'table';
+                    // Build per-field aggregated query when aggregation is enabled.
+                    // Refuse to emit an agg query when schema couldn't be verified —
+                    // the bindings may still reference columns that don't exist on
+                    // the active table (the very root cause of the recurring
+                    // "Invalid column name 'Value'/'Id'" failures). Falling back to
+                    // SELECT * lets the row-resolver pick valid columns at runtime.
+                    const useAgg = schemaVerified && primaryAgg !== 'None' && labelField && valueField && chartDef.chartType !== 'table';
                     if (useAgg) {
                         const aggExpr = (fn, col) => {
                             if (fn === 'COUNT_DISTINCT') return `COUNT(DISTINCT [${col}])`;
@@ -701,9 +1226,9 @@ class ChartRenderer {
                             return `${fn}([${col}])`;
                         };
                         let aggColParts = [`[${labelField}]`, `${aggExpr(primaryAgg, valueField)} as [${valueField}]`];
-                        mvFields.forEach((f, i) => {
+                        validMvFields.forEach((f, i) => {
                             if (f && f !== valueField) {
-                                const mAgg = mvFieldAggs[i] || 'SUM';
+                                const mAgg = validMvAggs[i] || 'SUM';
                                 aggColParts.push(`${aggExpr(mAgg, f)} as [${f}]`);
                             }
                         });
@@ -717,9 +1242,9 @@ class ChartRenderer {
                         query = this._buildLimitQuery(selectedCols, tableName, rowLimit, whereClause);
                     }
                 }
-                const r = await fetch('/api/data/execute', {
+                const r = await fetch(this._chartDataUrl(), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this._chartDataHeaders(),
                     body: JSON.stringify({ query: query, datasourceId: dsId })
                 });
                 const result = await r.json();
@@ -749,34 +1274,82 @@ class ChartRenderer {
                     if (isRestApi) {
                         return { labels: [], values: [], error: result.error || 'REST API request failed.' };
                     }
-                    const fallbackQuery = this._buildLimitQuery('*', tableName, rowLimit, whereClause);
-                    const r2 = await fetch('/api/data/execute', {
+                    // SELECT * fallback. We deliberately drop the whereClause here:
+                    // a stale cross-filter (e.g. "[Name] = 'foo'" pushed from another
+                    // chart whose table HAS a Name column) can reference a column that
+                    // doesn't exist on THIS table, and including it would cause the
+                    // fallback to fail with the same "Invalid column name" error as
+                    // the primary query — leaving the user staring at a Connection
+                    // Error overlay even though the table itself is fine.
+                    const fallbackQuery = this._buildLimitQuery('*', tableName, rowLimit, '');
+                    const r2 = await fetch(this._chartDataUrl(), {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: this._chartDataHeaders(),
                         body: JSON.stringify({ query: fallbackQuery, datasourceId: dsId })
                     });
                     const result2 = await r2.json();
                     if (result2.success && result2.data && result2.data.length > 0) {
                         const keys2 = Object.keys(result2.data[0]);
-                        const autoLabel = keys2.find(k => typeof result2.data[0][k] === 'string') || keys2[0];
-                        const autoValue = keys2.find(k => typeof result2.data[0][k] === 'number') || keys2[1] || keys2[0];
+                        // Prefer the user's mapping when those columns exist in the
+                        // fallback result so the chart still honours the explicit
+                        // labelField/valueField selections; only auto-pick when the
+                        // user's chosen columns aren't present (e.g. typo, stale
+                        // mapping pointing to a column that doesn't exist in this
+                        // table).
+                        const resolvedLabel2 = (labelField && keys2.find(k => k.toLowerCase() === labelField.toLowerCase()))
+                            || keys2.find(k => typeof result2.data[0][k] === 'string') || keys2[0];
+                        const resolvedValue2 = (valueField && keys2.find(k => k.toLowerCase() === valueField.toLowerCase()))
+                            || keys2.find(k => typeof result2.data[0][k] === 'number') || keys2[1] || keys2[0];
                         return {
-                            labels: result2.data.map(r => String(r[autoLabel] ?? '')),
-                            values: result2.data.map(r => parseFloat(r[autoValue]) || 0),
+                            labels: result2.data.map(r => String(r[resolvedLabel2] ?? '')),
+                            values: result2.data.map(r => parseFloat(r[resolvedValue2]) || 0),
                             rawData: result2.data
                         };
                     }
-                    if (!result2.success) return { labels: [], values: [], error: result2.error || result.error };
+                    if (!result2.success) return { labels: [], values: [], error: (result2.error || result.error) + ' [executed: ' + query + ']' };
                 }
             } catch(e) { console.warn('Datasource table fetch failed, falling back:', e); lastFetchError = e.message || 'Data fetch failed'; }
         }
 
         // ── DataQuery fallback: use pre-built query when no table name is available ──
         if (dsId && chartDef.dataQuery && !chartDef.dataQuery.includes('[object Object]')) {
+            // Validate every [bracketed] identifier in the saved dataQuery
+            // against the active table's real schema. Stale AI-generated SQL
+            // (e.g. KPI's `SELECT COUNT(*) AS [Value] FROM ...` carried into a
+            // bar chart, or a query whose column aliases like [Id]/[Value]
+            // don't exist on the new table) would otherwise execute and fail
+            // with "Invalid column name". When any referenced identifier is
+            // unknown we skip dataQuery and rely on the upstream agg-path /
+            // SELECT * fallback that already returned data above.
             try {
-                const r = await fetch('/api/data/execute', {
+                const tn = chartDef.datasetName;
+                if (tn) {
+                    const schemaCols = await this._getTableColumns(dsId, tn);
+                    if (schemaCols.length > 0) {
+                        const known = new Set(schemaCols.map(c => String(c.name).toLowerCase()));
+                        // Treat SQL keywords / function names as always-valid so we
+                        // don't reject legitimate identifiers like AS, ON, AND, etc.
+                        const sqlNoise = new Set(['value','as','on','and','or','from','where','group','by','order','having','asc','desc','top','distinct','select','inner','outer','left','right','join','case','when','then','else','end','null','is','not','in','like','between']);
+                        const refs = [...chartDef.dataQuery.matchAll(/\[([^\]]+)\]/g)].map(m => m[1].toLowerCase());
+                        const tableNameLower = String(tn).replace(/[\[\]"`]/g,'').toLowerCase();
+                        const tableShort = tableNameLower.split('.').pop();
+                        const bad = refs.filter(r => {
+                            // Skip table names and any schema-qualifier segments.
+                            if (r === tableNameLower || r === tableShort) return false;
+                            if (tableNameLower.split('.').includes(r)) return false;
+                            return !known.has(r);
+                        });
+                        if (bad.length > 0) {
+                            console.warn(`[chartRenderer] dataQuery references unknown columns on [${tn}]: ${bad.join(', ')} — skipping stale dataQuery.`);
+                            return { labels: [], values: [], error: lastFetchError || `Saved query references columns not on [${tn}]: ${bad.join(', ')}` };
+                        }
+                    }
+                }
+            } catch (e) { /* validation is best-effort */ }
+            try {
+                const r = await fetch(this._chartDataUrl(), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this._chartDataHeaders(),
                     body: JSON.stringify({ query: chartDef.dataQuery, datasourceId: dsId })
                 });
                 const result = await r.json();
@@ -785,16 +1358,60 @@ class ChartRenderer {
                     const resolvedLabel = keys.find(k => k.toLowerCase() === labelField.toLowerCase()) || keys[0];
                     const resolvedValue = keys.find(k => k.toLowerCase() === valueField.toLowerCase()) ||
                         keys.find(k => typeof result.data[0][k] === 'number') || keys[1] || keys[0];
+                    let rows = result.data;
+
+                    // Auto-aggregate when the AI emits a non-grouped SELECT for a chart
+                    // type that needs unique categories. Duplicate label rows would
+                    // otherwise render as repeated x-axis ticks (e.g. "Mr., Ms., Mr.,
+                    // Ms., …"). For categorical charts, group by label and SUM the
+                    // numeric value so each category appears exactly once.
+                    const ct = String(chartDef.chartType || '').toLowerCase();
+                    const needsUniqueLabels = ['bar', 'column', 'pie', 'doughnut', 'donut', 'area', 'line'].includes(ct);
+                    if (needsUniqueLabels && rows.length > 1) {
+                        const seen = new Set();
+                        let hasDup = false;
+                        for (const r of rows) {
+                            const k = String(r[resolvedLabel] ?? '');
+                            if (seen.has(k)) { hasDup = true; break; }
+                            seen.add(k);
+                        }
+                        if (hasDup) {
+                            const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
+                            const mvKeys = mvf.map(f => keys.find(k => k.toLowerCase() === f.toLowerCase()) || f);
+                            const groups = new Map();
+                            rows.forEach(r => {
+                                const key = String(r[resolvedLabel] ?? '');
+                                if (!groups.has(key)) groups.set(key, []);
+                                groups.get(key).push(r);
+                            });
+                            const sumNum = arr => arr.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+                            const aggregated = [];
+                            groups.forEach((grp, key) => {
+                                const obj = {};
+                                obj[resolvedLabel] = key;
+                                obj[resolvedValue] = sumNum(grp.map(r => r[resolvedValue]));
+                                mvKeys.forEach(mk => {
+                                    if (mk && mk !== resolvedValue) obj[mk] = sumNum(grp.map(r => r[mk]));
+                                });
+                                aggregated.push(obj);
+                            });
+                            aggregated.sort((a, b) => (parseFloat(b[resolvedValue]) || 0) - (parseFloat(a[resolvedValue]) || 0));
+                            console.warn('[chartRenderer] Duplicate labels detected for chart "' + (chartDef.title || '') +
+                                '" — auto-aggregated ' + rows.length + ' rows into ' + aggregated.length + ' categories by SUM([' + resolvedValue + ']).');
+                            rows = aggregated;
+                        }
+                    }
+
                     const out = {
-                        labels: result.data.map(r => String(r[resolvedLabel] ?? '')),
-                        values: result.data.map(r => parseFloat(r[resolvedValue]) || 0),
-                        rawData: result.data
+                        labels: rows.map(r => String(r[resolvedLabel] ?? '')),
+                        values: rows.map(r => parseFloat(r[resolvedValue]) || 0),
+                        rawData: rows
                     };
                     const mvf = (chartDef.mapping?.multiValueFields || []).filter(Boolean);
                     if (mvf.length > 0) {
                         out.multiValues = mvf.map(f => {
                             const rk = keys.find(k => k.toLowerCase() === f.toLowerCase()) || f;
-                            return { field: rk, values: result.data.map(r => parseFloat(r[rk]) || 0) };
+                            return { field: rk, values: rows.map(r => parseFloat(r[rk]) || 0) };
                         });
                     }
                     return out;
@@ -924,6 +1541,9 @@ class ChartRenderer {
         const hasFontColor = typeof style.fontColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(style.fontColor);
         const titleColor = hasFontColor ? style.fontColor : '#1E2D3D';
         const labelColor = hasFontColor ? style.fontColor : '#7A90A8';
+        const fmt = (v) => this._formatNumber(v);
+        const legendPos = style.legendPosition || 'top';
+        const isVerticalLegend = legendPos === 'left' || legendPos === 'right';
         return {
             chart: {
                 height: '100%',
@@ -934,21 +1554,68 @@ class ChartRenderer {
             },
             legend: {
                 show: style.showLegend !== false,
-                position: style.legendPosition || 'top',
+                position: legendPos,
+                horizontalAlign: 'center',
+                floating: false,
                 fontFamily,
-                fontSize: '11px',
-                labels: { colors: labelColor },
-                markers: { width: 8, height: 8, radius: 2 }
+                fontSize: '12px',
+                fontWeight: 600,
+                labels: { colors: titleColor, useSeriesColors: false },
+                markers: { width: 12, height: 12, radius: 6, offsetX: -2, strokeWidth: 0 },
+                itemMargin: { horizontal: 10, vertical: 4 },
+                // Push the legend away from the plot area so axis labels and
+                // legend swatches no longer collide along the bottom edge.
+                offsetY: legendPos === 'bottom' ? 8 : (legendPos === 'top' ? -4 : 0),
+                offsetX: isVerticalLegend ? 0 : 0
             },
-            tooltip: { enabled: style.showTooltips !== false, theme: 'dark' },
+            tooltip: {
+                enabled: style.showTooltips !== false,
+                theme: 'dark',
+                y: { formatter: fmt }
+            },
             title: {
                 text: chartDef.title || '',
                 style: { fontSize: `${style.titleFontSize || 14}px`, fontFamily, fontWeight: '600', color: titleColor }
             },
-            grid: { borderColor: 'rgba(0,0,0,0.04)', strokeDashArray: 0 },
-            dataLabels: { enabled: !!style.showDataLabels },
-            xaxis: { labels: { style: { colors: labelColor, fontFamily, fontSize: '11px' } } },
-            yaxis: { labels: { style: { colors: labelColor, fontFamily, fontSize: '11px' } } }
+            grid: {
+                borderColor: 'rgba(0,0,0,0.04)',
+                strokeDashArray: 0,
+                // Reserve enough padding so a bottom legend + rotated x-axis
+                // labels don't collide along the bottom edge of the plot.
+                padding: {
+                    top: 0,
+                    right: 12,
+                    bottom: legendPos === 'bottom' ? 28 : 14,
+                    left: 8
+                }
+            },
+            dataLabels: {
+                enabled: !!style.showDataLabels,
+                style: { fontSize: '11px', fontFamily, fontWeight: 600 },
+                formatter: fmt
+            },
+            xaxis: {
+                labels: {
+                    style: { colors: labelColor, fontFamily, fontSize: '11px' },
+                    rotate: -35,
+                    rotateAlways: false,
+                    hideOverlappingLabels: true,
+                    // Show full label text — truncating with trim:true was
+                    // chopping legitimate values off the x-axis. We rely on
+                    // rotation + hideOverlappingLabels to avoid visual collisions.
+                    trim: false,
+                    maxHeight: 140,
+                    offsetY: 2
+                },
+                axisTicks: { show: true },
+                axisBorder: { show: true, color: 'rgba(0,0,0,0.08)' }
+            },
+            yaxis: {
+                labels: {
+                    style: { colors: labelColor, fontFamily, fontSize: '11px' },
+                    formatter: fmt
+                }
+            }
         };
     }
 
@@ -964,7 +1631,7 @@ class ChartRenderer {
         if (ct === 'waterfall')       return this.buildApexWaterfallConfig(chartDef, labels, values, style, colors);
         if (ct === 'funnel')          return this.buildApexFunnelConfig(chartDef, labels, values, style, colors);
         if (ct === 'mixedBarLine')    return this.buildApexMixedBarLineConfig(chartDef, labels, values, style, colors);
-        if (ct === 'groupedBar')      return this.buildApexGroupedBarConfig(chartDef, labels, values, style, colors);
+        if (ct === 'groupedBar')      return this.buildApexGroupedBarConfig(chartDef, labels, values, style, colors, data);
         if (ct === 'histogram')       return this.buildApexHistogramConfig(chartDef, labels, values, style, colors);
         if (ct === 'pareto')          return this.buildApexParetoConfig(chartDef, labels, values, style, colors);
         if (ct === 'bellCurve')       return this.buildApexBellCurveConfig(chartDef, labels, values, style, colors);
@@ -976,17 +1643,17 @@ class ChartRenderer {
         if (ct === 'rangeArea')       return this.buildApexRangeAreaConfig(chartDef, labels, values, style, colors);
         if (ct === 'burnDown')        return this.buildApexBurnDownConfig(chartDef, labels, values, style, colors);
         if (ct === 'gantt')           return this.buildApexGanttConfig(chartDef, labels, values, style, colors);
-        if (ct === 'bulletChart')     return this.buildApexBulletChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'bulletChart')     return this.buildApexBulletChartConfig(chartDef, labels, values, style, colors, data);
         if (ct === 'lollipop')        return this.buildApexLollipopConfig(chartDef, labels, values, style, colors);
-        if (ct === 'slope')           return this.buildApexSlopeConfig(chartDef, labels, values, style, colors);
+        if (ct === 'slope')           return this.buildApexSlopeConfig(chartDef, labels, values, style, colors, data);
         if (ct === 'divergingBar')    return this.buildApexDivergingBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'populationPyramid') return this.buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors);
+        if (ct === 'populationPyramid') return this.buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors, data);
         if (ct === 'spanChart')       return this.buildApexSpanChartConfig(chartDef, labels, values, style, colors);
-        if (ct === 'pairedBar')       return this.buildApexPairedBarConfig(chartDef, labels, values, style, colors);
-        if (ct === 'stackedBar100')   return this.buildApexStackedBar100Config(chartDef, labels, values, style, colors);
-        if (ct === 'stackedArea100')  return this.buildApexStackedArea100Config(chartDef, labels, values, style, colors);
-        if (ct === 'streamGraph')     return this.buildApexStreamGraphConfig(chartDef, labels, values, style, colors);
-        if (ct === 'velocityChart')   return this.buildApexVelocityChartConfig(chartDef, labels, values, style, colors);
+        if (ct === 'pairedBar')       return this.buildApexPairedBarConfig(chartDef, labels, values, style, colors, data);
+        if (ct === 'stackedBar100')   return this.buildApexStackedBar100Config(chartDef, labels, values, style, colors, data);
+        if (ct === 'stackedArea100')  return this.buildApexStackedArea100Config(chartDef, labels, values, style, colors, data);
+        if (ct === 'streamGraph')     return this.buildApexStreamGraphConfig(chartDef, labels, values, style, colors, data);
+        if (ct === 'velocityChart')   return this.buildApexVelocityChartConfig(chartDef, labels, values, style, colors, data);
         if (ct === 'sparkline')       return this.buildApexSparklineConfig(chartDef, labels, values, style, colors);
         if (ct === 'progressBar')     return this.buildApexProgressBarConfig(chartDef, labels, values, style, colors);
         if (ct === 'radialProgress')  return this.buildApexRadialProgressConfig(chartDef, values, style, colors);
@@ -1047,13 +1714,28 @@ class ChartRenderer {
             series.push(...data.multiValues.map(mv => ({ name: mv.field || 'Series', data: mv.values })));
         }
 
+        // For single-series bar charts, distribute palette colors per category
+        // so each column gets a different color from the selected theme
+        // (instead of every bar painted with colors[0]). Multi-series and
+        // stacked charts keep one color per series as expected.
+        const isSingleSeriesBar = (actualType === 'bar') && series.length === 1 && !isStacked;
+        const baseLegend = opts.legend || {};
+
         return {
             ...opts,
             chart: { ...opts.chart, type: actualType, stacked: isStacked || undefined },
             series,
             xaxis: { ...opts.xaxis, categories: labels },
             colors,
-            plotOptions: { bar: { horizontal: isHorizontal, borderRadius: parseInt(style.borderRadius || '4'), columnWidth: '60%' } },
+            legend: isSingleSeriesBar ? { ...baseLegend, show: false } : baseLegend,
+            plotOptions: {
+                bar: {
+                    horizontal: isHorizontal,
+                    borderRadius: parseInt(style.borderRadius || '4'),
+                    columnWidth: '60%',
+                    distributed: isSingleSeriesBar
+                }
+            },
             // Always emit well-formed objects (never `undefined`) — ApexCharts'
             // internal bar/stacked-bar renderer dereferences `config.fill.colors[i]`
             // and crashes when these slots are missing.
@@ -1143,7 +1825,7 @@ class ChartRenderer {
             series: [{ name: chartDef.title || 'Funnel', data: pairs.map(p => p.v) }],
             xaxis: { ...opts.xaxis, categories: pairs.map(p => p.l) },
             colors: [colors[0]],
-            plotOptions: { bar: { horizontal: true, borderRadius: 4, columnWidth: '60%' } }
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%', distributed: true } }
         };
     }
 
@@ -1167,20 +1849,31 @@ class ChartRenderer {
         };
     }
 
-    buildApexGroupedBarConfig(chartDef, labels, values, style, colors) {
-        const lbls = labels.length ? labels : ['Q1','Q2','Q3','Q4'];
-        const n = Math.min(lbls.length, 4);
-        const seriesNames = ['Product A','Product B','Product C'];
+    buildApexGroupedBarConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let series, lbls;
+        if (labels.length && (mv.length > 0 || values.length)) {
+            lbls = labels;
+            const primaryName = chartDef.mapping?.valueField || chartDef.title || 'Value';
+            series = [{ name: primaryName, data: values }];
+            mv.forEach(m => series.push({ name: m.field || 'Series', data: m.values || [] }));
+        } else {
+            lbls = labels.length ? labels : ['Q1','Q2','Q3','Q4'];
+            const n = Math.min(lbls.length, 4);
+            const seriesNames = ['Product A','Product B','Product C'];
+            series = seriesNames.map((name, si) => ({
+                name,
+                data: Array.from({length: n}, () => Math.round(40 + Math.random()*80 + si*20))
+            }));
+            lbls = lbls.slice(0, n);
+        }
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar' },
-            series: seriesNames.map((name, si) => ({
-                name,
-                data: Array.from({length: n}, (_,i) => Math.round(40 + Math.random()*80 + si*20))
-            })),
-            xaxis: { ...opts.xaxis, categories: lbls.slice(0, n) },
-            colors: colors.slice(0, 3),
+            series,
+            xaxis: { ...opts.xaxis, categories: lbls },
+            colors: colors.slice(0, Math.max(series.length, 1)),
             plotOptions: { bar: { borderRadius: 3, columnWidth: '60%' } }
         };
     }
@@ -1188,10 +1881,20 @@ class ChartRenderer {
     buildApexHistogramConfig(chartDef, labels, values, style, colors) {
         const raw = values.length >= 5 ? values : [23,25,27,28,30,31,32,33,34,35,36,37,38,40,42,45,48,50,55,60];
         const min = Math.min(...raw), max = Math.max(...raw);
-        const binCount = Math.min(10, Math.ceil(Math.sqrt(raw.length)));
-        const binSize = (max - min) / binCount;
+        const binCount = Math.min(10, Math.ceil(Math.sqrt(raw.length))) || 1;
+        // Guard: when all raw values are equal (max==min), binSize would be 0
+        // and every Math.floor((v-min)/0) becomes NaN — collapse to a single
+        // bin holding all observations so the chart renders sensibly.
+        const range = max - min;
         const bins = Array(binCount).fill(0);
-        raw.forEach(v => { const idx = Math.min(Math.floor((v - min) / binSize), binCount - 1); bins[idx]++; });
+        let binSize;
+        if (range === 0) {
+            binSize = 1;
+            bins[0] = raw.length;
+        } else {
+            binSize = range / binCount;
+            raw.forEach(v => { const idx = Math.min(Math.floor((v - min) / binSize), binCount - 1); bins[idx]++; });
+        }
         const binLabels = bins.map((_, i) => `${(min + i*binSize).toFixed(1)}-${(min + (i+1)*binSize).toFixed(1)}`);
         const opts = this._baseApexOptions(chartDef);
         return {
@@ -1209,7 +1912,7 @@ class ChartRenderer {
         const lbls = labels.length ? labels : ['Defect A','Defect B','Defect C','Defect D','Defect E'];
         const vals = values.length ? values : [80, 50, 30, 20, 10];
         const pairs = lbls.map((l,i) => ({l, v: vals[i]||0})).sort((a,b) => b.v - a.v);
-        const total = pairs.reduce((s,p) => s + p.v, 0);
+        const total = pairs.reduce((s,p) => s + p.v, 0) || 1;
         let cum = 0;
         const cumPct = pairs.map(p => { cum += p.v; return Math.round(cum / total * 100); });
         const opts = this._baseApexOptions(chartDef);
@@ -1297,7 +2000,7 @@ class ChartRenderer {
             xaxis: { ...opts.xaxis, categories: lbls },
             colors: [this.hexToRgba(colors[0], 0.4), colors[0], this.hexToRgba(colors[0], 0.4)],
             stroke: { width: [1, 2, 1], curve: 'smooth', dashArray: [4, 0, 4] },
-            fill: { type: ['solid', 'solid', 'solid'], opacity: [0.1, 1, 0.1] },
+            fill: { type: 'solid', opacity: [0.1, 1, 0.1] },
             markers: { size: [0, 4, 0] }
         };
     }
@@ -1384,12 +2087,24 @@ class ChartRenderer {
     }
 
     buildApexBurnDownConfig(chartDef, labels, values, style, colors) {
-        const n = 10;
-        const total = (values[0] || 100);
-        const lbls = Array.from({length: n+1}, (_,i) => `Day ${i}`);
-        const ideal = Array.from({length: n+1}, (_,i) => Math.round(total - total*i/n));
-        const actual = [total];
-        for (let i = 1; i <= n; i++) actual.push(Math.max(0, Math.round(ideal[i] + (Math.random()-0.3)*total*0.08)));
+        let lbls, actual, ideal;
+        if (values.length >= 2) {
+            // Use real data: actual = provided series; ideal = straight line from
+            // first → last point across the same number of steps.
+            lbls = labels.length === values.length ? labels.slice() : values.map((_,i) => `Pt ${i}`);
+            actual = values.slice();
+            const start = actual[0];
+            const end = actual[actual.length - 1];
+            const stepCount = actual.length - 1;
+            ideal = actual.map((_,i) => parseFloat((start + (end - start) * (i / stepCount)).toFixed(2)));
+        } else {
+            const n = 10;
+            const total = (values[0] || 100);
+            lbls = Array.from({length: n+1}, (_,i) => `Day ${i}`);
+            ideal = Array.from({length: n+1}, (_,i) => Math.round(total - total*i/n));
+            actual = [total];
+            for (let i = 1; i <= n; i++) actual.push(Math.max(0, Math.round(ideal[i] + (Math.random()-0.3)*total*0.08)));
+        }
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
@@ -1428,10 +2143,16 @@ class ChartRenderer {
         };
     }
 
-    buildApexBulletChartConfig(chartDef, labels, values, style, colors) {
+    buildApexBulletChartConfig(chartDef, labels, values, style, colors, data) {
         const lbls = labels.length ? labels.slice(0,4) : ['Revenue','Cost','Growth','NPS'];
         const vals = values.length ? values.slice(0,lbls.length) : [78, 55, 62, 85];
-        const targets = vals.map(v => Math.min(100, v + 15));
+        // Prefer a real Target field when mapped (first multiValues entry).
+        // Fallback: vals * 1.15 (no longer clamped to 100, which broke any
+        // dataset using values like revenue or counts > 100).
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
+        const targets = (mv.length > 0 && Array.isArray(mv[0].values))
+            ? mv[0].values.slice(0, lbls.length).map(v => Number(v) || 0)
+            : vals.map(v => Math.round(v * 1.15));
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
@@ -1451,27 +2172,52 @@ class ChartRenderer {
         const lbls = labels.length ? labels : ['A','B','C','D','E','F'];
         const vals = values.length ? values : [42, 67, 35, 78, 55, 63];
         const opts = this._baseApexOptions(chartDef);
+        // Mixed chart: thin bar = stick, scatter = head dot. A pure bar chart
+        // ignores the markers config so the dot was never drawn before.
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar' },
-            series: [{ name: chartDef.title || 'Value', data: vals }],
+            series: [
+                { name: chartDef.title || 'Value', type: 'bar', data: vals },
+                { name: 'Head', type: 'scatter', data: vals }
+            ],
             xaxis: { ...opts.xaxis, categories: lbls },
-            colors: [colors[0]],
+            colors: [colors[0], colors[0]],
             plotOptions: { bar: { columnWidth: '4%', borderRadius: 0 } },
-            markers: { size: 8, colors: [colors[0]], strokeColors: '#fff', strokeWidth: 2, hover: { size: 10 } }
+            markers: { size: [0, 8], strokeColors: '#fff', strokeWidth: 2, hover: { size: 10 } },
+            legend: { show: false }
         };
     }
 
-    buildApexSlopeConfig(chartDef, labels, values, style, colors) {
-        const items = labels.length >= 3 ? labels.slice(0,5) : ['Product A','Product B','Product C','Product D'];
-        const before = values.length >= items.length ? values.slice(0,items.length) : items.map(()=>Math.round(30+Math.random()*50));
-        const after = before.map(v => Math.round(v + (Math.random()-0.4)*20));
+    buildApexSlopeConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
+        let items, before, after, n1, n2;
+        if (labels.length && values.length && mv.length > 0) {
+            // Real data: primary value = before, first multi-value field = after.
+            items = labels.slice();
+            before = values.slice();
+            after = (mv[0].values || []).slice();
+            n1 = chartDef.mapping?.valueField || 'Before';
+            n2 = mv[0].field || 'After';
+        } else if (labels.length && values.length) {
+            // Only one value series — render a flat slope so user still sees real data.
+            items = labels.slice();
+            before = values.slice();
+            after = values.slice();
+            n1 = chartDef.mapping?.valueField || 'Before';
+            n2 = 'After';
+        } else {
+            items = ['Product A','Product B','Product C','Product D'];
+            before = items.map(()=>Math.round(30+Math.random()*50));
+            after = before.map(v => Math.round(v + (Math.random()-0.4)*20));
+            n1 = 'Before'; n2 = 'After';
+        }
         const opts = this._baseApexOptions(chartDef);
         return {
             ...opts,
             chart: { ...opts.chart, type: 'line' },
             series: items.map((name, i) => ({ name, data: [before[i], after[i]] })),
-            xaxis: { ...opts.xaxis, categories: ['Before', 'After'] },
+            xaxis: { ...opts.xaxis, categories: [n1, n2] },
             colors: colors.slice(0, items.length),
             stroke: { width: 2, curve: 'straight' },
             markers: { size: 6 }
@@ -1480,7 +2226,9 @@ class ChartRenderer {
 
     buildApexDivergingBarConfig(chartDef, labels, values, style, colors) {
         const lbls = labels.length ? labels : ['Very Satisfied','Satisfied','Neutral','Dissatisfied','Very Dissatisfied'];
-        const vals = values.length ? values.slice(0, lbls.length).map((v,i) => i < Math.ceil(lbls.length/2) ? Math.abs(v) : -Math.abs(v)) : [45, 30, 10, -20, -35];
+        // Respect the real sign of each value rather than splitting by index;
+        // the previous behavior turned half of every dataset negative.
+        const vals = values.length ? values.slice(0, lbls.length).map(v => Number(v) || 0) : [45, 30, 10, -20, -35];
         const barColors = vals.map(v => v >= 0 ? '#4CAF50' : '#E87C3E');
         const opts = this._baseApexOptions(chartDef);
         return {
@@ -1494,19 +2242,30 @@ class ChartRenderer {
         };
     }
 
-    buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors) {
-        const ageGroups = ['0-9','10-19','20-29','30-39','40-49','50-59','60-69','70+'];
-        const males   = [80,95,110,120,105,90,70,45];
-        const females = [78,92,108,118,108,92,74,52];
+    buildApexPopulationPyramidConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let categories, leftSeries, rightSeries, leftName, rightName;
+        if (labels.length && mv.length > 0) {
+            categories = labels;
+            leftName = chartDef.mapping?.valueField || 'Left';
+            rightName = mv[0].field || 'Right';
+            leftSeries = values.map(v => -Math.abs(v));
+            rightSeries = (mv[0].values || []).map(v => Math.abs(v));
+        } else {
+            categories = ['0-9','10-19','20-29','30-39','40-49','50-59','60-69','70+'];
+            leftName = 'Male'; rightName = 'Female';
+            leftSeries = [80,95,110,120,105,90,70,45].map(v => -v);
+            rightSeries = [78,92,108,118,108,92,74,52];
+        }
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar' },
             series: [
-                { name: 'Male', data: males.map(v => -v) },
-                { name: 'Female', data: females }
+                { name: leftName, data: leftSeries },
+                { name: rightName, data: rightSeries }
             ],
-            xaxis: { ...opts.xaxis, categories: ageGroups },
+            xaxis: { ...opts.xaxis, categories, labels: { formatter: v => Math.abs(Number(v) || 0) } },
             colors: [colors[0], colors[1]],
             plotOptions: { bar: { horizontal: true, borderRadius: 2, barHeight: '80%' } },
             yaxis: { labels: { style: { colors: '#7A90A8' } } }
@@ -1527,17 +2286,28 @@ class ChartRenderer {
         };
     }
 
-    buildApexPairedBarConfig(chartDef, labels, values, style, colors) {
-        const lbls = labels.length ? labels.slice(0,5) : ['North','South','East','West','Central'];
-        const g1 = values.length ? values.slice(0,lbls.length) : [65,72,58,80,70];
-        const g2 = g1.map(v => Math.round(v * (0.7 + Math.random() * 0.6)));
+    buildApexPairedBarConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let lbls, g1, g2, n1, n2;
+        if (labels.length && mv.length > 0) {
+            lbls = labels;
+            n1 = chartDef.mapping?.valueField || 'Series 1';
+            n2 = mv[0].field || 'Series 2';
+            g1 = values;
+            g2 = mv[0].values || [];
+        } else {
+            lbls = labels.length ? labels.slice(0,5) : ['North','South','East','West','Central'];
+            g1 = values.length ? values.slice(0,lbls.length) : [65,72,58,80,70];
+            g2 = g1.map(v => Math.round(v * (0.7 + Math.random() * 0.6)));
+            n1 = '2023'; n2 = '2024';
+        }
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar' },
             series: [
-                { name: '2023', data: g1 },
-                { name: '2024', data: g2 }
+                { name: n1, data: g1 },
+                { name: n2, data: g2 }
             ],
             xaxis: { ...opts.xaxis, categories: lbls },
             colors: [colors[0], colors[1]],
@@ -1545,77 +2315,123 @@ class ChartRenderer {
         };
     }
 
-    buildApexStackedBar100Config(chartDef, labels, values, style, colors) {
-        const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May'];
-        const seriesNames = ['A','B','C'];
-        const rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
-        const normalized = lbls.map((_, li) => {
-            const total = seriesNames.reduce((s, _, si) => s + rawData[si][li], 0);
-            return seriesNames.map((_, si) => Math.round(rawData[si][li] / total * 100));
-        });
+    buildApexStackedBar100Config(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let lbls, seriesNames, rawData;
+        if (labels.length && mv.length > 0) {
+            lbls = labels;
+            seriesNames = [chartDef.mapping?.valueField || 'Value', ...mv.map(m => m.field || 'Series')];
+            rawData = [values, ...mv.map(m => m.values || [])];
+        } else {
+            lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May'];
+            seriesNames = ['Group A','Group B','Group C'];
+            rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
+        }
+        const normalized = lbls.map((_, li) => {
+            const total = seriesNames.reduce((s, _n, si) => s + (Number(rawData[si][li]) || 0), 0) || 1;
+            return seriesNames.map((_, si) => Math.round((Number(rawData[si][li]) || 0) / total * 100));
+        });
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar', stacked: true, stackType: '100%' },
-            series: seriesNames.map((name, si) => ({ name: `Group ${name}`, data: lbls.map((_,li) => normalized[li][si]) })),
+            series: seriesNames.map((name, si) => ({ name, data: lbls.map((_,li) => normalized[li][si]) })),
             xaxis: { ...opts.xaxis, categories: lbls },
-            colors: colors.slice(0, 3),
+            colors: colors.slice(0, seriesNames.length),
             plotOptions: { bar: { borderRadius: 0, columnWidth: '60%' } },
             yaxis: { max: 100, labels: { formatter: v => v + '%', style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildApexStackedArea100Config(chartDef, labels, values, style, colors) {
-        const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun'];
-        const seriesNames = ['A','B','C'];
-        const rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
-        const normalized = lbls.map((_, li) => {
-            const total = seriesNames.reduce((s,_,si) => s + rawData[si][li], 0);
-            return seriesNames.map((_, si) => Math.round(rawData[si][li]/total*100));
-        });
+    buildApexStackedArea100Config(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let lbls, seriesNames, rawData;
+        if (labels.length && mv.length > 0) {
+            lbls = labels;
+            seriesNames = [chartDef.mapping?.valueField || 'Value', ...mv.map(m => m.field || 'Series')];
+            rawData = [values, ...mv.map(m => m.values || [])];
+        } else {
+            lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun'];
+            seriesNames = ['Series A','Series B','Series C'];
+            rawData = seriesNames.map(() => lbls.map(() => Math.round(20 + Math.random() * 40)));
+        }
+        const normalized = lbls.map((_, li) => {
+            const total = seriesNames.reduce((s,_n,si) => s + (Number(rawData[si][li]) || 0), 0) || 1;
+            return seriesNames.map((_, si) => Math.round((Number(rawData[si][li]) || 0)/total*100));
+        });
         return {
             ...opts,
             chart: { ...opts.chart, type: 'area', stacked: true },
-            series: seriesNames.map((name, si) => ({ name: `Series ${name}`, data: lbls.map((_,li) => normalized[li][si]) })),
+            series: seriesNames.map((name, si) => ({ name, data: lbls.map((_,li) => normalized[li][si]) })),
             xaxis: { ...opts.xaxis, categories: lbls },
-            colors: colors.slice(0, 3),
+            colors: colors.slice(0, seriesNames.length),
             stroke: { curve: 'smooth', width: 2 },
             fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.3 } },
             yaxis: { max: 100, labels: { formatter: v => v + '%', style: { colors: '#7A90A8' } } }
         };
     }
 
-    buildApexStreamGraphConfig(chartDef, labels, values, style, colors) {
-        const lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
-        const seriesNames = ['Series A','Series B','Series C','Series D'];
+    buildApexStreamGraphConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let lbls, series;
+        if (labels.length && (mv.length > 0 || values.length)) {
+            lbls = labels;
+            const primaryName = chartDef.mapping?.valueField || chartDef.title || 'Value';
+            series = [{ name: primaryName, data: values }];
+            mv.forEach(m => series.push({ name: m.field || 'Series', data: m.values || [] }));
+        } else {
+            lbls = labels.length ? labels : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
+            const seriesNames = ['Series A','Series B','Series C','Series D'];
+            series = seriesNames.map(name => ({
+                name,
+                data: lbls.map(() => Math.round(15 + Math.random()*30))
+            }));
+        }
         return {
             ...opts,
             chart: { ...opts.chart, type: 'area', stacked: true },
-            series: seriesNames.map(name => ({
-                name,
-                data: lbls.map(() => Math.round(15 + Math.random()*30))
-            })),
+            series,
             xaxis: { ...opts.xaxis, categories: lbls },
-            colors: colors.slice(0, 4),
+            colors: colors.slice(0, Math.max(series.length, 1)),
             stroke: { curve: 'smooth', width: 1 },
             fill: { type: 'gradient', gradient: { opacityFrom: 0.7, opacityTo: 0.4 } },
             dataLabels: { enabled: false }
         };
     }
 
-    buildApexVelocityChartConfig(chartDef, labels, values, style, colors) {
-        const sprints = labels.length ? labels.slice(0,8) : Array.from({length:8},(_,i)=>`Sprint ${i+1}`);
-        const committed = values.length ? values.slice(0,sprints.length) : [40,42,38,45,43,50,48,52];
-        const completed = committed.map(v => Math.round(v * (0.7 + Math.random()*0.35)));
+    buildApexVelocityChartConfig(chartDef, labels, values, style, colors, data) {
+        const mv = (data && Array.isArray(data.multiValues)) ? data.multiValues : [];
         const opts = this._baseApexOptions(chartDef);
+        let sprints, committed, completed, n1, n2;
+        if (labels.length && mv.length > 0) {
+            sprints = labels;
+            n1 = chartDef.mapping?.valueField || 'Series 1';
+            n2 = mv[0].field || 'Series 2';
+            committed = values;
+            completed = mv[0].values || [];
+        } else if (labels.length && values.length) {
+            // Real labels + single value series — show it as Committed; mirror
+            // it as Completed so users see actual data instead of randomized
+            // "completion %" the previous version invented.
+            sprints = labels.slice();
+            committed = values.slice();
+            completed = values.slice();
+            n1 = chartDef.mapping?.valueField || 'Committed';
+            n2 = 'Completed';
+        } else {
+            sprints = labels.length ? labels.slice(0,8) : Array.from({length:8},(_,i)=>`Sprint ${i+1}`);
+            committed = values.length ? values.slice(0,sprints.length) : [40,42,38,45,43,50,48,52];
+            completed = committed.map(v => Math.round(v * (0.7 + Math.random()*0.35)));
+            n1 = 'Committed'; n2 = 'Completed';
+        }
         return {
             ...opts,
             chart: { ...opts.chart, type: 'bar' },
             series: [
-                { name: 'Committed', data: committed },
-                { name: 'Completed', data: completed }
+                { name: n1, data: committed },
+                { name: n2, data: completed }
             ],
             xaxis: { ...opts.xaxis, categories: sprints },
             colors: [this.hexToRgba(colors[0], 0.4), colors[0]],
@@ -1772,6 +2588,20 @@ class ChartRenderer {
         return canvas;
     }
 
+    // Paint a uniform "insufficient data" overlay inside a custom-renderer
+    // container. Used to replace the previous Math.random fake-data fallbacks
+    // so users see a clear empty state instead of misleading synthetic charts.
+    _insufficientDataOverlay(container, chartType) {
+        const ct = this._esc(String(chartType || 'this chart'));
+        container.style.cssText += 'background:#f8f9fa;display:flex;align-items:center;justify-content:center;';
+        container.innerHTML =
+            '<div class="chart-no-data" style="padding:20px;text-align:center;color:#6c757d;font-family:Inter,sans-serif">' +
+            '<i class="bi bi-bar-chart-line" style="font-size:1.8rem;display:block;margin-bottom:6px;color:#adb5bd"></i>' +
+            '<div style="font-size:12px;font-weight:600">Insufficient data</div>' +
+            '<div style="font-size:11px;margin-top:2px">' + ct + ' needs more data points</div>' +
+            '</div>';
+    }
+
     renderTreemap(chartDef, container, data, colors, h) {
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
@@ -1803,6 +2633,9 @@ class ChartRenderer {
     }
 
     renderHeatmap(chartDef, container, data, colors, h) {
+        if ((!data.labels || !data.labels.length) && (!data.values || !data.values.length) && (!data.rawData || !data.rawData.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -1827,6 +2660,9 @@ class ChartRenderer {
     }
 
     renderSankey(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -1868,6 +2704,9 @@ class ChartRenderer {
     }
 
     renderSunburst(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -1906,6 +2745,9 @@ class ChartRenderer {
     }
 
     renderBoxPlot(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -1947,6 +2789,9 @@ class ChartRenderer {
     }
 
     renderViolin(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2016,6 +2861,9 @@ class ChartRenderer {
     }
 
     renderCandlestick(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.values || !data.values.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2053,6 +2901,9 @@ class ChartRenderer {
     }
 
     renderOHLC(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.values || !data.values.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2122,6 +2973,9 @@ class ChartRenderer {
     }
 
     renderNetworkGraph(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2150,6 +3004,9 @@ class ChartRenderer {
     }
 
     renderChordDiagram(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2182,6 +3039,9 @@ class ChartRenderer {
     }
 
     renderArcDiagram(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2210,6 +3070,9 @@ class ChartRenderer {
     }
 
     renderForceDirected(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2265,6 +3128,9 @@ class ChartRenderer {
     }
 
     renderMatrix(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const lbls = (data.labels||['Alpha','Beta','Gamma','Delta','Epsilon']).slice(0,5);
         const n = lbls.length;
         const matrix = Array.from({length:n}, (_,i) => Array.from({length:n}, (_,j) => Math.round(Math.random()*100)));
@@ -2287,6 +3153,9 @@ class ChartRenderer {
     }
 
     renderWaffleChart(chartDef, container, data, colors, h) {
+        if ((!data.labels || !data.labels.length) || (!data.values || !data.values.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const lbls = (data.labels||['A','B','C','D']).slice(0,4);
         const vals = lbls.map((_,i) => Math.abs((data.values||[])[i]||Math.round(10+Math.random()*40)));
         const total = vals.reduce((s,v)=>s+v,0);
@@ -2312,6 +3181,9 @@ class ChartRenderer {
     }
 
     renderPictograph(chartDef, container, data, colors, h) {
+        if ((!data.labels || !data.labels.length) || (!data.values || !data.values.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const lbls = (data.labels||['Team A','Team B','Team C','Team D']).slice(0,5);
         const vals = lbls.map((_,i) => Math.round(Math.abs((data.values||[])[i]||Math.round(3+Math.random()*7))));
         const icons = ['👤','🏠','📦','💰','⭐','🎯','🏆','📊'];
@@ -2331,14 +3203,23 @@ class ChartRenderer {
     }
 
     renderKpiCard(chartDef, container, data, colors, h) {
-        const val = this._scalarFromData(data);
+        const val = this._scalarFromData(data, chartDef);
         const color = colors[0] || '#4A90D9';
         const title = chartDef.title || 'KPI';
         const display = (val === null || val === undefined)
             ? '—'
             : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
         const len = display.length;
-        const valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+        // Adapt value font to BOTH width and height so the title above is
+        // never pushed out of view on short cards.
+        const cw = container.clientWidth || container.offsetWidth || 240;
+        const ch = container.clientHeight || container.offsetHeight || h || 160;
+        let valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+        if (ch < 110) valFont = Math.min(valFont, 22);
+        else if (ch < 140) valFont = Math.min(valFont, 28);
+        else if (ch < 170) valFont = Math.min(valFont, 34);
+        if (cw < 160) valFont = Math.min(valFont, 24);
+        else if (cw < 220) valFont = Math.min(valFont, 32);
 
         // Alignment (defaults: horizontal=center, vertical=middle).
         const hAlign = chartDef.style?.kpiHAlign || 'center';
@@ -2366,31 +3247,40 @@ class ChartRenderer {
         }
 
         container.style.cssText += `background:#fff;display:block;border-radius:8px;overflow:hidden;`;
-        // Shrink title font and padding on narrow cards so long headers don't
-        // get clipped at low widths — let the header wrap naturally instead of
-        // line-clamping to 2 lines.
-        const cw = container.clientWidth || container.offsetWidth || 240;
         const titleFont = cw < 160 ? 10 : (cw < 220 ? 10.5 : 11.5);
         const padX = cw < 160 ? 10 : 18;
-        const padY = cw < 160 ? 10 : 16;
-        container.innerHTML = `<div style="font-family:Inter,sans-serif;padding:${padY}px ${padX}px;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:${vFlex};align-items:stretch;gap:10px;text-align:${textAlign}">
-            <div style="font-size:${titleFont}px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
-            <div style="display:flex;align-items:baseline;justify-content:${hFlex};flex-wrap:wrap">
-                <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${this._esc(display)}</div>
+        const padY = cw < 160 ? 8 : (ch < 140 ? 10 : 16);
+        const gap = ch < 120 ? 4 : (ch < 160 ? 6 : 10);
+        container.innerHTML = `<div style="font-family:Inter,sans-serif;padding:${padY}px ${padX}px;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:${vFlex};align-items:stretch;gap:${gap}px;text-align:${textAlign};overflow:hidden;min-height:0">
+            <div style="flex:0 0 auto;font-size:${titleFont}px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
+            <div style="flex:0 1 auto;min-height:0;display:flex;align-items:baseline;justify-content:${hFlex};flex-wrap:wrap">
+                <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.15;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-width:100%">${this._esc(display)}</div>
                 ${deltaHtml}
             </div>
-            <div style="width:100%;height:8px;background:${color}1A;border-radius:999px;overflow:hidden;position:relative">
+            <div style="flex:0 0 auto;width:100%;height:8px;background:${color}1A;border-radius:999px;overflow:hidden;position:relative">
                 <div style="position:absolute;left:0;top:0;bottom:0;width:${pct}%;background:linear-gradient(90deg,${color} 0%,${color}CC 100%);border-radius:999px;transition:width 0.4s ease"></div>
             </div>
         </div>`;
     }
 
-    // Extract a single scalar from a data payload. Aggregates (sum) when multiple
-    // numeric rows are returned so multi-row queries still render a sensible KPI.
-    _scalarFromData(data) {
+    // Extract a single scalar from a data payload. When the chart has no
+    // aggregation configured (valueFieldAgg === 'None' / aggregation disabled),
+    // surface the FIRST row's value so users see real underlying data instead
+    // of an auto-sum of every row. Otherwise sum numeric rows so multi-row
+    // queries still render a sensible KPI.
+    _scalarFromData(data, chartDef) {
         const vals = (data && data.values) || [];
         if (!vals.length) return null;
         if (vals.length === 1) return vals[0];
+        const aggFn = String(
+            (chartDef && chartDef.mapping && chartDef.mapping.valueFieldAgg) ||
+            (chartDef && chartDef.aggregation && chartDef.aggregation.function) ||
+            ''
+        ).toLowerCase();
+        const aggDisabled = chartDef && chartDef.aggregation && chartDef.aggregation.enabled === false;
+        if (aggFn === 'none' || aggDisabled) {
+            return vals[0];
+        }
         const nums = vals.filter(v => typeof v === 'number' && isFinite(v));
         if (!nums.length) return vals[0];
         return nums.reduce((s, v) => s + v, 0);
@@ -2414,30 +3304,42 @@ class ChartRenderer {
 
     renderCard(chartDef, container, data, colors, h) {
         const title = chartDef.title || 'Value';
-        const val = this._scalarFromData(data);
+        const val = this._scalarFromData(data, chartDef);
         const color = colors[0] || '#4A90D9';
         const display = (val === null || val === undefined)
             ? '—'
             : (typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val));
         const len = display.length;
-        const valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+        const cw = container.clientWidth || container.offsetWidth || 240;
+        const ch = container.clientHeight || container.offsetHeight || h || 160;
+        let valFont = len > 12 ? 30 : (len > 8 ? 38 : 46);
+        if (ch < 110) valFont = Math.min(valFont, 22);
+        else if (ch < 140) valFont = Math.min(valFont, 28);
+        else if (ch < 170) valFont = Math.min(valFont, 34);
+        if (cw < 160) valFont = Math.min(valFont, 24);
+        else if (cw < 220) valFont = Math.min(valFont, 32);
 
         const hAlign = chartDef.style?.kpiHAlign || 'center';
         const vAlign = chartDef.style?.kpiVAlign || 'middle';
         const hFlex = hAlign === 'left' ? 'flex-start' : (hAlign === 'right' ? 'flex-end' : 'center');
         const vFlex = vAlign === 'top' ? 'flex-start' : (vAlign === 'bottom' ? 'flex-end' : 'center');
+        const padY = ch < 140 ? 10 : 16;
+        const titleFont = cw < 160 ? 10 : (cw < 220 ? 11 : 11.5);
 
         container.style.cssText += `background:linear-gradient(135deg,${color}10,${color}05);display:flex;flex-direction:column;align-items:${hFlex};justify-content:${vFlex};border-radius:8px;overflow:hidden;border:1px solid ${color}22;`;
-        container.innerHTML = `<div style="text-align:${hAlign};font-family:Inter,sans-serif;padding:16px 14px;width:100%;box-sizing:border-box">
-            <div style="width:36px;height:36px;border-radius:10px;background:${color}22;display:${hAlign === 'center' ? 'inline-flex' : 'flex'};align-items:center;justify-content:center;margin-bottom:8px;${hAlign === 'right' ? 'margin-left:auto' : ''}">
+        container.innerHTML = `<div style="text-align:${hAlign};font-family:Inter,sans-serif;padding:${padY}px 14px;width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;min-height:0">
+            ${ch >= 130 ? `<div style="flex:0 0 auto;width:36px;height:36px;border-radius:10px;background:${color}22;display:${hAlign === 'center' ? 'inline-flex' : 'flex'};align-items:center;justify-content:center;${hAlign === 'right' ? 'margin-left:auto' : ''}">
                 <div style="width:18px;height:18px;border-radius:5px;background:${color};"></div>
-            </div>
-            <div style="font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._esc(display)}</div>
-            <div style="font-size:11.5px;font-weight:600;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:0.4px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
+            </div>` : ''}
+            <div style="flex:0 1 auto;min-height:0;font-size:${valFont}px;font-weight:700;color:#1e293b;line-height:1.15;white-space:normal;word-break:break-word;overflow-wrap:anywhere">${this._esc(display)}</div>
+            <div style="flex:0 0 auto;font-size:${titleFont}px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;white-space:normal">${this._esc(title)}</div>
         </div>`;
     }
 
     renderMarimekko(chartDef, container, data, colors, h) {
+        if ((!data.rawData || !data.rawData.length) && (!data.labels || !data.labels.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2475,6 +3377,9 @@ class ChartRenderer {
     }
 
     renderDumbbell(chartDef, container, data, colors, h) {
+        if ((!data.labels || !data.labels.length) || (!data.values || !data.values.length)) {
+            return this._insufficientDataOverlay(container, chartDef.chartType);
+        }
         const canvas = this._makeCanvas(container, h);
         const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
@@ -2569,20 +3474,25 @@ class ChartRenderer {
             const headerCells = columns.map(col =>
                 `<th style="color:${this._esc(primaryColor)};${col.width ? `width:${Number(col.width)}px;` : ''}">${this._esc(col.label)}</th>`
             ).join('');
-            const bodyRows = rawData.map(row =>
-                '<tr>' + columns.map(col => {
+            const bodyRows = rawData.map((row, idx) =>
+                `<tr data-row-idx="${idx}" style="cursor:pointer;">` + columns.map(col => {
                     const val = row[col.key];
                     const isNum = typeof val === 'number';
                     return `<td${isNum ? ' class="text-end"' : ''}>${this._esc(String(val ?? ''))}</td>`;
                 }).join('') + '</tr>'
             ).join('');
             container.innerHTML = `
-                <table class="table table-sm table-striped table-bordered mb-0" style="font-size:12px;">
+                <table class="table table-sm table-striped table-bordered table-hover mb-0" style="font-size:12px;">
                     <thead style="position:sticky;top:0;background:#fff;">
                         <tr>${headerCells}</tr>
                     </thead>
                     <tbody>${bodyRows}</tbody>
                 </table>`;
+            // Cross-filter: clicking a row emits CrossFilter.apply with the
+            // row's labelField value (or first column if no mapping). Re-clicking
+            // the same row clears the filter (Power BI parity).
+            const filterField = mapping.labelField || allColumns[0];
+            this._wireTableRowClicks(chartDef, container, rawData, filterField);
             return;
         }
 
@@ -2592,10 +3502,10 @@ class ChartRenderer {
         const labelField = mapping.labelField || 'Label';
         const valueField = mapping.valueField || 'Value';
         const rows = labels.map((lbl, i) =>
-            `<tr><td>${this._esc(String(lbl))}</td><td class="text-end">${this._esc(String(values[i] ?? ''))}</td></tr>`
+            `<tr data-row-idx="${i}" style="cursor:pointer;"><td>${this._esc(String(lbl))}</td><td class="text-end">${this._esc(String(values[i] ?? ''))}</td></tr>`
         ).join('');
         container.innerHTML = `
-            <table class="table table-sm table-striped table-bordered mb-0" style="font-size:12px;">
+            <table class="table table-sm table-striped table-bordered table-hover mb-0" style="font-size:12px;">
                 <thead style="position:sticky;top:0;background:#fff;">
                     <tr>
                         <th style="color:${this._esc(primaryColor)}">${this._esc(labelField)}</th>
@@ -2604,17 +3514,68 @@ class ChartRenderer {
                 </thead>
                 <tbody>${rows}</tbody>
             </table>`;
+        // Synthesize rawData rows from labels/values so click→filter still works.
+        const synthRows = labels.map((lbl, i) => ({ [labelField]: lbl, [valueField]: values[i] }));
+        this._wireTableRowClicks(chartDef, container, synthRows, labelField);
+    }
+
+    /** Wire row click → CrossFilter.apply on a custom table chart (Power BI parity). */
+    _wireTableRowClicks(chartDef, container, rows, filterField) {
+        if (!filterField || !window.CrossFilter) return;
+        const tbody = container.querySelector('tbody');
+        if (!tbody) return;
+        const af = window.CrossFilter.activeFilter;
+        const activeIsMine = af && af.sourceChartId === chartDef.id;
+        const activeVal = activeIsMine ? String(af.value) : null;
+
+        tbody.querySelectorAll('tr[data-row-idx]').forEach(tr => {
+            const idx = parseInt(tr.dataset.rowIdx, 10);
+            const row = rows[idx];
+            if (!row) return;
+            // Resolve actual key in row (case-insensitive)
+            const rowKeys = Object.keys(row);
+            const key = rowKeys.find(k => k.toLowerCase() === String(filterField).toLowerCase()) || filterField;
+            const val = row[key];
+            // Highlight the active row
+            if (activeVal !== null && String(val) === activeVal) {
+                tr.style.backgroundColor = 'rgba(74,144,217,0.18)';
+                tr.style.fontWeight = '600';
+            }
+            tr.addEventListener('click', () => {
+                const wasActive = activeVal !== null && String(val) === activeVal;
+                if (wasActive) {
+                    window.CrossFilter.clear();
+                    return;
+                }
+                window.CrossFilter.apply(key, val, String(val), {
+                    sourceChartId: chartDef.id,
+                    sourceDatasetName: chartDef.datasetName,
+                    sourceDatasourceId: chartDef.datasourceId || window.currentDatasourceId,
+                    sourceRow: row
+                });
+            });
+        });
     }
 
     renderSlicer(chartDef, container, data, colors, h) {
         const labels = data.labels || ['A','B','C','D','E'];
+        const rawData = Array.isArray(data.rawData) ? data.rawData : [];
         const uniqueValues = [...new Set(labels.map(String))];
         const primaryColor = (chartDef.style && chartDef.style.colorPalette && chartDef.style.colorPalette.startsWith('#'))
             ? chartDef.style.colorPalette : colors[0];
 
         container.style.cssText = 'position:absolute;inset:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;';
         const mapping = chartDef.mapping || {};
-        const labelField = mapping.labelField || 'Values';
+        // Resolve the actual column name. When mapping.labelField is empty
+        // (auto-built/AI slicers, legacy reports) fall back to the first key
+        // of rawData — that's the real column name returned by the SQL —
+        // so cross-filter emits e.g. "Segment"="Midmarket" instead of the
+        // placeholder "Values"="Midmarket".
+        let labelField = mapping.labelField;
+        if (!labelField && rawData.length > 0) {
+            labelField = Object.keys(rawData[0])[0] || '';
+        }
+        if (!labelField) labelField = 'Values';
 
         const titleEl = document.createElement('div');
         titleEl.style.cssText = 'font-size:11px;font-weight:600;color:#6c757d;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;';
@@ -2623,17 +3584,50 @@ class ChartRenderer {
         const wrap = document.createElement('div');
         wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
 
+        const setActive = (btn, active) => {
+            btn.dataset.active = active ? '1' : '0';
+            btn.style.backgroundColor = active ? primaryColor : `${primaryColor}22`;
+            btn.style.color = active ? '#fff' : primaryColor;
+        };
+
+        // Restore active state from current CrossFilter, if it was set by this slicer
+        const af = window.CrossFilter && window.CrossFilter.activeFilter;
+        const currentVal = (af && af.sourceChartId === chartDef.id) ? String(af.value) : null;
+
+        const buttons = [];
         uniqueValues.forEach(v => {
             const btn = document.createElement('button');
             btn.className = 'slicer-chip badge';
             btn.style.cssText = `background-color:${primaryColor}22;color:${primaryColor};border:1px solid ${primaryColor}66;border-radius:16px;padding:4px 12px;font-size:12px;cursor:pointer;text-align:left;font-weight:500;transition:all .15s;margin:2px;`;
             btn.textContent = String(v);
+            setActive(btn, currentVal !== null && currentVal === String(v));
             btn.addEventListener('click', () => {
-                const active = btn.dataset.active === '1';
-                btn.dataset.active = active ? '0' : '1';
-                btn.style.backgroundColor = active ? `${primaryColor}22` : primaryColor;
-                btn.style.color = active ? primaryColor : '#fff';
+                const wasActive = btn.dataset.active === '1';
+                // Single-select: deactivate all chips first
+                buttons.forEach(b => setActive(b, false));
+                if (!window.CrossFilter) return;
+                if (wasActive) {
+                    // Re-clicking active chip clears the filter
+                    window.CrossFilter.clear();
+                    return;
+                }
+                setActive(btn, true);
+                // Find the source row for this value so other charts can use
+                // foreign-key relationships when their table differs.
+                let sourceRow = null;
+                if (rawData.length) {
+                    const keys = Object.keys(rawData[0]);
+                    const lk = keys.find(k => k.toLowerCase() === String(labelField).toLowerCase()) || labelField;
+                    sourceRow = rawData.find(r => String(r[lk]) === String(btn.textContent)) || null;
+                }
+                window.CrossFilter.apply(labelField, btn.textContent, btn.textContent, {
+                    sourceChartId: chartDef.id,
+                    sourceDatasetName: chartDef.datasetName,
+                    sourceDatasourceId: chartDef.datasourceId || window.currentDatasourceId || null,
+                    sourceRow
+                });
             });
+            buttons.push(btn);
             wrap.appendChild(btn);
         });
 

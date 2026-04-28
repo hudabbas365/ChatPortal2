@@ -83,8 +83,15 @@ public class BillingController : Controller
     }
 
     [HttpPost("/api/billing/subscribe")]
+    [Authorize(Roles = "SuperAdmin")]
     public async Task<IActionResult> Subscribe([FromBody] SubscribeRequest req)
     {
+        // ── B2 lock-down ──────────────────────────────────────────
+        // This legacy endpoint upgraded a user's plan with NO payment
+        // verification — anyone with a valid login could elevate themselves
+        // to Enterprise. The real upgrade path is `/api/paypal/create-order`
+        // + `/api/paypal/capture-order`, which verifies amount server-side.
+        // Restricted to SuperAdmin so support staff can still manually adjust.
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null) return Unauthorized();
@@ -227,7 +234,11 @@ public class BillingController : Controller
             proAvailable = Math.Max(0, org.PurchasedProfessionalLicenses - assignedProfessional),
             enterprisePurchased = org.PurchasedEnterpriseLicenses,
             enterpriseAssigned = assignedEnterprise,
-            enterpriseAvailable = Math.Max(0, org.PurchasedEnterpriseLicenses - assignedEnterprise)
+            enterpriseAvailable = Math.Max(0, org.PurchasedEnterpriseLicenses - assignedEnterprise),
+            // Per-tier license subscription state (one PayPal recurring sub per tier).
+            paypalProSubscriptionId = org.PayPalProSubscriptionId,
+            paypalEntSubscriptionId = org.PayPalEntSubscriptionId,
+            hasLicenseSubscription = !string.IsNullOrEmpty(org.PayPalProSubscriptionId) || !string.IsNullOrEmpty(org.PayPalEntSubscriptionId)
         });
     }
 
@@ -345,6 +356,51 @@ public class BillingController : Controller
             });
             await _db.SaveChangesAsync();
             return BadRequest(new { error = FriendlyPayPalError(capture.Error) });
+        }
+
+        // ── Server-side amount verification (B4) ──────────────────
+        // The client sends PurchaseType / Quantity / PlanKey / TokenAmount.
+        // We MUST recompute the expected price server-side and reject if the
+        // captured amount doesn't match — otherwise a tampered client could
+        // approve a $0.01 PayPal order and unlock an Enterprise license.
+        var tokenAmt = req.TokenAmount > 0 ? req.TokenAmount : 1_000_000;
+        var isEntExpected = string.Equals(req.PlanKey, "Enterprise", StringComparison.OrdinalIgnoreCase);
+        decimal expectedAmount = req.PurchaseType switch
+        {
+            "license" => Math.Max(1, req.Quantity) * (isEntExpected ? 45m : 25m),
+            "token_pack" => tokenAmt <= 100_000 ? 9m : tokenAmt <= 500_000 ? 20m : 25m,
+            "plan_upgrade" => isEntExpected ? 45m : 25m,
+            _ => 0m
+        };
+        if (expectedAmount <= 0)
+            return BadRequest(new { error = "Unknown purchase type." });
+
+        var currencyOk = string.Equals(capture.CapturedCurrency, "USD", StringComparison.OrdinalIgnoreCase);
+        var amountOk = Math.Abs(capture.CapturedAmount - expectedAmount) <= 0.01m;
+        if (!currencyOk || !amountOk)
+        {
+            _db.PaymentRecords.Add(new PaymentRecord
+            {
+                OrganizationId = req.OrganizationId,
+                UserId = caller.Id,
+                PaymentType = req.PurchaseType,
+                Amount = capture.CapturedAmount,
+                Currency = string.IsNullOrEmpty(capture.CapturedCurrency) ? "USD" : capture.CapturedCurrency,
+                Status = "failed",
+                PayPalOrderId = req.OrderId,
+                Description = $"Amount mismatch on capture: {req.PurchaseType}",
+                ErrorMessage = $"Captured {capture.CapturedAmount} {capture.CapturedCurrency}; expected {expectedAmount} USD.",
+                PlanKey = req.PlanKey
+            });
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "payment_amount_mismatch",
+                Description = $"Capture amount mismatch (order {req.OrderId}): captured {capture.CapturedAmount} {capture.CapturedCurrency}, expected {expectedAmount} USD. Purchase rejected.",
+                UserId = caller.Id,
+                OrganizationId = req.OrganizationId
+            });
+            await _db.SaveChangesAsync();
+            return BadRequest(new { error = "Payment amount mismatch. The purchase has not been applied. Please contact support if you were charged." });
         }
 
         // Apply the purchase based on type
@@ -558,6 +614,30 @@ public class BillingController : Controller
         var returnUrl = $"{baseUrl}/billing/paypal-return?result=success&kind=subscription";
         var cancelUrl = $"{baseUrl}/billing/paypal-return?result=cancel&kind=subscription";
 
+        var isLicenseSub = string.Equals(req.PurchaseType, "license", StringComparison.OrdinalIgnoreCase);
+        var isEnterpriseTier = string.Equals(req.PlanKey, "Enterprise", StringComparison.OrdinalIgnoreCase);
+        var quantity = isLicenseSub ? Math.Max(1, req.Quantity) : 1;
+
+        // Conversion flow: legacy org with one-time licenses switching to monthly
+        // billing. Use existing seat count as the subscription quantity — admin
+        // does NOT need to buy any new licenses.
+        if (isLicenseSub && req.IsConversion)
+        {
+            var existingSeats = isEnterpriseTier ? org.PurchasedEnterpriseLicenses : org.PurchasedProfessionalLicenses;
+            if (existingSeats <= 0)
+                return BadRequest(new { error = $"No existing {req.PlanKey} licenses to convert." });
+            quantity = existingSeats;
+        }
+
+        // For license subs, reject if the tier already holds an active subscription.
+        // To change the seat count, cancel the existing tier sub first.
+        if (isLicenseSub)
+        {
+            var existingTierId = isEnterpriseTier ? org.PayPalEntSubscriptionId : org.PayPalProSubscriptionId;
+            if (!string.IsNullOrEmpty(existingTierId))
+                return BadRequest(new { error = $"Your organization already has an active {req.PlanKey} license subscription. Cancel it first to change the seat count." });
+        }
+
         try
         {
             // Reuse a single PayPal Product + Plan per tier (cached in PayPalService)
@@ -566,13 +646,32 @@ public class BillingController : Controller
             if (!plan.Success)
                 return BadRequest(new { error = plan.Error });
 
-            // Create the subscription against the cached plan id
-            var sub = await _payPal.CreateSubscriptionAsync(plan.PlanId, returnUrl, cancelUrl);
+            // Create the subscription against the cached plan id (with quantity for license subs)
+            var sub = await _payPal.CreateSubscriptionAsync(plan.PlanId, returnUrl, cancelUrl, quantity);
             if (!sub.Success)
                 return BadRequest(new { error = sub.Error });
 
-            // If the org already had a subscription on file, log the replacement
-            // for audit (reactivation / plan change).
+            if (isLicenseSub)
+            {
+                // Per-tier license subscription — store on the dedicated field, do
+                // NOT mutate plan-level subscription state.
+                if (isEnterpriseTier) org.PayPalEntSubscriptionId = sub.SubscriptionId;
+                else org.PayPalProSubscriptionId = sub.SubscriptionId;
+
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = req.IsConversion ? "license_subscription_conversion_created" : "license_subscription_created",
+                    Description = req.IsConversion
+                        ? $"License subscription conversion created (PayPal: {sub.SubscriptionId}, tier: {req.PlanKey}, existing seats: {quantity})."
+                        : $"License subscription created (PayPal: {sub.SubscriptionId}, tier: {req.PlanKey}, quantity: {quantity}).",
+                    UserId = caller.Id,
+                    OrganizationId = req.OrganizationId
+                });
+                await _db.SaveChangesAsync();
+                return Ok(new { subscriptionId = sub.SubscriptionId, approveUrl = sub.ApproveUrl, purchaseType = "license", tier = req.PlanKey, quantity, isConversion = req.IsConversion });
+            }
+
+            // Plan-level subscription — original flow.
             if (!string.IsNullOrEmpty(org.PayPalSubscriptionId) && org.PayPalSubscriptionId != sub.SubscriptionId)
             {
                 _db.ActivityLogs.Add(new ActivityLog
@@ -584,7 +683,6 @@ public class BillingController : Controller
                 });
             }
 
-            // Store pending subscription info
             org.PayPalSubscriptionId = sub.SubscriptionId;
             org.PayPalPlanId = plan.PlanId;
             org.SubscriptionStatus = "APPROVAL_PENDING";
@@ -607,7 +705,37 @@ public class BillingController : Controller
         var org = await _db.Organizations.FindAsync(req.OrganizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
 
-        if (string.IsNullOrEmpty(org.PayPalSubscriptionId))
+        // Resolve which subscription we're activating: a per-tier license sub
+        // (matched by id or explicit Tier/PurchaseType) or the plan-level sub.
+        bool isLicenseActivation = false;
+        string? tierForLicense = null;
+        string? subscriptionIdToUse = null;
+
+        bool tryMatchTier(string? id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            if (!string.IsNullOrEmpty(org.PayPalProSubscriptionId) && org.PayPalProSubscriptionId == id) { tierForLicense = "Professional"; subscriptionIdToUse = id; isLicenseActivation = true; return true; }
+            if (!string.IsNullOrEmpty(org.PayPalEntSubscriptionId) && org.PayPalEntSubscriptionId == id) { tierForLicense = "Enterprise"; subscriptionIdToUse = id; isLicenseActivation = true; return true; }
+            return false;
+        }
+
+        if (!tryMatchTier(req.SubscriptionId))
+        {
+            if (string.Equals(req.PurchaseType, "license", StringComparison.OrdinalIgnoreCase))
+            {
+                tierForLicense = string.Equals(req.Tier, "Enterprise", StringComparison.OrdinalIgnoreCase) ? "Enterprise"
+                                : string.Equals(req.Tier, "Professional", StringComparison.OrdinalIgnoreCase) ? "Professional"
+                                : null;
+                subscriptionIdToUse = tierForLicense == "Enterprise" ? org.PayPalEntSubscriptionId : org.PayPalProSubscriptionId;
+                isLicenseActivation = !string.IsNullOrEmpty(subscriptionIdToUse);
+            }
+            else
+            {
+                subscriptionIdToUse = org.PayPalSubscriptionId;
+            }
+        }
+
+        if (string.IsNullOrEmpty(subscriptionIdToUse))
             return BadRequest(new { error = "No pending subscription found." });
 
         try
@@ -616,11 +744,39 @@ public class BillingController : Controller
             // and there is a small propagation delay (often 1–5s in sandbox) between
             // the user finishing the approval popup and PayPal flipping the status.
             // Poll a few times so we don't return "still pending" prematurely.
+            // If PayPal returns 404 the stored id is stale — clear it and tell the
+            // caller, instead of looping for ~9s and reporting a false "still pending".
             PayPalSubscriptionDetails? details = null;
             string lastStatus = "";
             for (int attempt = 0; attempt < 6; attempt++)
             {
-                details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+                var (d, notFound) = await _payPal.TryGetSubscriptionDetailsAsync(subscriptionIdToUse);
+                if (notFound)
+                {
+                    var staleId = subscriptionIdToUse;
+                    if (isLicenseActivation)
+                    {
+                        if (tierForLicense == "Enterprise") org.PayPalEntSubscriptionId = null;
+                        else org.PayPalProSubscriptionId = null;
+                    }
+                    else
+                    {
+                        org.PayPalSubscriptionId = null;
+                        org.SubscriptionStatus = "NONE";
+                        org.SubscriptionStartDate = null;
+                        org.SubscriptionNextBillingDate = null;
+                    }
+                    _db.ActivityLogs.Add(new ActivityLog
+                    {
+                        Action = "subscription_pending_cleared_auto",
+                        Description = $"Cleared stale APPROVAL_PENDING subscription on activate — PayPal returned 404 for {staleId}.",
+                        UserId = caller.Id,
+                        OrganizationId = req.OrganizationId
+                    });
+                    await _db.SaveChangesAsync();
+                    return BadRequest(new { error = "This subscription no longer exists in PayPal. The pending state has been cleared — please start a new checkout.", cleared = true });
+                }
+                details = d;
                 lastStatus = details?.Status ?? "";
                 if (details != null && (lastStatus == "ACTIVE" || lastStatus == "APPROVED"))
                     break;
@@ -633,6 +789,77 @@ public class BillingController : Controller
 
             if (details.Status == "ACTIVE" || details.Status == "APPROVED")
             {
+                // ── License-tier subscription activation ──
+                if (isLicenseActivation)
+                {
+                    var tier = tierForLicense ?? (string.Equals(req.PlanKey, "Enterprise", StringComparison.OrdinalIgnoreCase) ? "Enterprise" : "Professional");
+                    var qty = Math.Max(1, details.Quantity);
+                    decimal unitPrice = string.Equals(tier, "Enterprise", StringComparison.OrdinalIgnoreCase) ? 45m : 25m;
+
+                    // Conversion flow: existing seats are simply attached to the new
+                    // recurring subscription — do NOT increment the license counts.
+                    if (!req.IsConversion)
+                    {
+                        if (string.Equals(tier, "Enterprise", StringComparison.OrdinalIgnoreCase))
+                        {
+                            org.PurchasedEnterpriseLicenses += qty;
+                        }
+                        else
+                        {
+                            org.PurchasedProfessionalLicenses += qty;
+                        }
+                        org.PurchasedLicenses += qty; // legacy mirror
+                    }
+
+                    _db.ActivityLogs.Add(new ActivityLog
+                    {
+                        Action = req.IsConversion ? "license_subscription_converted" : "license_subscription_activated",
+                        Description = req.IsConversion
+                            ? $"{qty} existing {tier} license(s) converted to monthly subscription (PayPal: {subscriptionIdToUse}). Next billing: {details.NextBillingTime:yyyy-MM-dd}."
+                            : $"{qty} {tier} license(s) added via recurring subscription (PayPal: {subscriptionIdToUse}). Next billing: {details.NextBillingTime:yyyy-MM-dd}.",
+                        UserId = caller.Id,
+                        OrganizationId = req.OrganizationId
+                    });
+                    var totalAmount = unitPrice * qty;
+                    _db.PaymentRecords.Add(new PaymentRecord
+                    {
+                        OrganizationId = req.OrganizationId,
+                        UserId = caller.Id,
+                        PaymentType = req.IsConversion ? "license_subscription_conversion" : "license_subscription",
+                        Amount = totalAmount,
+                        Status = "succeeded",
+                        PayPalSubscriptionId = subscriptionIdToUse,
+                        Description = req.IsConversion
+                            ? $"{qty} {tier} license(s) — converted to monthly subscription"
+                            : $"{qty} {tier} license(s) — monthly subscription",
+                        PlanKey = tier
+                    });
+                    await _db.SaveChangesAsync();
+
+                    if (!string.IsNullOrEmpty(caller.Email))
+                    {
+                        _ = _emailService.SendInvoiceEmailAsync(
+                            caller.Email, caller.FullName ?? caller.Email, org.Name,
+                            req.IsConversion
+                                ? $"{qty} {tier} license(s) — converted to monthly subscription"
+                                : $"{qty} {tier} license(s) — monthly subscription activated",
+                            totalAmount, "USD",
+                            subscriptionIdToUse ?? "", DateTime.UtcNow);
+                    }
+
+                    return Ok(new
+                    {
+                        success = true,
+                        status = "ACTIVE",
+                        purchaseType = "license",
+                        tier,
+                        quantity = qty,
+                        amount = totalAmount,
+                        nextBilling = details.NextBillingTime
+                    });
+                }
+
+                // ── Plan-level subscription activation (original flow) ──
                 // Resolve the tier authoritatively from PayPal's plan_id (or the
                 // plan_id we stored at create time) so we don't depend on the
                 // client-provided planKey, which can be stale or wrong if the
@@ -710,37 +937,130 @@ public class BillingController : Controller
         var org = await _db.Organizations.FindAsync(req.OrganizationId);
         if (org == null) return NotFound(new { error = "Organization not found." });
 
-        if (string.IsNullOrEmpty(org.PayPalSubscriptionId))
+        var isTierCancel = !string.IsNullOrWhiteSpace(req.Tier);
+        var isEntTier = string.Equals(req.Tier, "Enterprise", StringComparison.OrdinalIgnoreCase);
+        var subIdToCancel = isTierCancel
+            ? (isEntTier ? org.PayPalEntSubscriptionId : org.PayPalProSubscriptionId)
+            : org.PayPalSubscriptionId;
+
+        if (string.IsNullOrEmpty(subIdToCancel))
             return BadRequest(new { error = "No active subscription to cancel." });
 
         try
         {
-            var cancelled = await _payPal.CancelSubscriptionAsync(org.PayPalSubscriptionId, req.Reason ?? "Customer requested cancellation");
-            if (!cancelled)
-                return BadRequest(new { error = "Failed to cancel subscription with PayPal." });
-
-            org.SubscriptionStatus = "CANCELLED";
-            // Auto-renewal is off, but the paid period the customer already
-            // paid for is honored. Plan + licenses stay active until
-            // SubscriptionNextBillingDate; SubscriptionExpiryJob then reverts
-            // the org to the Free plan and marks the status as EXPIRED.
-            var endsOn = org.SubscriptionNextBillingDate;
-            _db.ActivityLogs.Add(new ActivityLog
+            var cancelResult = await _payPal.TryCancelSubscriptionAsync(subIdToCancel, req.Reason ?? "Customer requested cancellation");
+            if (!cancelResult.Success)
             {
-                Action = "subscription_cancelled",
-                Description = $"Auto-renewal cancelled (PayPal: {org.PayPalSubscriptionId}). Plan and all assigned licenses remain active until {endsOn:yyyy-MM-dd}; subscription will be suspended after this date.",
-                UserId = caller.Id,
-                OrganizationId = req.OrganizationId
-            });
+                // Self-heal: if PayPal says the subscription is already cancelled /
+                // suspended / expired, or the id doesn't exist anymore (sandbox wipe,
+                // stale row, etc.), reflect that locally instead of bouncing the user
+                // with an opaque "Failed to cancel" error.
+                if (cancelResult.AlreadyCancelled || cancelResult.NotFound)
+                {
+                    if (isTierCancel)
+                    {
+                        if (cancelResult.NotFound)
+                        {
+                            if (isEntTier) org.PayPalEntSubscriptionId = null;
+                            else org.PayPalProSubscriptionId = null;
+                        }
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "license_subscription_cancel_skipped",
+                            Description = $"{req.Tier} license subscription was already terminated at PayPal ({cancelResult.ErrorName} / HTTP {cancelResult.StatusCode}). Local state synced; no PayPal action taken.",
+                            UserId = caller.Id,
+                            OrganizationId = req.OrganizationId
+                        });
+                    }
+                    else
+                    {
+                        org.SubscriptionStatus = cancelResult.NotFound ? "NONE" : "CANCELLED";
+                        if (cancelResult.NotFound)
+                        {
+                            org.PayPalSubscriptionId = null;
+                            org.SubscriptionStartDate = null;
+                            org.SubscriptionNextBillingDate = null;
+                        }
+                        _db.ActivityLogs.Add(new ActivityLog
+                        {
+                            Action = "subscription_cancel_skipped",
+                            Description = $"Subscription was already terminated at PayPal ({cancelResult.ErrorName} / HTTP {cancelResult.StatusCode}). Local state synced.",
+                            UserId = caller.Id,
+                            OrganizationId = req.OrganizationId
+                        });
+                    }
+                    await _db.SaveChangesAsync();
+                    return Ok(new
+                    {
+                        success = true,
+                        status = cancelResult.NotFound ? "NONE" : "CANCELLED",
+                        tier = isTierCancel ? req.Tier : null,
+                        message = cancelResult.NotFound
+                            ? "Subscription no longer exists at PayPal — your account has been updated."
+                            : "Subscription was already cancelled at PayPal — your account has been updated."
+                    });
+                }
+
+                // Real failure — surface PayPal's reason so the user/admin can act.
+                var reason = !string.IsNullOrWhiteSpace(cancelResult.ErrorMessage)
+                    ? cancelResult.ErrorMessage
+                    : !string.IsNullOrWhiteSpace(cancelResult.ErrorName)
+                        ? cancelResult.ErrorName
+                        : $"PayPal returned HTTP {cancelResult.StatusCode}.";
+                return BadRequest(new
+                {
+                    error = $"Failed to cancel subscription with PayPal: {reason}",
+                    paypalError = cancelResult.ErrorName,
+                    paypalStatus = cancelResult.StatusCode
+                });
+            }
+
+            DateTime? endsOn = null;
+            try
+            {
+                var details = await _payPal.GetSubscriptionDetailsAsync(subIdToCancel);
+                endsOn = details?.NextBillingTime;
+            }
+            catch { /* best-effort */ }
+
+            if (isTierCancel)
+            {
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = "license_subscription_cancelled",
+                    Description = $"{req.Tier} license subscription auto-renewal cancelled (PayPal: {subIdToCancel}). Licenses remain active until {endsOn:yyyy-MM-dd}; access revoked after that date by the expiry job.",
+                    UserId = caller.Id,
+                    OrganizationId = req.OrganizationId
+                });
+                // Note: we keep PayPalProSubscriptionId / PayPalEntSubscriptionId set so the
+                // SubscriptionExpiryJob can sweep them on the next-billing date and reduce
+                // the purchased license counts. No refund — current period is honored.
+            }
+            else
+            {
+                org.SubscriptionStatus = "CANCELLED";
+                endsOn = endsOn ?? org.SubscriptionNextBillingDate;
+                _db.ActivityLogs.Add(new ActivityLog
+                {
+                    Action = "subscription_cancelled",
+                    Description = $"Auto-renewal cancelled (PayPal: {subIdToCancel}). Plan and all assigned licenses remain active until {endsOn:yyyy-MM-dd}; subscription will be suspended after this date.",
+                    UserId = caller.Id,
+                    OrganizationId = req.OrganizationId
+                });
+            }
             await _db.SaveChangesAsync();
 
             var endsOnText = endsOn.HasValue ? endsOn.Value.ToString("yyyy-MM-dd") : "the end of the current billing period";
+            var message = isTierCancel
+                ? $"{req.Tier} license subscription cancelled. Your assigned licenses remain active until {endsOnText}; no refund is issued for the current billing period."
+                : $"Subscription cancelled. Your plan and all assigned licenses remain active until {endsOnText}. Access will be suspended after this date unless you resubscribe.";
             return Ok(new
             {
                 success = true,
                 status = "CANCELLED",
+                tier = isTierCancel ? req.Tier : null,
                 nextBillingDate = endsOn,
-                message = $"Subscription cancelled. Your plan and all assigned licenses remain active until {endsOnText}. Access will be suspended after this date unless you resubscribe."
+                message
             });
         }
         catch (Exception ex)
@@ -806,12 +1126,31 @@ public class BillingController : Controller
         // Self-heal: if the row is stuck on APPROVAL_PENDING but PayPal has
         // already activated the subscription, update the DB now so the banner
         // disappears on this page load without requiring any manual action.
+        // Also: if PayPal returns 404 for the stored id (stale sandbox id,
+        // wiped after a sandbox reset / client switch / seed data), clear the
+        // pending row so the customer isn't permanently stuck on the
+        // "Awaiting PayPal approval…" banner with no way to retry.
         if (org.SubscriptionStatus == "APPROVAL_PENDING" && !string.IsNullOrEmpty(org.PayPalSubscriptionId))
         {
             try
             {
-                var details = await _payPal.GetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
-                if (details != null && (details.Status == "ACTIVE" || details.Status == "APPROVED"))
+                var (details, notFound) = await _payPal.TryGetSubscriptionDetailsAsync(org.PayPalSubscriptionId);
+                if (notFound)
+                {
+                    var staleId = org.PayPalSubscriptionId;
+                    org.PayPalSubscriptionId = null;
+                    org.SubscriptionStatus = "NONE";
+                    org.SubscriptionStartDate = null;
+                    org.SubscriptionNextBillingDate = null;
+                    _db.ActivityLogs.Add(new ActivityLog
+                    {
+                        Action = "subscription_pending_cleared_auto",
+                        Description = $"Cleared stale APPROVAL_PENDING subscription — PayPal returned 404 for {staleId}.",
+                        OrganizationId = org.Id
+                    });
+                    await _db.SaveChangesAsync();
+                }
+                else if (details != null && (details.Status == "ACTIVE" || details.Status == "APPROVED"))
                 {
                     // Also fix the Plan field — when the row is APPROVAL_PENDING
                     // the org.Plan is usually still the pre-checkout value (Free /
@@ -877,7 +1216,19 @@ public class BillingController : Controller
         {
             var doc = JsonDocument.Parse(body);
             var eventType = doc.RootElement.GetProperty("event_type").GetString() ?? "";
+            var eventId = doc.RootElement.TryGetProperty("id", out var eidEl) ? eidEl.GetString() : null;
             var resource = doc.RootElement.GetProperty("resource");
+
+            // ── Idempotency (B5) ──────────────────────────────────
+            // PayPal can replay the same webhook (network blips, manual resend
+            // from dashboard). Without dedupe, recurring-payment branches would
+            // double-credit org subscriptions / token packs. Short-circuit if
+            // we've already persisted a PaymentRecord for this event.id.
+            if (!string.IsNullOrEmpty(eventId) &&
+                await _db.PaymentRecords.AnyAsync(p => p.PayPalEventId == eventId))
+            {
+                return Ok(new { idempotent = true });
+            }
 
             if (eventType == "PAYMENT.SALE.COMPLETED")
             {
@@ -902,6 +1253,7 @@ public class BillingController : Controller
                             Amount = amount,
                             Status = "succeeded",
                             PayPalSubscriptionId = billingAgreementId,
+                            PayPalEventId = eventId,
                             Description = $"Recurring monthly payment received",
                             PlanKey = org.Plan.ToString(),
                             PaidAt = DateTime.UtcNow
@@ -1006,6 +1358,7 @@ public class BillingController : Controller
                             Amount = 0,
                             Status = "failed",
                             PayPalSubscriptionId = subId,
+                            PayPalEventId = eventId,
                             Description = $"Recurring payment failed (attempt {org.FailedPaymentCount})",
                             ErrorMessage = $"PayPal recurring payment failed. Grace period until {org.GraceUntil:yyyy-MM-dd}.",
                             PlanKey = org.Plan.ToString()
@@ -1149,16 +1502,27 @@ public class PayPalCreateSubscriptionRequest
 {
     public int OrganizationId { get; set; }
     public string PlanKey { get; set; } = ""; // "Professional" or "Enterprise"
+    public string? PurchaseType { get; set; } // "plan" (default) or "license"
+    public int Quantity { get; set; } = 1;    // # of licenses when PurchaseType=="license"
+    // True when converting existing one-time licenses into a recurring monthly
+    // subscription. Quantity is taken from the org's existing seat count for
+    // the tier; activation will NOT add new seats (just attaches the sub id).
+    public bool IsConversion { get; set; }
 }
 
 public class PayPalActivateSubscriptionRequest
 {
     public int OrganizationId { get; set; }
     public string PlanKey { get; set; } = "";
+    public string? PurchaseType { get; set; } // "plan" or "license"
+    public string? Tier { get; set; }         // "Professional" / "Enterprise" for license subs
+    public string? SubscriptionId { get; set; }
+    public bool IsConversion { get; set; }
 }
 
 public class PayPalCancelSubscriptionRequest
 {
     public int OrganizationId { get; set; }
     public string? Reason { get; set; }
+    public string? Tier { get; set; } // null=plan-level; "Professional"/"Enterprise" for license sub
 }

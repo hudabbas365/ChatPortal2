@@ -92,8 +92,15 @@
     function renderList(items) {
         if (!items || items.length === 0) {
             list.innerHTML = '<div class="nav-notify-empty"><i class="bi bi-bell-slash"></i><p>No notifications</p></div>';
+            // Keep badge in sync — no items means no unread.
+            updateBadge(0);
             return;
         }
+        // Re-sync the badge with the ACTUAL number of unread items the server
+        // returned in the list. Without this, a stale unread-count poll could
+        // show "1" while the dropdown clearly displays 2 unread items.
+        var unreadInList = items.filter(function (n) { return !n.readAt; }).length;
+        updateBadge(unreadInList);
         const html = items.map(n => {
             const unread = !n.readAt;
             const sev = (n.severity || 'normal').toLowerCase();

@@ -40,7 +40,7 @@ public class QueryExecutionService : IQueryExecutionService
         _fileDs = fileDs;
     }
 
-    private static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "SQL Server", "SqlServer", "MSSQL"
     };
@@ -155,9 +155,31 @@ public class QueryExecutionService : IQueryExecutionService
             var raw = m.Groups[1].Value;
             var name = raw;
             var lastDot = name.LastIndexOf('.');
-            if (lastDot >= 0) name = name[(lastDot + 1)..];
+            string? schema = null;
+            if (lastDot >= 0)
+            {
+                schema = StripIdentifierWrappers(name[..lastDot].Trim().TrimEnd('.').Trim());
+                // Schema part may itself be schema-qualified (db.schema.table) — take the
+                // last segment as the schema relative to the table.
+                var schemaLastDot = schema.LastIndexOf('.');
+                if (schemaLastDot >= 0) schema = StripIdentifierWrappers(schema[(schemaLastDot + 1)..]);
+                name = name[(lastDot + 1)..];
+            }
             name = StripIdentifierWrappers(name);
             if (string.IsNullOrEmpty(name)) continue;
+            // SQL Server / PostgreSQL system metadata views are always allowed —
+            // metadata introspection (INFORMATION_SCHEMA.TABLES, sys.columns, etc.)
+            // is server-generated and never references user tables. Without this
+            // exception the guard rejects every /schema, /tables, /fields call
+            // against a datasource whose agent has a restricted table whitelist.
+            if (!string.IsNullOrEmpty(schema) &&
+                (schema.Equals("INFORMATION_SCHEMA", StringComparison.OrdinalIgnoreCase) ||
+                 schema.Equals("sys", StringComparison.OrdinalIgnoreCase) ||
+                 schema.Equals("pg_catalog", StringComparison.OrdinalIgnoreCase) ||
+                 schema.Equals("information_schema", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
             if (!allowed.Contains(name))
                 return $"Query references table '{name}' which is not in the agent's allowed tables. Allowed: {string.Join(", ", allowed)}.";
         }
@@ -182,10 +204,113 @@ public class QueryExecutionService : IQueryExecutionService
         return s.Trim();
     }
 
+    /// <summary>
+    /// Scrubs stray non-ASCII characters (e.g. ★, ⏱, decorative arrows) from inside
+    /// [bracketed] identifiers. The AI sometimes copies schema-snippet markers verbatim
+    /// into column references like [Revenue★] which would fail at execution.
+    /// </summary>
+    public static string ScrubBracketIdentifiers(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql)) return sql;
+        return System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"\[([^\]]*)\]",
+            m =>
+            {
+                var inner = m.Groups[1].Value;
+                // Drop any non-ASCII char inside brackets (printable ASCII space..~)
+                var cleaned = new string(inner.Where(c => c >= 0x20 && c <= 0x7E).ToArray()).TrimEnd();
+                return "[" + cleaned + "]";
+            });
+    }
+
+    /// <summary>
+    /// Best-effort rewrite of FROM/JOIN table references to the canonical
+    /// [schema].[Name] from the datasource whitelist. Handles common AI mistakes:
+    /// plural→singular (Customers→Customer), wrong schema ([dbo].[Customer]→[SalesLT].[Customer]),
+    /// and missing schema. Leaves the SQL unchanged when no confident match exists; the
+    /// strict whitelist validator that runs next will then surface the original error.
+    /// </summary>
+    public static string SanitizeTableReferences(Datasource ds, string sql)
+    {
+        if (ds == null || string.IsNullOrWhiteSpace(ds.SelectedTables) || string.IsNullOrWhiteSpace(sql))
+            return sql;
+        if (RestApiTypes.Contains(ds.Type) || PowerBiTypes.Contains(ds.Type) || FileUrlTypes.Contains(ds.Type))
+            return sql;
+
+        // Build bare-name → canonical "[schema].[Name]" lookup.
+        var canonical = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in ds.SelectedTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var raw = entry;
+            string? schema = null;
+            string table;
+            var lastDot = raw.LastIndexOf('.');
+            if (lastDot >= 0)
+            {
+                schema = StripIdentifierWrappers(raw[..lastDot]);
+                table = StripIdentifierWrappers(raw[(lastDot + 1)..]);
+            }
+            else
+            {
+                table = StripIdentifierWrappers(raw);
+            }
+            if (string.IsNullOrEmpty(table)) continue;
+            var qualified = string.IsNullOrEmpty(schema) ? $"[{table}]" : $"[{schema}].[{table}]";
+            canonical[table] = qualified;
+        }
+        if (canonical.Count == 0) return sql;
+
+        string? Resolve(string bareName)
+        {
+            if (canonical.TryGetValue(bareName, out var hit)) return hit;
+            // Try simple plural↔singular variants.
+            var variants = new List<string>();
+            if (bareName.EndsWith("ies", StringComparison.OrdinalIgnoreCase))
+                variants.Add(bareName[..^3] + "y");
+            if (bareName.EndsWith("es", StringComparison.OrdinalIgnoreCase))
+                variants.Add(bareName[..^2]);
+            if (bareName.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+                variants.Add(bareName[..^1]);
+            variants.Add(bareName + "s");
+            variants.Add(bareName + "es");
+            foreach (var v in variants)
+                if (canonical.TryGetValue(v, out var h)) return h;
+            return null;
+        }
+
+        var pattern = @"\b(FROM|JOIN)\s+([\[\""`]?[\w]+[\]\""`]?(?:\s*\.\s*[\[\""`]?[\w]+[\]\""`]?)*)";
+        return System.Text.RegularExpressions.Regex.Replace(
+            sql, pattern,
+            m =>
+            {
+                var keyword = m.Groups[1].Value;
+                var ident = m.Groups[2].Value;
+                var bare = ident;
+                var lastDot = bare.LastIndexOf('.');
+                if (lastDot >= 0) bare = bare[(lastDot + 1)..];
+                bare = StripIdentifierWrappers(bare);
+                if (string.IsNullOrEmpty(bare)) return m.Value;
+                var resolved = Resolve(bare);
+                if (resolved == null) return m.Value;
+                // Skip rewrite when AI already produced the canonical form (avoids churn).
+                if (string.Equals(ident.Replace(" ", ""), resolved.Replace(" ", ""), StringComparison.OrdinalIgnoreCase))
+                    return m.Value;
+                return $"{keyword} {resolved}";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
     public async Task<QueryExecutionResult> ExecuteReadOnlyAsync(Datasource ds, string sql, int maxRows = 1000)
     {
         // Strip comments so AI-generated SQL with -- or /* */ annotations is not rejected
         sql = StripSqlComments(sql);
+
+        // Best-effort: scrub stray non-ASCII markers (★/⏱/etc.) the AI sometimes leaks
+        // inside brackets, and rewrite plural/wrong-schema table refs to the canonical
+        // [schema].[Name] from the whitelist before the strict validator runs.
+        sql = ScrubBracketIdentifiers(sql);
+        sql = SanitizeTableReferences(ds, sql);
 
         // Safety gate: only allow safe read-only queries
         if (!IsSafeQuery(sql))

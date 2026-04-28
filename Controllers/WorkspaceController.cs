@@ -132,16 +132,38 @@ public class WorkspaceController : Controller
             .Where(d => d.WorkspaceId == workspace.Id)
             .ToListAsync();
         var restApiTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "REST API", "RestApi" };
-        var datasources = datasourceEntities.Select(d => new
+        var fileUrlTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "File URL", "FileUrl" };
+        var powerBiTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Power BI", "PowerBI" };
+        var datasources = datasourceEntities.Select(d =>
         {
-            d.Id,
-            d.Guid,
-            d.Name,
-            d.Type,
-            ConnectionString = restApiTypes.Contains(d.Type) ? "" : MaskConnectionString(_encryption.Decrypt(d.ConnectionString ?? "")),
-            ApiUrl = restApiTypes.Contains(d.Type) ? _encryption.Decrypt(d.ApiUrl ?? "") : "",
-            ApiKey = restApiTypes.Contains(d.Type) && !string.IsNullOrEmpty(d.ApiKey) ? "••••••" : "",
-            ApiMethod = d.ApiMethod ?? ""
+            var isRest = restApiTypes.Contains(d.Type);
+            var isFile = fileUrlTypes.Contains(d.Type);
+            var isPbi  = powerBiTypes.Contains(d.Type);
+            // Decrypt safely — Decrypt may throw on legacy/empty values; never let a single bad
+            // datasource blank out the whole popup.
+            string SafeDecrypt(string? v)
+            {
+                if (string.IsNullOrEmpty(v)) return "";
+                try { return _encryption.Decrypt(v) ?? ""; } catch { return ""; }
+            }
+            return new
+            {
+                d.Id,
+                d.Guid,
+                d.Name,
+                d.Type,
+                ConnectionString = (isRest || isFile || isPbi) ? "" : MaskConnectionString(SafeDecrypt(d.ConnectionString)),
+                DbUser           = (!isRest && !isFile && !isPbi && !string.IsNullOrEmpty(d.DbUser)) ? "••••••" : "",
+                ApiUrl           = (isRest || isFile) ? SafeDecrypt(d.ApiUrl) : "",
+                ApiKey           = isRest && !string.IsNullOrEmpty(d.ApiKey) ? "••••••" : "",
+                ApiMethod        = d.ApiMethod ?? "",
+                // Power BI fields — surface non-secret values so the popup can show them.
+                XmlaEndpoint            = isPbi ? SafeDecrypt(d.XmlaEndpoint) : "",
+                MicrosoftAccountTenantId = isPbi && !string.IsNullOrEmpty(d.MicrosoftAccountTenantId) ? "••••••" : "",
+                // For Power BI the connection string holds Catalog / ClientId / ClientSecret.
+                // Surface a masked copy so the popup can show "configured" state.
+                PbiConnection = isPbi ? MaskConnectionString(SafeDecrypt(d.ConnectionString)) : ""
+            };
         }).ToList();
 
         var dashboards = await _db.Dashboards
@@ -149,10 +171,28 @@ public class WorkspaceController : Controller
             .Select(d => new { d.Id, d.Guid, d.Name, d.AgentId, d.DatasourceId, d.CreatedAt })
             .ToListAsync();
 
-        var reports = await _db.Reports
+        // Workspace flow shows ONE tile per auto-generated report per agent.
+        // Going forward the auto-report client uses a stable name ("Auto Report · {Agent}")
+        // which the server upserts by name, so only one row exists per agent — but legacy
+        // installs may already have multiple "Auto Report — {timestamp}" rows per agent
+        // from older builds. Collapse those at read time by keeping only the latest
+        // auto-report per agent. User-named reports (anything that doesn't start with
+        // "Auto Report") are always shown individually. Prior versions remain in the DB
+        // and are retrievable via /api/reports/{guid}/revisions from the dashboard.
+        var reportRows = await _db.Reports
             .Where(r => r.WorkspaceId == workspace.Id)
             .Select(r => new { r.Id, r.Guid, r.Name, r.Status, r.DatasourceId, r.AgentId, r.CreatedAt })
             .ToListAsync();
+
+        var autoPrefix = "Auto Report";
+        var userNamed = reportRows.Where(r => string.IsNullOrEmpty(r.Name) || !r.Name.StartsWith(autoPrefix, StringComparison.OrdinalIgnoreCase));
+        var autoLatestPerAgent = reportRows
+            .Where(r => !string.IsNullOrEmpty(r.Name) && r.Name.StartsWith(autoPrefix, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(r => r.AgentId ?? 0)
+            .Select(g => g.OrderByDescending(r => r.CreatedAt).First());
+        var reports = userNamed.Concat(autoLatestPerAgent)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToList();
 
         return Ok(new
         {
@@ -216,13 +256,39 @@ public class WorkspaceController : Controller
         if (nameExists)
             return Conflict(new { error = "A workspace with this name already exists." });
 
-        // Enforce workspace limit based on plan
+        // Enforce workspace limit based on plan.
+        //
+        // Licenses in this codebase are assigned per-user (SubscriptionPlan rows
+        // keyed by UserId — see OrgAdminController). The org-level Organization.Plan
+        // often stays at Free even after an OrgAdmin issues Pro/Enterprise licenses
+        // to individual users. Using only Organization.MaxWorkspaces would incorrectly
+        // cap Enterprise-licensed users at 1 workspace. Take the more permissive of
+        // the caller's user plan and the org plan.
         var callerOrg = await _db.Organizations.FindAsync(orgId);
-        if (callerOrg != null && callerOrg.MaxWorkspaces > 0)
+        var callerUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? req.UserId ?? "";
+        PlanType userPlan = PlanType.Free;
+        if (!string.IsNullOrEmpty(callerUserId))
+        {
+            userPlan = await _db.SubscriptionPlans
+                .Where(s => s.UserId == callerUserId)
+                .Select(s => (PlanType?)s.Plan)
+                .FirstOrDefaultAsync() ?? PlanType.Free;
+        }
+        var orgPlan = callerOrg?.Plan ?? PlanType.Free;
+        // Higher tier wins.
+        var effectivePlan = (PlanType)Math.Max((int)userPlan, (int)orgPlan);
+        var maxWorkspaces = effectivePlan switch
+        {
+            PlanType.Enterprise   => -1, // unlimited
+            PlanType.Professional => 10,
+            PlanType.FreeTrial    => 10,
+            _                     => 1
+        };
+        if (maxWorkspaces > 0)
         {
             var wsCount = await _db.Workspaces.CountAsync(w => w.OrganizationId == orgId);
-            if (wsCount >= callerOrg.MaxWorkspaces)
-                return StatusCode(403, new { error = $"Your plan allows a maximum of {callerOrg.MaxWorkspaces} workspace(s) In current plan per Orgnization" });
+            if (wsCount >= maxWorkspaces)
+                return StatusCode(403, new { error = $"Your plan allows a maximum of {maxWorkspaces} workspace(s) per organization. Upgrade to create more." });
         }
 
         var workspace = new Workspace
@@ -385,20 +451,34 @@ public class WorkspaceController : Controller
             .ToListAsync();
         var agentIds = agents.Select(a => a.Id).ToList();
 
-        // Find all reports linked to this datasource or its agents
-        var reports = await _db.Reports
-            .Where(r => r.WorkspaceId == workspace.Id &&
-                        (r.DatasourceId == ds.Id || (r.AgentId.HasValue && agentIds.Contains(r.AgentId.Value))))
-            .ToListAsync();
-
-        // Find all dashboards linked to this datasource or its agents
+        // Find all dashboards linked to this datasource or its agents first —
+        // we need their ids to also catch reports that reference only the
+        // dashboard (e.g. older auto-generated reports persisted with NULL
+        // DatasourceId / NULL AgentId because the client globals weren't set).
         var dashboards = await _db.Dashboards
             .Where(d => d.WorkspaceId == workspace.Id &&
                         (d.DatasourceId == ds.Id || (d.AgentId.HasValue && agentIds.Contains(d.AgentId.Value))))
             .ToListAsync();
+        var dashboardIds = dashboards.Select(d => d.Id).ToList();
 
-        // Remove in correct order to avoid FK issues
+        // Find all reports linked to this datasource, its agents, OR a dashboard
+        // owned by this insights cluster. Casting the wider net here ensures
+        // orphan reports (NULL AgentId, NULL DatasourceId) created by older
+        // auto-report flows still get cleaned up — otherwise they linger in
+        // the DB after the user removes the AI Insights.
+        var reports = await _db.Reports
+            .Where(r => r.WorkspaceId == workspace.Id &&
+                        (r.DatasourceId == ds.Id
+                         || (r.AgentId.HasValue && agentIds.Contains(r.AgentId.Value))
+                         || (r.DashboardId.HasValue && dashboardIds.Contains(r.DashboardId.Value))))
+            .ToListAsync();
+
+        // Remove in correct order to avoid FK issues. Reports must go before
+        // dashboards (Report.DashboardId is NoAction) and before agents
+        // (Report.AgentId is NoAction).
         _db.Reports.RemoveRange(reports);
+        await _db.SaveChangesAsync();
+
         _db.Dashboards.RemoveRange(dashboards);
         foreach (var a in agents) a.DatasourceId = null;
         await _db.SaveChangesAsync();
@@ -431,7 +511,12 @@ public class WorkspaceController : Controller
         if (workspace == null) return NotFound();
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
-        if (!await _permissions.CanViewAsync(workspace.Id, userId))
+        // Owners always have access to their own workspace's member list, even
+        // if they aren't an explicit row in WorkspaceUsers (which is what
+        // CanViewAsync checks). Without this short-circuit a workspace creator
+        // would get 403 from Settings → Users until they added themselves.
+        var isOwner = !string.IsNullOrEmpty(workspace.OwnerId) && workspace.OwnerId == userId;
+        if (!isOwner && !await _permissions.CanViewAsync(workspace.Id, userId))
         {
             var appUser = await _db.Users.FindAsync(userId);
             // OrgAdmins may only view members of workspaces in their own org
@@ -473,7 +558,8 @@ public class WorkspaceController : Controller
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var role = await _permissions.GetRoleAsync(workspace.Id, userId);
-        if (role != "Admin")
+        var isOwner = !string.IsNullOrEmpty(workspace.OwnerId) && workspace.OwnerId == userId;
+        if (role != "Admin" && !isOwner)
             return StatusCode(403, new { error = "Only Admins can manage workspace members." });
 
         var targetUser = await _userManager.FindByEmailAsync(req.Email ?? "");
@@ -526,7 +612,8 @@ public class WorkspaceController : Controller
 
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var currentRole = await _permissions.GetRoleAsync(workspace.Id, currentUserId);
-        if (currentRole != "Admin")
+        var isOwnerR = !string.IsNullOrEmpty(workspace.OwnerId) && workspace.OwnerId == currentUserId;
+        if (currentRole != "Admin" && !isOwnerR)
             return StatusCode(403, new { error = "Only Admins can manage workspace members." });
 
         var entry = await _db.WorkspaceUsers
@@ -549,7 +636,8 @@ public class WorkspaceController : Controller
 
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
         var currentRole = await _permissions.GetRoleAsync(workspace.Id, currentUserId);
-        if (currentRole != "Admin")
+        var isOwnerU = !string.IsNullOrEmpty(workspace.OwnerId) && workspace.OwnerId == currentUserId;
+        if (currentRole != "Admin" && !isOwnerU)
             return StatusCode(403, new { error = "Only Admins can manage workspace members." });
 
         var entry = await _db.WorkspaceUsers

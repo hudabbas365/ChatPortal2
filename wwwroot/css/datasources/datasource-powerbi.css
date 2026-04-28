@@ -1,0 +1,21 @@
+/* ============================================================
+   Power BI datasource — per-type styles.
+   Scoped via [data-ds-type="powerbi"].
+   ============================================================ */
+
+[data-ds-type="powerbi"] {
+    /* Power BI brand-aligned accent (yellow). */
+    --ds-accent: #f2c811;
+}
+
+[data-ds-type="powerbi"].wfe-ds-block,
+[data-ds-type="powerbi"] .wfe-ds-block {
+    border-left: 3px solid var(--ds-accent);
+    padding-left: 10px;
+}
+
+/* Power BI fields cluster (XMLA endpoint, catalog, tenant/client/secret).
+   Add Power-BI-specific styling tweaks here. */
+[data-ds-type="powerbi"] input[type="password"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
