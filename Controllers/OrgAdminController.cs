@@ -73,13 +73,14 @@ public class OrgAdminController : Controller
 
         var org = await _db.Organizations
             .Where(o => o.Id == caller.OrganizationId)
-            .Select(o => new { o.Id, o.Name })
+            .Select(o => new { o.Id, o.Name, o.OrganizationGuid })
             .FirstOrDefaultAsync();
 
         return Ok(new
         {
             id = org?.Id,
             name = org?.Name,
+            organizationGuid = org?.OrganizationGuid,
             dataRegion = "European Union (EU)",
             hostingNotice = "Your data is hosted exclusively in European Union data centers, in compliance with GDPR.",
             encryptionNotice = "All connection strings and credentials are encrypted at rest using AES-256.",

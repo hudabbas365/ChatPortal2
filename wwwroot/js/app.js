@@ -309,6 +309,44 @@
             </div>`;
     }
 
+    // Shared clipboard helper — exposed globally so other scripts (e.g. cp-about.js) can reuse it
+    function copyGuidToClipboard(text, btn) {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(text).then(function () {
+            var icon = btn && btn.querySelector('i');
+            if (icon) {
+                icon.classList.replace('bi-clipboard', 'bi-check');
+                setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+            }
+        });
+    }
+    window.copyGuidToClipboard = copyGuidToClipboard;
+
+    // Load and display the organization GUID in the nav dropdown
+    async function loadOrgGuid() {
+        const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
+        if (!user || !user.organizationId) return;
+        try {
+            const r = await fetch('/api/org/about', { credentials: 'same-origin' });
+            if (!r.ok) return;
+            const data = await r.json();
+            const guidVal = data.organizationGuid ? String(data.organizationGuid) : null;
+            if (!guidVal) return;
+            const navRow = document.getElementById('navOrgGuidRow');
+            const navCode = document.getElementById('navOrgGuid');
+            const navCopy = document.getElementById('navOrgGuidCopy');
+            if (navRow && navCode) {
+                navCode.textContent = guidVal;
+                navRow.classList.remove('d-none');
+            }
+            if (navCopy) {
+                navCopy.addEventListener('click', function () {
+                    copyGuidToClipboard(guidVal, navCopy);
+                });
+            }
+        } catch { /* non-fatal */ }
+    }
+
     // Expose helpers globally for use by other scripts
     window.checkTokenBudget = checkTokenBudget;
     window.disableAiInsightsFeatures = disableAiInsightsFeatures;
@@ -321,6 +359,7 @@
         updateNavAuth();
         loadPlan();
         loadWorkspaces();
+        loadOrgGuid();
         wireUpgradeButtons();
 
         // Check token budget for current user's org

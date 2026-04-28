@@ -63,6 +63,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(w => w.OwnerId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Entity<Organization>()
+            .HasIndex(o => o.OrganizationGuid)
+            .IsUnique();
+
         builder.Entity<Workspace>()
             .HasIndex(w => w.Guid)
             .IsUnique();
