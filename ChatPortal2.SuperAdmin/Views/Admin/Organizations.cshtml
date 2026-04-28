@@ -43,7 +43,7 @@
                     <td>
                         @{
                             var guidStr = org.OrganizationGuid.ToString();
-                            var guidShort = guidStr.Length >= 12 ? guidStr.Substring(0, 8) + "…" + guidStr.Substring(guidStr.Length - 4) : guidStr;
+                            var guidShort = guidStr.Substring(0, 8) + "…" + guidStr.Substring(guidStr.Length - 4);
                         }
                         <span class="d-inline-flex align-items-center gap-1">
                             <code class="sa-org-guid" title="@guidStr" style="font-size:.75rem">@guidShort</code>

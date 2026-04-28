@@ -17,9 +17,13 @@
     };
 
     function copyToClipboard(text, btn) {
+        if (window.copyGuidToClipboard) {
+            window.copyGuidToClipboard(text, btn);
+            return;
+        }
         if (!navigator.clipboard) return;
         navigator.clipboard.writeText(text).then(function () {
-            var icon = btn.querySelector('i');
+            var icon = btn && btn.querySelector('i');
             if (icon) {
                 icon.classList.replace('bi-clipboard', 'bi-check');
                 setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);

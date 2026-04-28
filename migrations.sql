@@ -1214,8 +1214,7 @@ IF NOT EXISTS (
 )
 BEGIN
     ALTER TABLE [Organizations] ADD [OrganizationGuid] uniqueidentifier NOT NULL DEFAULT (NEWID());
-    -- Backfill: ensure every existing row has a distinct non-empty GUID
-    UPDATE [Organizations] SET [OrganizationGuid] = NEWID() WHERE [OrganizationGuid] = '00000000-0000-0000-0000-000000000000';
+    -- Backfill: ensure every existing row has a distinct GUID
     UPDATE [Organizations] SET [OrganizationGuid] = NEWID();
     CREATE UNIQUE INDEX [IX_Organizations_OrganizationGuid] ON [Organizations] ([OrganizationGuid]);
 END;

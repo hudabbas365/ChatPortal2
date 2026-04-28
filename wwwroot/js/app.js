@@ -309,6 +309,19 @@
             </div>`;
     }
 
+    // Shared clipboard helper — exposed globally so other scripts (e.g. cp-about.js) can reuse it
+    function copyGuidToClipboard(text, btn) {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(text).then(function () {
+            var icon = btn && btn.querySelector('i');
+            if (icon) {
+                icon.classList.replace('bi-clipboard', 'bi-check');
+                setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
+            }
+        });
+    }
+    window.copyGuidToClipboard = copyGuidToClipboard;
+
     // Load and display the organization GUID in the nav dropdown
     async function loadOrgGuid() {
         const user = JSON.parse(localStorage.getItem('cp_user') || 'null');
@@ -328,14 +341,7 @@
             }
             if (navCopy) {
                 navCopy.addEventListener('click', function () {
-                    if (!navigator.clipboard) return;
-                    navigator.clipboard.writeText(guidVal).then(function () {
-                        var icon = navCopy.querySelector('i');
-                        if (icon) {
-                            icon.classList.replace('bi-clipboard', 'bi-check');
-                            setTimeout(function () { icon.classList.replace('bi-check', 'bi-clipboard'); }, 1500);
-                        }
-                    });
+                    copyGuidToClipboard(guidVal, navCopy);
                 });
             }
         } catch { /* non-fatal */ }

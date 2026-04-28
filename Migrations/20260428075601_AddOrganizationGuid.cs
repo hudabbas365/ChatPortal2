@@ -22,8 +22,6 @@ namespace AIInsights.Migrations
             // The defaultValueSql above may assign the same NEWID() to all rows in
             // some execution plans, so we explicitly reassign each row a fresh value.
             migrationBuilder.Sql(
-                "UPDATE Organizations SET OrganizationGuid = NEWID() WHERE OrganizationGuid = '00000000-0000-0000-0000-000000000000';");
-            migrationBuilder.Sql(
                 "UPDATE Organizations SET OrganizationGuid = NEWID();");
 
             migrationBuilder.CreateIndex(
