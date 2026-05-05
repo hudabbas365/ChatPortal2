@@ -377,9 +377,9 @@ END;";
             },
             new DocArticle
             {
-                Title       = "Chart Library \u2014 70+ Visualizations &amp; AI-Driven Selection",
+                Title       = "Chart Library \u2014 72+ Visualizations &amp; AI-Driven Selection",
                 Slug        = "chart-library-overview",
-                Summary     = "A complete guide to the AIInsights365.net chart library: 70+ chart types across 7 categories, how AI picks the right visualization, and how the unified renderer handles large datasets.",
+                Summary     = "A complete guide to the AIInsights365.net chart library: 72+ chart types across 7 categories, how AI picks the right visualization, and how the unified renderer handles large datasets.",
                 Author      = "AIInsights365 Team",
                 SortOrder   = 3,
                 IsPublished = true,
@@ -390,7 +390,7 @@ END;";
 <p>
   Visualization is the final mile of analytics. A perfectly written SQL query that produces the wrong
   chart type leaves analysts confused and executives unconvinced. <strong>AIInsights365.net</strong>
-  eliminates that risk with a chart library spanning more than 72 distinct visualization types, organized
+  eliminates that risk with a chart library spanning 72+ distinct visualization types, organized
   into seven semantic categories, and powered by an AI selection engine that chooses the right chart for
   your question automatically. This document walks through every category, explains how the AI makes its
   selection, and covers the customization, export, and accessibility features available to every user.
