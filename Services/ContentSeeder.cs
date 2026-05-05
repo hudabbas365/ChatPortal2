@@ -352,7 +352,7 @@ END;";
   giving administrators fine-grained cost control in large organizations.
 </p>
 <p>
-  Subscription management is handled through the <strong>Admin &rarr; Billing</strong; page, which links
+  Subscription management is handled through the <strong>Admin &rarr; Billing</strong> page, which links
   to the PayPal checkout flow for plan upgrades, downgrades, and cancellations. All new organizations
   receive a <strong>30-day free trial</strong> of the Professional plan with no credit card required.
 </p>
