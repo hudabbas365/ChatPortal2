@@ -11,13 +11,18 @@
     <meta name="description" content="@(seoEntry?.MetaDescription ?? "AI-Powered Data Conversations Portal")" />
     <meta name="keywords" content="@(seoEntry?.MetaKeywords ?? "chat, AI, data, analytics, dashboards")" />
     <meta name="robots" content="@(seoEntry?.RobotsDirective ?? "index, follow")" />
-    @if (!string.IsNullOrEmpty(seoEntry?.CanonicalUrl)) {
-        <link rel="canonical" href="@seoEntry.CanonicalUrl" />
+    @{
+        var canonicalUrl = !string.IsNullOrEmpty(seoEntry?.CanonicalUrl)
+            ? seoEntry.CanonicalUrl
+            : $"{Context.Request.Scheme}://{Context.Request.Host}{Context.Request.Path}";
+        var ogType = (ViewData["OgType"] as string) ?? "website";
     }
+    <link rel="canonical" href="@canonicalUrl" />
     <meta property="og:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "AI Insights 365")" />
     <meta property="og:description" content="@(seoEntry?.OgDescription ?? seoEntry?.MetaDescription ?? "")" />
     <meta property="og:image" content="@(seoEntry?.OgImage ?? "")" />
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content="@ogType" />
+    <meta property="og:url" content="@canonicalUrl" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="@(seoEntry?.OgTitle ?? seoEntry?.Title ?? "AI Insights 365")" />
     <meta name="twitter:description" content="@(seoEntry?.OgDescription ?? seoEntry?.MetaDescription ?? "")" />

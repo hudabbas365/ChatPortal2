@@ -1,17 +1,44 @@
 @model AIInsights.Models.BlogPost
 @{
     ViewData["Title"] = Model.Title;
+    ViewData["OgType"] = "article";
+    var seoEntry = ViewBag.SeoEntry as AIInsights.Models.SeoEntry;
+    var hasStructured = !string.IsNullOrEmpty(seoEntry?.StructuredData);
+    var canonical = !string.IsNullOrEmpty(seoEntry?.CanonicalUrl)
+        ? seoEntry.CanonicalUrl
+        : $"{Context.Request.Scheme}://{Context.Request.Host}/blog/{Model.Slug}";
 }
 
+@section Head {
+    @if (!hasStructured)
+    {
+        <script type="application/ld+json">
+        {
+            "@@context": "https://schema.org",
+            "@@type": "BlogPosting",
+            "headline": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Title)),
+            "datePublished": "@Model.PublishedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")",
+            "dateModified": "@Model.PublishedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")",
+            "author": { "@@type": "Person", "name": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Author ?? "AI Insights 365")) },
+            "publisher": { "@@type": "Organization", "name": "AI Insights 365" },
+            "mainEntityOfPage": { "@@type": "WebPage", "@@id": "@canonical" }@if (!string.IsNullOrWhiteSpace(Model.ImageUrl)) {<text>,
+            "image": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ImageUrl))</text>}
+        }
+        </script>
+    }
+}
+
+<article itemscope itemtype="https://schema.org/BlogPosting">
 <section class="cp-section cp-page-hero">
     <div class="container">
-        <h1 class="page-title">@Model.Title</h1>
+        <h1 class="page-title" itemprop="headline">@Model.Title</h1>
         <p class="page-subtitle">
             @if (!string.IsNullOrWhiteSpace(Model.Author))
             {
-                <span>By @Model.Author · </span>
+                <span itemprop="author" itemscope itemtype="https://schema.org/Person">By <span itemprop="name">@Model.Author</span></span>
+                <span> · </span>
             }
-            <span>@Model.PublishedAt.ToString("MMMM dd, yyyy")</span>
+            <time datetime="@Model.PublishedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")" itemprop="datePublished">@Model.PublishedAt.ToString("MMMM dd, yyyy")</time>
         </p>
     </div>
 </section>
@@ -21,12 +48,15 @@
         <div class="glass-card p-4 p-md-5">
             @if (!string.IsNullOrWhiteSpace(Model.ImageUrl))
             {
-                <img src="@Model.ImageUrl" alt="@Model.Title" class="img-fluid rounded mb-4" />
+                <img src="@Model.ImageUrl" alt="@Model.Title" class="img-fluid rounded mb-4" itemprop="image" />
             }
-            @Html.Raw(Model.Content)
+            <div itemprop="articleBody">
+                @Html.Raw(Model.Content)
+            </div>
             <div class="mt-4">
                 <a href="/blog" class="blog-read-more">← Back to Blog</a>
             </div>
         </div>
     </div>
 </section>
+</article>

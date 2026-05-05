@@ -1,5 +1,15 @@
 User-agent: *
 Allow: /
+Crawl-delay: 1
+
+# Bing-specific (keep crawl polite but indexable)
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+User-agent: msnbot
+Allow: /
+Crawl-delay: 1
 
 # Block API and authenticated/private areas
 Disallow: /api/
