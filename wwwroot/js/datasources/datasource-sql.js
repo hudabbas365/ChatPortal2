@@ -15,17 +15,12 @@
         key: 'sql',
         label: 'SQL Server',
 
-        // Default catch-all: anything that is NOT Power BI / REST API / File URL
-        // is treated as a connection-string-style relational datasource. This
-        // keeps backwards-compat with the legacy "if not pbi/rest/file then sql"
-        // branching in the wizard.
+        // Explicit allow-list mirroring the server-side `QueryExecutionService.SqlTypes`
+        // HashSet ("SQL Server", "SqlServer", "MSSQL"). Narrowed from the previous
+        // catch-all so that adding a 5th datasource type doesn't accidentally fall
+        // through to SQL handling.
         matches: function (type) {
-            var t = (type || '').toLowerCase();
-            if (!t) return false;
-            if (/power\s*bi/.test(t)) return false;
-            if (/rest\s*api/.test(t)) return false;
-            if (/file\s*url/.test(t)) return false;
-            return true;
+            return /^\s*(sql\s*server|sqlserver|mssql)\s*$/i.test(type || '');
         },
 
         showFields: function (root, isActive) {
@@ -52,6 +47,25 @@
                 ' (' + (dsType || 'database') + '). Available tables: ' +
                 ((tables || []).join(', ')) +
                 '. Help users query data, generate SQL, analyze results, and create visualizations.';
+        },
+
+        detailFormHtml: function (ds, ctx) {
+            var esc = (ctx && ctx.esc) || function (s) { return s == null ? '' : String(s); };
+            var connDisplay = ds.connectionString && ds.connectionString.trim().length
+                ? ds.connectionString
+                : '(not configured — open the workspace flow editor to set the connection string)';
+            var userBlock = ds.dbUser ? (
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">Database User</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(ds.dbUser) + '" />' +
+                '</div>'
+            ) : '';
+            return '' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>' +
+                    '<textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">' + esc(connDisplay) + '</textarea>' +
+                '</div>' +
+                userBlock;
         }
     });
 })();

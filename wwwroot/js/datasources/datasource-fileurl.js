@@ -34,6 +34,24 @@
                 ' (' + (dsType || 'File URL') +
                 '). The file is fetched and parsed automatically. Help users analyze the data, ' +
                 'suggest charts and visualizations. Always set query to "FILE_URL".';
+        },
+
+        detailFormHtml: function (ds, ctx) {
+            var esc = (ctx && ctx.esc) || function (s) { return s == null ? '' : String(s); };
+            var m = (ds.apiMethod || '').toLowerCase();
+            var fileFormatLabel = m === 'csv' ? 'CSV'
+                                : m === 'xlsx' ? 'Excel (XLSX)'
+                                : (m === 'auto' || !m) ? 'Auto-detect'
+                                : ds.apiMethod;
+            return '' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">File URL</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(ds.apiUrl || '(not set)') + '" style="font-family:monospace;font-size:0.78rem" />' +
+                '</div>' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">File Format</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(fileFormatLabel) + '" />' +
+                '</div>';
         }
     });
 })();

@@ -52,6 +52,27 @@
             var match = this.forType(typeString);
             if (match) return match.fallbackSystemPrompt(wsName, dsName, dsType, tables);
             return '';
+        },
+
+        /**
+         * Returns the body HTML for the per-datasource detail/edit modal.
+         * `ctx` carries shared helpers (currently `{ esc }`).
+         */
+        detailFormHtml: function (typeString, ds, ctx) {
+            var match = this.forType(typeString);
+            if (match && typeof match.detailFormHtml === 'function') {
+                return match.detailFormHtml(ds, ctx || {}) || '';
+            }
+            return '';
+        },
+
+        /** Returns extra footer HTML (e.g. PBI's "Save changes" button). Empty by default. */
+        detailFooterHtml: function (typeString, ds, ctx) {
+            var match = this.forType(typeString);
+            if (match && typeof match.detailFooterHtml === 'function') {
+                return match.detailFooterHtml(ds, ctx || {}) || '';
+            }
+            return '';
         }
     };
 })();

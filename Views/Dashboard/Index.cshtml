@@ -973,6 +973,26 @@
             }
         }
 
+        // Pre-apply saved chart-theme palette to chart definitions BEFORE init,
+        // so the initial render already uses the saved palette. Without this,
+        // wireDashboardTheme below would call applyThemeToCharts() on load,
+        // triggering a SECOND `/api/data/execute` for every chart (and a
+        // redundant PUT /api/chart/{id} per chart). See `wireDashboardTheme`.
+        try {
+            const _savedTheme = JSON.parse(localStorage.getItem('cp_dashboard_chart_theme') || 'null');
+            if (_savedTheme && _savedTheme.palette) {
+                const _allCharts = (pages && pages.length > 0)
+                    ? pages.flatMap(p => p.charts || [])
+                    : (initialCharts || []);
+                _allCharts.forEach(chart => {
+                    if (window.ShapeManager && ShapeManager.isShape(chart.chartType)) return;
+                    if (chart.chartType === 'navigation') return;
+                    chart.style = chart.style || {};
+                    chart.style.colorPalette = _savedTheme.palette;
+                });
+            }
+        } catch { /* ignore corrupt storage */ }
+
         // Inject shapes group into chart library
         if (window.ShapeManager) {
             chartLibraryData.unshift(ShapeManager.getLibraryGroup());
@@ -1197,7 +1217,13 @@
                             if (saved.customColors[idx]) el.value = saved.customColors[idx];
                         });
                     }
-                    applyThemeToCharts();
+                    // NOTE: do NOT call applyThemeToCharts() here. The saved
+                    // palette is already pre-applied to chart definitions BEFORE
+                    // canvasManager.init (see the pre-init block above), so the
+                    // initial render already uses it. Calling apply here would
+                    // re-render every chart and cause a second `/api/data/execute`
+                    // round-trip per chart on every page load.
+                    renderThemePreview();
                 }
             } catch {}
         })();

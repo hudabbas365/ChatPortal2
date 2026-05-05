@@ -34,6 +34,23 @@
                 ' (' + (dsType || 'REST API') +
                 '). Data is fetched automatically from the API. Help users analyze the API data, ' +
                 'suggest charts and visualizations. Always set query to "REST_API".';
+        },
+
+        detailFormHtml: function (ds, ctx) {
+            var esc = (ctx && ctx.esc) || function (s) { return s == null ? '' : String(s); };
+            return '' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">API URL</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(ds.apiUrl || '(not set)') + '" style="font-family:monospace;font-size:0.78rem" />' +
+                '</div>' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">API Key</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(ds.apiKey || '(not set)') + '" />' +
+                '</div>' +
+                '<div class="mb-3">' +
+                    '<label class="form-label fw-bold" style="font-size:0.8rem">HTTP Method</label>' +
+                    '<input type="text" class="form-control form-control-sm" readonly value="' + esc(ds.apiMethod || 'GET') + '" />' +
+                '</div>';
         }
     });
 })();

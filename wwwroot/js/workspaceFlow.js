@@ -708,23 +708,12 @@
             modal.id = 'dsDetailModal';
             modal.className = 'modal fade';
             modal.tabIndex = -1;
-            const isRest = /rest\s*api/i.test(ds.type || '');
-            const isPbi = /power\s*bi/i.test(ds.type || '');
-            const isFile = /file\s*url/i.test(ds.type || '');
-            const isSql = !isRest && !isPbi && !isFile;
-            const fileFormatLabel = (() => {
-                const m = (ds.apiMethod || '').toLowerCase();
-                if (m === 'csv')  return 'CSV';
-                if (m === 'xlsx') return 'Excel (XLSX)';
-                if (m === 'auto' || !m) return 'Auto-detect';
-                return ds.apiMethod;
-            })();
-            const sqlConnDisplay = ds.connectionString && ds.connectionString.trim().length
-                ? ds.connectionString
-                : '(not configured — open the workspace flow editor to set the connection string)';
-            const pbiCatalogDisplay = ds.pbiConnection && ds.pbiConnection.trim().length
-                ? ds.pbiConnection
-                : '(not configured)';
+            // Per-type body + extra footer buttons come from each datasource module
+            // (see wwwroot/js/datasources/datasource-*.js). The registry falls back to
+            // empty strings when no module matches.
+            const ctx = { esc };
+            const bodyHtml   = (window.WfDatasources && window.WfDatasources.detailFormHtml(ds.type, ds, ctx))   || '';
+            const footerHtml = (window.WfDatasources && window.WfDatasources.detailFooterHtml(ds.type, ds, ctx)) || '';
             modal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content" style="background:white;color:var(--cp-text)">
@@ -737,71 +726,14 @@
                                 <label class="form-label fw-bold" style="font-size:0.8rem">Type</label>
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.type || 'Unknown')}" />
                             </div>
-                            ${isRest ? `
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">API URL</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '(not set)')}" style="font-family:monospace;font-size:0.78rem" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">API Key</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiKey || '(not set)')}" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">HTTP Method</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiMethod || 'GET')}" />
-                            </div>
-                            ` : isFile ? `
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">File URL</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.apiUrl || '(not set)')}" style="font-family:monospace;font-size:0.78rem" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">File Format</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(fileFormatLabel)}" />
-                            </div>
-                            ` : isPbi ? `
-                            <div class="alert alert-info py-2 small mb-3">
-                                <i class="bi bi-info-circle me-1"></i>Leave any field blank to keep its current value. Secrets are never shown.
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">XMLA Endpoint <span class="text-muted fw-normal">(current: ${esc(ds.xmlaEndpoint || '(not set)')})</span></label>
-                                <input type="text" class="form-control form-control-sm" id="dsPbiXmla" placeholder="powerbi://api.powerbi.com/v1.0/myorg/<workspace>" value="" style="font-family:monospace;font-size:0.78rem" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Semantic Model / Catalog <span class="text-muted fw-normal">(current: ${esc(pbiCatalogDisplay)})</span></label>
-                                <input type="text" class="form-control form-control-sm" id="dsPbiCatalog" placeholder="Dataset / semantic model name" value="" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Tenant ID <span class="text-muted fw-normal">${ds.microsoftAccountTenantId ? '(configured)' : '(not set)'}</span></label>
-                                <input type="text" class="form-control form-control-sm" id="dsPbiTenant" placeholder="${ds.microsoftAccountTenantId ? '••••••' : 'tenant-guid'}" value="" autocomplete="off" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Client ID</label>
-                                <input type="text" class="form-control form-control-sm" id="dsPbiClientId" placeholder="••••••" value="" autocomplete="off" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Client Secret</label>
-                                <input type="password" class="form-control form-control-sm" id="dsPbiClientSecret" placeholder="••••••" value="" autocomplete="new-password" />
-                            </div>
-                            <div id="dsPbiSaveStatus" class="small" style="min-height:1rem"></div>
-                            ` : `
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Connection String</label>
-                                <textarea class="form-control form-control-sm" readonly rows="3" style="resize:none;font-family:monospace;font-size:0.78rem">${esc(sqlConnDisplay)}</textarea>
-                            </div>
-                            ${ds.dbUser ? `
-                            <div class="mb-3">
-                                <label class="form-label fw-bold" style="font-size:0.8rem">Database User</label>
-                                <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.dbUser)}" />
-                            </div>` : ''}
-                            `}
+                            ${bodyHtml}
                         </div>
                         <div class="modal-footer border-top d-flex justify-content-between" style="border-color:var(--cp-border)!important">
                             <button type="button" class="btn btn-sm btn-outline-primary" id="dsRefreshCacheBtn" title="Flush cached query results for this datasource so the next request hits the live database.">
                                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh Cache
                             </button>
                             <div class="d-flex gap-2">
-                                ${isPbi ? `<button type="button" class="btn btn-sm btn-primary" id="dsPbiSaveBtn"><i class="bi bi-save me-1"></i>Save changes</button>` : ``}
+                                ${footerHtml}
                                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
                         </div>
