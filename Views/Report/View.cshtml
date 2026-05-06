@@ -107,8 +107,11 @@
             <button class="btn" onclick="window.print()" title="Print Report">
                 <i class="bi bi-printer"></i> Print
             </button>
-            <button class="btn btn-primary-rv" onclick="exportPDF()" title="Export as PDF">
+            <button class="btn btn-primary-rv" onclick="exportPDF()" title="Export as PDF (one report page per PDF page)">
                 <i class="bi bi-file-earmark-pdf"></i> Export PDF
+            </button>
+            <button class="btn" onclick="exportPPT()" title="Export as PowerPoint (one report page per slide)">
+                <i class="bi bi-file-earmark-ppt"></i> Export PPT
             </button>
         </div>
     </nav>
@@ -259,7 +262,7 @@
     <div class="rv-export-overlay" id="rvExportOverlay">
         <div class="rv-export-box">
             <div class="spinner-border text-primary" role="status"></div>
-            <p>Generating PDF…</p>
+            <p id="rvExportLabel">Generating PDF…</p>
         </div>
     </div>
 
@@ -326,6 +329,7 @@
     <script src="~/js/shapeManager.js" asp-append-version="true"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
     <script src="~/js/aiStream.js" asp-append-version="true"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
@@ -532,6 +536,19 @@
                         sub.textContent = c.chartType;
                         header.appendChild(sub);
                     }
+                    // Per-chart CSV download button. Hidden during PDF/PPT
+                    // capture (see .rv-exporting rules) so it doesn't bleed
+                    // into the exported snapshot.
+                    const csvBtn = document.createElement('button');
+                    csvBtn.type = 'button';
+                    csvBtn.className = 'rv-chart-csv-btn';
+                    csvBtn.title = 'Download chart data as CSV';
+                    csvBtn.innerHTML = '<i class="bi bi-filetype-csv"></i>';
+                    csvBtn.addEventListener('click', function (ev) {
+                        ev.stopPropagation();
+                        exportChartCsv(card, c);
+                    });
+                    header.appendChild(csvBtn);
                     card.appendChild(header);
 
                     const canvasWrap = document.createElement('div');
@@ -608,73 +625,236 @@
         renderPageCharts(0);
     })();
 
-    // PDF Export using html2canvas + jsPDF
-    async function exportPDF() {
-        const overlay = document.getElementById('rvExportOverlay');
-        overlay.classList.add('active');
-        try {
-            const wrap = document.getElementById('rvCanvasWrap');
-            // Wait a tick for charts to finish rendering
-            await new Promise(r => setTimeout(r, 300));
+    // ── Export helpers ───────────────────────────────────────────────
+    // Make sure every report page is laid out and its charts have rendered
+    // before we capture them for PDF / PPT export. Pages other than the
+    // currently active one are display:none and lazy-rendered, which would
+    // otherwise produce blank captures.
+    async function _rvPrepareAllPagesForCapture() {
+        const pages = Array.from(document.querySelectorAll('#rvCanvasWrap .rv-page'));
+        // Force-render any page that hasn't been visited yet by clicking its
+        // nav entry, then make every page visible so html2canvas can read its
+        // real layout box.
+        const navItems = document.querySelectorAll('#rvPageNavList .rv-page-nav-item');
+        navItems.forEach(item => item.click());
+        pages.forEach(p => { p._rvPrevDisplay = p.style.display; p.style.display = ''; });
+        // Give ApexCharts / canvas renderers time to paint after being shown.
+        await new Promise(r => setTimeout(r, 600));
+        return pages;
+    }
 
-            const canvas = await html2canvas(wrap, {
+    function _rvRestorePagesAfterCapture(pages, activeIndex) {
+        pages.forEach((p, idx) => {
+            p.style.display = (idx === (activeIndex ?? 0)) ? '' : 'none';
+        });
+        const navItems = document.querySelectorAll('#rvPageNavList .rv-page-nav-item');
+        navItems.forEach((item, idx) => item.classList.toggle('active', idx === (activeIndex ?? 0)));
+    }
+
+    function _rvActivePageIndex() {
+        const items = document.querySelectorAll('#rvPageNavList .rv-page-nav-item');
+        for (let i = 0; i < items.length; i++) if (items[i].classList.contains('active')) return i;
+        return 0;
+    }
+
+    async function _rvCapturePage(pageEl) {
+        // Strip rounded corners / shadows during capture so adjacent PDF
+        // pages don't show a half-cut edge, then put them back.
+        const prevRadius = pageEl.style.borderRadius;
+        const prevShadow = pageEl.style.boxShadow;
+        pageEl.style.borderRadius = '0';
+        pageEl.style.boxShadow = 'none';
+        pageEl.classList.add('rv-exporting');
+        try {
+            return await html2canvas(pageEl, {
                 scale: 2,
                 useCORS: true,
-                backgroundColor: '#f0f2f5',
-                logging: false
+                backgroundColor: '#ffffff',
+                logging: false,
+                windowWidth: pageEl.scrollWidth,
+                windowHeight: pageEl.scrollHeight
             });
+        } finally {
+            pageEl.style.borderRadius = prevRadius;
+            pageEl.style.boxShadow = prevShadow;
+            pageEl.classList.remove('rv-exporting');
+        }
+    }
 
-            const imgData = canvas.toDataURL('image/png');
+    // PDF Export — one report page per PDF page, no overlap.
+    // Each .rv-page is captured independently and scaled to fit a single A4
+    // page (orientation chosen per page from its aspect ratio), so a tall
+    // report page never bleeds into the next sheet.
+    async function exportPDF() {
+        const overlay = document.getElementById('rvExportOverlay');
+        const label = document.getElementById('rvExportLabel');
+        if (label) label.textContent = 'Generating PDF…';
+        overlay.classList.add('active');
+        const activeIdx = _rvActivePageIndex();
+        try {
+            const pages = await _rvPrepareAllPagesForCapture();
+            if (!pages.length) { alert('Nothing to export.'); return; }
+
             const { jsPDF } = window.jspdf;
+            let pdf = null;
 
-            // Determine orientation from content aspect ratio
-            const imgW = canvas.width;
-            const imgH = canvas.height;
-            const orientation = imgW > imgH ? 'landscape' : 'portrait';
-            const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+            for (let i = 0; i < pages.length; i++) {
+                if (label) label.textContent = `Generating PDF… (page ${i + 1} of ${pages.length})`;
+                const canvas = await _rvCapturePage(pages[i]);
+                const imgData = canvas.toDataURL('image/png');
+                const imgW = canvas.width, imgH = canvas.height;
+                const orientation = imgW >= imgH ? 'landscape' : 'portrait';
 
-            const pageW = pdf.internal.pageSize.getWidth();
-            const pageH = pdf.internal.pageSize.getHeight();
-            const margin = 10;
-            const contentW = pageW - margin * 2;
-            const contentH = (imgH / imgW) * contentW;
-
-            // If content fits on one page
-            if (contentH <= pageH - margin * 2) {
-                pdf.addImage(imgData, 'PNG', margin, margin, contentW, contentH);
-            } else {
-                // Multi-page: slice the image
-                let yOffset = 0;
-                const sliceH = pageH - margin * 2;
-                const srcSliceH = (sliceH / contentH) * imgH;
-                let pageIndex = 0;
-                while (yOffset < imgH) {
-                    if (pageIndex > 0) pdf.addPage();
-                    const remaining = imgH - yOffset;
-                    const thisSlice = Math.min(srcSliceH, remaining);
-                    const thisContentH = (thisSlice / imgH) * contentH;
-
-                    // Create a cropped canvas for this slice
-                    const sliceCanvas = document.createElement('canvas');
-                    sliceCanvas.width = imgW;
-                    sliceCanvas.height = thisSlice;
-                    const ctx = sliceCanvas.getContext('2d');
-                    ctx.drawImage(canvas, 0, yOffset, imgW, thisSlice, 0, 0, imgW, thisSlice);
-                    const sliceData = sliceCanvas.toDataURL('image/png');
-                    pdf.addImage(sliceData, 'PNG', margin, margin, contentW, thisContentH);
-
-                    yOffset += srcSliceH;
-                    pageIndex++;
+                if (!pdf) {
+                    pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+                } else {
+                    pdf.addPage('a4', orientation);
                 }
+
+                const pageW = pdf.internal.pageSize.getWidth();
+                const pageH = pdf.internal.pageSize.getHeight();
+                const margin = 8;
+                const availW = pageW - margin * 2;
+                const availH = pageH - margin * 2;
+                // Scale-to-fit the entire page snapshot onto one PDF page so
+                // it never overlaps the next one.
+                const ratio = Math.min(availW / imgW, availH / imgH);
+                const drawW = imgW * ratio;
+                const drawH = imgH * ratio;
+                const offsetX = (pageW - drawW) / 2;
+                const offsetY = (pageH - drawH) / 2;
+                pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
             }
 
-            const title = document.title.replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'Report';
+            const title = (window._rvReportName || document.title || 'Report')
+                .replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'Report';
             pdf.save(title + '.pdf');
         } catch (e) {
             console.error('PDF export failed:', e);
             alert('Failed to export PDF. Please try printing instead.');
         } finally {
+            const pages = Array.from(document.querySelectorAll('#rvCanvasWrap .rv-page'));
+            _rvRestorePagesAfterCapture(pages, activeIdx);
             overlay.classList.remove('active');
+            if (label) label.textContent = 'Generating PDF…';
+        }
+    }
+
+    // PowerPoint Export — one report page per slide.
+    async function exportPPT() {
+        if (typeof PptxGenJS === 'undefined') {
+            alert('PowerPoint export library failed to load. Please check your network and try again.');
+            return;
+        }
+        const overlay = document.getElementById('rvExportOverlay');
+        const label = document.getElementById('rvExportLabel');
+        if (label) label.textContent = 'Generating PowerPoint…';
+        overlay.classList.add('active');
+        const activeIdx = _rvActivePageIndex();
+        try {
+            const pages = await _rvPrepareAllPagesForCapture();
+            if (!pages.length) { alert('Nothing to export.'); return; }
+
+            const pptx = new PptxGenJS();
+            pptx.layout = 'LAYOUT_WIDE'; // 13.333 x 7.5 inches
+            const slideW = 13.333, slideH = 7.5;
+
+            for (let i = 0; i < pages.length; i++) {
+                if (label) label.textContent = `Generating PowerPoint… (slide ${i + 1} of ${pages.length})`;
+                const canvas = await _rvCapturePage(pages[i]);
+                const imgData = canvas.toDataURL('image/png');
+                const imgW = canvas.width, imgH = canvas.height;
+                // Scale-to-fit while preserving aspect ratio
+                const ratio = Math.min(slideW / imgW, slideH / imgH);
+                const drawW = imgW * ratio;
+                const drawH = imgH * ratio;
+                const x = (slideW - drawW) / 2;
+                const y = (slideH - drawH) / 2;
+                const slide = pptx.addSlide();
+                slide.background = { color: 'FFFFFF' };
+                slide.addImage({ data: imgData, x, y, w: drawW, h: drawH });
+            }
+
+            const title = (window._rvReportName || document.title || 'Report')
+                .replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'Report';
+            await pptx.writeFile({ fileName: title + '.pptx' });
+        } catch (e) {
+            console.error('PPT export failed:', e);
+            alert('Failed to export PowerPoint.');
+        } finally {
+            const pages = Array.from(document.querySelectorAll('#rvCanvasWrap .rv-page'));
+            _rvRestorePagesAfterCapture(pages, activeIdx);
+            overlay.classList.remove('active');
+            if (label) label.textContent = 'Generating PDF…';
+        }
+    }
+
+    // ── Per-chart CSV export ────────────────────────────────────────
+    function _rvCsvEscape(v) {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+    }
+    function _rvBuildCsv(rows, headers) {
+        const out = [];
+        out.push(headers.map(_rvCsvEscape).join(','));
+        rows.forEach(r => out.push(headers.map(h => _rvCsvEscape(r[h])).join(',')));
+        return out.join('\r\n');
+    }
+    function _rvDownloadCsv(filename, csv) {
+        // BOM keeps Excel happy with non-ASCII characters.
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+    }
+
+    async function exportChartCsv(card, chartDef) {
+        try {
+            // Prefer data already cached by the chart renderer; fall back to a
+            // fresh fetch so the button still works on slow first paints.
+            let data = null;
+            const wrap = card && card._canvasWrap;
+            if (wrap && wrap._chartData) data = wrap._chartData;
+            if (!data && window.chartRenderer && chartRenderer._lastData && chartDef && chartDef.id != null) {
+                data = chartRenderer._lastData[chartDef.id];
+            }
+            if (!data && window.chartRenderer && typeof chartRenderer.fetchData === 'function') {
+                data = await chartRenderer.fetchData(chartDef);
+            }
+            if (!data) { alert('No data available for this chart yet.'); return; }
+
+            let csv;
+            if (Array.isArray(data.rawData) && data.rawData.length > 0) {
+                const headers = Object.keys(data.rawData[0]);
+                csv = _rvBuildCsv(data.rawData, headers);
+            } else if (Array.isArray(data.labels) && data.labels.length > 0) {
+                const headers = ['Label', 'Value'];
+                const rows = data.labels.map((l, i) => ({
+                    Label: l,
+                    Value: (data.values && data.values[i] !== undefined) ? data.values[i] : ''
+                }));
+                if (Array.isArray(data.multiValues)) {
+                    data.multiValues.forEach(mv => {
+                        headers.push(mv.field);
+                        rows.forEach((r, i) => { r[mv.field] = (mv.values && mv.values[i] !== undefined) ? mv.values[i] : ''; });
+                    });
+                }
+                csv = _rvBuildCsv(rows, headers);
+            } else {
+                alert('No data available for this chart yet.');
+                return;
+            }
+
+            const baseName = (chartDef && (chartDef.title || chartDef.chartType)) || 'chart';
+            const safe = String(baseName).replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'chart';
+            _rvDownloadCsv(safe + '.csv', csv);
+        } catch (e) {
+            console.error('CSV export failed:', e);
+            alert('Failed to export CSV.');
         }
     }
     </script>

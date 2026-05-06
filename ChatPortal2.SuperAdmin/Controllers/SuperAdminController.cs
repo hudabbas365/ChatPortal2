@@ -601,6 +601,79 @@ public class SuperAdminController : Controller
         return Ok(new { success = true, added = toAdd.Count });
     }
 
+    // Bulk submit ALL SEO entry URLs (that are indexable) to IndexNow in a single request.
+    // IndexNow protocol: https://www.indexnow.org/documentation
+    [HttpPost("/superadmin/seo/indexnow-bulk")]
+    public async Task<IActionResult> IndexNowBulk()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        var key = config["Seo:IndexNowKey"];
+        var keyLocation = config["Seo:IndexNowKeyLocation"];
+        var baseUrl = (config["App:BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
+
+        if (string.IsNullOrWhiteSpace(key))
+            return BadRequest(new { error = "IndexNow key is not configured (Seo:IndexNowKey)." });
+
+        var host = new Uri(baseUrl).Host;
+
+        // Only submit entries that allow indexing.
+        var entries = await _db.SeoEntries
+            .Where(e => e.RobotsDirective == null || !e.RobotsDirective.Contains("noindex"))
+            .Select(e => e.PageUrl)
+            .ToListAsync();
+
+        var urlList = entries
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p!.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? p
+                : $"{baseUrl}/{p!.TrimStart('/')}")
+            .Distinct()
+            .ToList();
+
+        if (urlList.Count == 0)
+            return Ok(new { success = true, submitted = 0, message = "No indexable URLs to submit." });
+
+        var payload = new
+        {
+            host,
+            key,
+            keyLocation = string.IsNullOrWhiteSpace(keyLocation) ? null : keyLocation,
+            urlList
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var resp = await http.PostAsync("https://api.indexnow.org/IndexNow", content);
+            var body = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                return StatusCode((int)resp.StatusCode, new
+                {
+                    success = false,
+                    submitted = urlList.Count,
+                    status = (int)resp.StatusCode,
+                    error = string.IsNullOrWhiteSpace(body) ? resp.ReasonPhrase : body
+                });
+            }
+
+            return Ok(new { success = true, submitted = urlList.Count, status = (int)resp.StatusCode });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, error = ex.Message });
+        }
+    }
+
     [HttpPost("/superadmin/seo/ai-suggest")]
     public async Task<IActionResult> AiSuggestSeo([FromBody] AiSuggestRequest request)
     {
@@ -674,49 +747,87 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/docs/save")]
-    public async Task<IActionResult> SaveDoc([FromBody] DocArticle doc)
+    public async Task<IActionResult> SaveDoc([FromBody] SaveDocDto dto)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null) return BadRequest(new { error = "Body required." });
 
-        if (string.IsNullOrWhiteSpace(doc.Title))
+        if (string.IsNullOrWhiteSpace(dto.Title))
             return BadRequest(new { error = "Title is required." });
 
-        if (string.IsNullOrWhiteSpace(doc.Slug))
-            doc.Slug = doc.Title.ToLower().Replace(" ", "-").Replace("--", "-");
+        var slug = string.IsNullOrWhiteSpace(dto.Slug)
+            ? dto.Title.ToLower().Replace(" ", "-").Replace("--", "-")
+            : dto.Slug;
 
         string? oldUrl = null;
-        if (doc.Id > 0)
+        DocArticle doc;
+        if (dto.Id > 0)
         {
-            var existing = await _db.DocArticles.FindAsync(doc.Id);
+            var existing = await _db.DocArticles.FindAsync(dto.Id);
             if (existing == null) return NotFound();
             oldUrl = $"/docs/{existing.Slug}";
-            existing.Title = doc.Title;
-            existing.Slug = doc.Slug;
-            existing.Summary = doc.Summary;
-            existing.Content = doc.Content;
-            existing.Author = doc.Author;
-            existing.SortOrder = doc.SortOrder;
-            existing.IsPublished = doc.IsPublished;
+            existing.Title = dto.Title;
+            existing.Slug = slug;
+            existing.Summary = dto.Summary;
+            existing.Content = dto.Content;
+            existing.Author = dto.Author;
+            existing.SortOrder = dto.SortOrder;
+            existing.IsPublished = dto.IsPublished;
             existing.UpdatedAt = DateTime.UtcNow;
+            doc = existing;
         }
         else
         {
-            doc.CreatedAt = DateTime.UtcNow;
-            doc.UpdatedAt = DateTime.UtcNow;
+            doc = new DocArticle
+            {
+                Title = dto.Title,
+                Slug = slug,
+                Summary = dto.Summary,
+                Content = dto.Content,
+                Author = dto.Author,
+                SortOrder = dto.SortOrder,
+                IsPublished = dto.IsPublished,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
             _db.DocArticles.Add(doc);
         }
 
         await _db.SaveChangesAsync();
+
+        var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
+            ? dto.MetaDescription!.Trim()
+            : (doc.Summary ?? doc.Title);
+        var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
+            ? dto.MetaKeywords!.Trim()
+            : "AIInsights365, AI analytics, documentation, " + doc.Slug.Replace('-', ' ');
+
         await UpsertSeoForContentAsync(
             newUrl: $"/docs/{doc.Slug}",
             oldUrl: oldUrl,
             title: $"{doc.Title} — AIInsights365.net",
-            description: doc.Summary ?? doc.Title,
-            keywords: "AIInsights365, AI analytics, documentation, " + doc.Slug.Replace('-', ' '),
+            description: description,
+            keywords: keywords,
             priority: 0.7m,
             changeFreq: "monthly",
-            includeInSitemap: doc.IsPublished);
+            includeInSitemap: doc.IsPublished,
+            ogImage: null);
         return Ok(new { success = true });
+    }
+
+    public class SaveDocDto
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = "";
+        public string? Slug { get; set; }
+        public string? Summary { get; set; }
+        public string? Content { get; set; }
+        public string? Author { get; set; }
+        public int SortOrder { get; set; }
+        public bool IsPublished { get; set; }
+        // SEO overrides (optional — typically supplied by the AI SEO Assistant)
+        public string? MetaDescription { get; set; }
+        public string? MetaKeywords { get; set; }
     }
 
     [HttpDelete("/api/superadmin/docs/{id}")]
@@ -742,49 +853,91 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/blog/save")]
-    public async Task<IActionResult> SaveBlog([FromBody] BlogPost post)
+    public async Task<IActionResult> SaveBlog([FromBody] SaveBlogDto dto)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (dto == null) return BadRequest(new { error = "Body required." });
 
-        if (string.IsNullOrWhiteSpace(post.Title))
+        if (string.IsNullOrWhiteSpace(dto.Title))
             return BadRequest(new { error = "Title is required." });
 
-        if (string.IsNullOrWhiteSpace(post.Slug))
-            post.Slug = post.Title.ToLower().Replace(" ", "-").Replace("--", "-");
+        var slug = string.IsNullOrWhiteSpace(dto.Slug)
+            ? dto.Title.ToLower().Replace(" ", "-").Replace("--", "-")
+            : dto.Slug;
 
         string? oldUrl = null;
-        if (post.Id > 0)
+        BlogPost post;
+        if (dto.Id > 0)
         {
-            var existing = await _db.BlogPosts.FindAsync(post.Id);
+            var existing = await _db.BlogPosts.FindAsync(dto.Id);
             if (existing == null) return NotFound();
             oldUrl = $"/blog/{existing.Slug}";
-            existing.Title = post.Title;
-            existing.Slug = post.Slug;
-            existing.Summary = post.Summary;
-            existing.Content = post.Content;
-            existing.Author = post.Author;
-            existing.ImageUrl = post.ImageUrl;
-            if (!existing.IsPublished && post.IsPublished)
+            existing.Title = dto.Title;
+            existing.Slug = slug;
+            existing.Summary = dto.Summary;
+            existing.Content = dto.Content;
+            existing.Author = dto.Author;
+            existing.ImageUrl = dto.ImageUrl;
+            if (!existing.IsPublished && dto.IsPublished)
                 existing.PublishedAt = DateTime.UtcNow;
-            existing.IsPublished = post.IsPublished;
+            existing.IsPublished = dto.IsPublished;
+            post = existing;
         }
         else
         {
-            post.PublishedAt = DateTime.UtcNow;
+            post = new BlogPost
+            {
+                Title = dto.Title,
+                Slug = slug,
+                Summary = dto.Summary,
+                Content = dto.Content,
+                Author = dto.Author,
+                ImageUrl = dto.ImageUrl,
+                IsPublished = dto.IsPublished,
+                PublishedAt = DateTime.UtcNow
+            };
             _db.BlogPosts.Add(post);
         }
 
         await _db.SaveChangesAsync();
+
+        var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
+            ? dto.MetaDescription!.Trim()
+            : (post.Summary ?? post.Title);
+        var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
+            ? dto.MetaKeywords!.Trim()
+            : "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' ');
+        var ogImage = !string.IsNullOrWhiteSpace(dto.OgImage)
+            ? dto.OgImage!.Trim()
+            : (string.IsNullOrWhiteSpace(post.ImageUrl) ? null : post.ImageUrl);
+
         await UpsertSeoForContentAsync(
             newUrl: $"/blog/{post.Slug}",
             oldUrl: oldUrl,
             title: $"{post.Title} — AIInsights365.net",
-            description: post.Summary ?? post.Title,
-            keywords: "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' '),
+            description: description,
+            keywords: keywords,
             priority: 0.8m,
             changeFreq: "weekly",
-            includeInSitemap: post.IsPublished);
+            includeInSitemap: post.IsPublished,
+            ogImage: ogImage);
         return Ok(new { success = true });
+    }
+
+    public class SaveBlogDto
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = "";
+        public string? Slug { get; set; }
+        public string? Summary { get; set; }
+        public string? Content { get; set; }
+        public string? Author { get; set; }
+        public string? ImageUrl { get; set; }
+        public bool IsPublished { get; set; }
+        // SEO overrides (optional — typically supplied by the AI SEO Assistant)
+        public string? MetaDescription { get; set; }
+        public string? MetaKeywords { get; set; }
+        public string? OgImage { get; set; }
     }
 
     [HttpDelete("/api/superadmin/blog/{id}")]
@@ -918,7 +1071,8 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
 
     // ── SEO helpers for content CRUD ──────────────────────────
     private async Task UpsertSeoForContentAsync(string newUrl, string? oldUrl, string title,
-        string description, string keywords, decimal priority, string changeFreq, bool includeInSitemap)
+        string description, string keywords, decimal priority, string changeFreq, bool includeInSitemap,
+        string? ogImage = null)
     {
         // If the slug changed, drop the SEO row for the old URL so sitemap stays clean.
         if (!string.IsNullOrEmpty(oldUrl) && !string.Equals(oldUrl, newUrl, StringComparison.OrdinalIgnoreCase))
@@ -937,6 +1091,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 MetaKeywords = keywords,
                 OgTitle = title,
                 OgDescription = description,
+                OgImage = ogImage,
                 SitemapPriority = priority,
                 SitemapChangeFreq = changeFreq,
                 IncludeInSitemap = includeInSitemap,
@@ -952,6 +1107,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             entry.MetaKeywords = keywords;
             entry.OgTitle = title;
             entry.OgDescription = description;
+            if (ogImage != null) entry.OgImage = ogImage;
             entry.IncludeInSitemap = includeInSitemap;
             entry.LastModified = DateTime.UtcNow;
         }
@@ -966,6 +1122,216 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             _db.SeoEntries.Remove(entry);
             await _db.SaveChangesAsync();
         }
+    }
+
+    // ── Bulk SEO backfill ─────────────────────────────────────────────────────
+    // Pushes meaningful MetaKeywords + MetaDescription onto every:
+    //   • static page (only when those fields are currently empty — preserves manual edits)
+    //   • BlogPost   (/blog/{slug})
+    //   • DocArticle (/docs/{slug})
+    // Wrapped in a single transaction so any failure rolls everything back.
+    [HttpPost("/api/superadmin/seo/backfill")]
+    public async Task<IActionResult> BackfillSeo()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var now = DateTime.UtcNow;
+        int staticCreated = 0, staticUpdated = 0, blogCount = 0, docCount = 0;
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // -- 1) Static pages
+            var staticPages = new (string Url, string Title, string Description, string Keywords, decimal Priority, string ChangeFreq, string Robots)[]
+            {
+                ("/",           "AIInsights365 — AI-Powered Data Conversations",
+                                "Chat with your data, build dashboards, and connect SQL, Power BI, REST APIs and files with AI agents.",
+                                "AI analytics, chat with data, AI agents, dashboards, business intelligence, AIInsights365, data visualization, AI BI platform",
+                                1.0m, "daily",   "index, follow"),
+                ("/about",      "About — AIInsights365",
+                                "Learn how AIInsights365 helps teams turn data into decisions with AI-powered chat, agents, and dashboards.",
+                                "about AIInsights365, AI analytics company, AI BI mission, data analytics platform, team",
+                                0.6m, "monthly", "index, follow"),
+                ("/pricing",    "Pricing — AIInsights365 Plans & Free Trial",
+                                "Compare Free, Professional, and Enterprise plans. Start a 30-day free trial with full AI analytics features.",
+                                "AIInsights365 pricing, AI analytics pricing, BI subscription, professional plan, enterprise plan, free trial",
+                                0.9m, "weekly",  "index, follow"),
+                ("/docs",       "Documentation — AIInsights365",
+                                "Guides, API references, and tutorials for connecting datasources, building agents, and creating dashboards.",
+                                "AIInsights365 docs, documentation, AI agents guide, datasource setup, Power BI connector, SQL connector",
+                                0.7m, "weekly",  "index, follow"),
+                ("/blog",       "Blog — AIInsights365",
+                                "Latest news, AI analytics tutorials, and product updates from the AIInsights365 team.",
+                                "AIInsights365 blog, AI analytics blog, BI tutorials, AI agents, dashboards, product updates",
+                                0.6m, "daily",   "index, follow"),
+                ("/terms",      "Terms & Conditions — AIInsights365",
+                                "Terms of use, billing, cancellation and no-refund policy for the AIInsights365 platform.",
+                                "AIInsights365 terms, terms of service, billing, cancellation, refund policy",
+                                0.3m, "yearly",  "index, follow"),
+                ("/sla",        "Service Level Agreement (SLA) — AIInsights365",
+                                "Uptime guarantees, support response times, and service commitments for AIInsights365 customers.",
+                                "AIInsights365 SLA, uptime, service level agreement, support response time, availability",
+                                0.3m, "yearly",  "index, follow"),
+                ("/support",    "Support — AIInsights365",
+                                "Get help with AIInsights365: documentation, contact support, ticketing, and FAQs.",
+                                "AIInsights365 support, contact support, help center, FAQ, customer service, technical support",
+                                0.5m, "monthly", "index, follow"),
+                ("/auth/login", "Sign In — AIInsights365",
+                                "Sign in to AIInsights365 to access your workspaces, agents, and analytics dashboards.",
+                                "AIInsights365 login, sign in, account access, workspace login",
+                                0.3m, "yearly",  "noindex, follow"),
+                ("/auth/register", "Create Account — AIInsights365",
+                                "Create a free AIInsights365 account and start chatting with your data using AI agents.",
+                                "AIInsights365 register, sign up, create account, free trial, AI analytics signup",
+                                0.4m, "monthly", "noindex, follow"),
+            };
+
+            foreach (var p in staticPages)
+            {
+                var entry = await _db.SeoEntries.FirstOrDefaultAsync(s => s.PageUrl == p.Url);
+                if (entry == null)
+                {
+                    _db.SeoEntries.Add(new SeoEntry
+                    {
+                        PageUrl = p.Url,
+                        Title = p.Title,
+                        MetaDescription = p.Description,
+                        MetaKeywords = p.Keywords,
+                        OgTitle = p.Title,
+                        OgDescription = p.Description,
+                        RobotsDirective = p.Robots,
+                        SitemapPriority = p.Priority,
+                        SitemapChangeFreq = p.ChangeFreq,
+                        IncludeInSitemap = !p.Robots.Contains("noindex"),
+                        CreatedBy = "system",
+                        CreatedAt = now,
+                        LastModified = now
+                    });
+                    staticCreated++;
+                }
+                else
+                {
+                    var changed = false;
+                    if (string.IsNullOrWhiteSpace(entry.MetaKeywords))     { entry.MetaKeywords     = p.Keywords;    changed = true; }
+                    if (string.IsNullOrWhiteSpace(entry.MetaDescription))  { entry.MetaDescription  = p.Description; changed = true; }
+                    if (string.IsNullOrWhiteSpace(entry.OgDescription))    { entry.OgDescription    = p.Description; changed = true; }
+                    if (string.IsNullOrWhiteSpace(entry.OgTitle))          { entry.OgTitle          = p.Title;       changed = true; }
+                    if (string.IsNullOrWhiteSpace(entry.Title))            { entry.Title            = p.Title;       changed = true; }
+                    if (string.IsNullOrWhiteSpace(entry.RobotsDirective))  { entry.RobotsDirective  = p.Robots;      changed = true; }
+                    if (changed) { entry.LastModified = now; staticUpdated++; }
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            // -- 2) Blog posts
+            var posts = await _db.BlogPosts.AsNoTracking().ToListAsync();
+            foreach (var post in posts)
+            {
+                var description = !string.IsNullOrWhiteSpace(post.Summary) ? post.Summary! : post.Title;
+                var keywords = BuildKeywordsFor(post.Title, post.Slug,
+                    "blog, AI analytics, AIInsights365, data insights");
+                await UpsertSeoForContentAsync(
+                    newUrl: $"/blog/{post.Slug}",
+                    oldUrl: null,
+                    title: $"{post.Title} — AIInsights365.net",
+                    description: description,
+                    keywords: keywords,
+                    priority: 0.8m,
+                    changeFreq: "weekly",
+                    includeInSitemap: post.IsPublished,
+                    ogImage: string.IsNullOrWhiteSpace(post.ImageUrl) ? null : post.ImageUrl);
+                blogCount++;
+            }
+
+            // -- 3) Doc articles
+            var docs = await _db.DocArticles.AsNoTracking().ToListAsync();
+            foreach (var doc in docs)
+            {
+                var description = !string.IsNullOrWhiteSpace(doc.Summary) ? doc.Summary! : doc.Title;
+                var keywords = BuildKeywordsFor(doc.Title, doc.Slug,
+                    "documentation, AIInsights365 docs, AI analytics guide, tutorial");
+                await UpsertSeoForContentAsync(
+                    newUrl: $"/docs/{doc.Slug}",
+                    oldUrl: null,
+                    title: $"{doc.Title} — AIInsights365.net",
+                    description: description,
+                    keywords: keywords,
+                    priority: 0.7m,
+                    changeFreq: "monthly",
+                    includeInSitemap: doc.IsPublished,
+                    ogImage: null);
+                docCount++;
+            }
+
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "Seo.Backfill",
+                Description = $"Backfilled SEO keywords. staticCreated={staticCreated}, staticUpdated={staticUpdated}, blogs={blogCount}, docs={docCount}.",
+                UserId = GetCurrentUserId() ?? "",
+                CreatedAt = now
+            });
+            await _db.SaveChangesAsync();
+
+            // Read-back sanity check before commit so the UI can confirm rows exist.
+            var totalSeoRows = await _db.SeoEntries.CountAsync();
+
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                success = true,
+                staticCreated,
+                staticUpdated,
+                blogs = blogCount,
+                docs = docCount,
+                total = staticCreated + staticUpdated + blogCount + docCount,
+                totalSeoRows
+            });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Backfill failed; no changes were saved.",
+                detail = ex.Message,
+                inner = ex.InnerException?.Message
+            });
+        }
+    }
+
+    // Lightweight, deterministic keyword builder: picks meaningful words from the title
+    // and slug, drops English stop-words and short tokens, and merges with topic stems.
+    private static string BuildKeywordsFor(string title, string slug, string topicStems)
+    {
+        static IEnumerable<string> Tokenize(string s) =>
+            (s ?? "")
+                .Replace('-', ' ').Replace('_', ' ').Replace('/', ' ')
+                .Split(new[] { ' ', '\t', ',', '.', ':', ';', '!', '?', '(', ')', '[', ']', '"', '\'' },
+                       StringSplitOptions.RemoveEmptyEntries)
+                .Select(w => w.Trim().ToLowerInvariant());
+
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the","a","an","and","or","but","of","to","in","on","for","with","by","is","are",
+            "be","as","at","from","that","this","it","its","into","your","you","we","our","my",
+            "how","what","why","when","where","which","who","do","does","can","will","vs","via","using"
+        };
+
+        var tokens = Tokenize(title).Concat(Tokenize(slug))
+            .Where(w => w.Length >= 3 && !stop.Contains(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
+
+        var stemList = (topicStems ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return string.Join(", ",
+            tokens.Concat(stemList)
+                  .Where(s => !string.IsNullOrWhiteSpace(s))
+                  .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     // ── Notifications ─────────────────────────────────────────────────────────

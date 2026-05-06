@@ -134,6 +134,9 @@
 @section Scripts {
 <script>
     var editingPostId = 0;
+    // SEO values captured from the AI assistant — sent to /api/superadmin/blog/save
+    // so the SeoEntry row gets meaningful keywords/description instead of generic fallbacks.
+    var aiSeo = { metaDescription: '', metaKeywords: '' };
 
     function openForm() {
         editingPostId = 0;
@@ -146,6 +149,7 @@
         document.getElementById('postContent').value = '';
         document.getElementById('postPublished').checked = true;
         document.getElementById('formTitle').textContent = 'New Post';
+        aiSeo = { metaDescription: '', metaKeywords: '' };
         resetAiPanel();
         document.getElementById('blogModal').style.display = 'flex';
     }
@@ -161,6 +165,7 @@
         document.getElementById('postContent').value = post.content || '';
         document.getElementById('postPublished').checked = !!post.isPublished;
         document.getElementById('formTitle').textContent = 'Edit Post';
+        aiSeo = { metaDescription: '', metaKeywords: '' };
         resetAiPanel();
         document.getElementById('blogModal').style.display = 'flex';
     }

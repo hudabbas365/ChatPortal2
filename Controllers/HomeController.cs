@@ -50,6 +50,7 @@ public class HomeController : Controller
         return View();
     }
 
+    [Route("/pricing")]
     public async Task<IActionResult> Pricing()
     {
         await SetSeoAsync("/pricing");

@@ -95,6 +95,12 @@
                 <i class="bi bi-upload me-1"></i>Import XML
                 <input type="file" accept=".xml" onchange="exportManager.importXml(this.files[0])" style="display:none">
             </label>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="exportManager.exportPdf()" title="Export as PDF (one report page per PDF page)">
+                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+            </button>
+            <button class="btn btn-sm btn-outline-secondary me-2" onclick="exportManager.exportPpt()" title="Export as PowerPoint (one report page per slide)">
+                <i class="bi bi-file-earmark-ppt me-1"></i>PPT
+            </button>
             <button class="btn btn-sm btn-danger" onclick="canvasManager.resetCanvas()" title="Reset">
                 <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
             </button>
@@ -120,6 +126,9 @@
             </span>
         </nav>
         <div class="report-topnav-actions">
+            <button class="btn btn-sm btn-outline-secondary" id="refreshDataBtn" title="Refresh chart data from datasource" data-bs-toggle="tooltip" data-bs-placement="bottom" style="margin-right:6px">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
             <button class="btn btn-sm btn-outline-primary" id="viewReportBtn" title="View saved report" style="display:none;margin-right:6px">
                 <i class="bi bi-eye me-1"></i>View Report
             </button>
@@ -797,6 +806,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.54.0/dist/apexcharts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="~/js/aiStream.js"></script>
 <script src="~/js/chartLibrary.js"></script>
 <script src="~/js/chartRenderer.js" asp-append-version="true"></script>
@@ -871,6 +883,35 @@
                 viewBtn.onclick = () => window.open('/report/view/' + window._currentReportGuid, '_blank');
             }
         }
+
+        // -- Refresh: re-pull data for all charts from the datasource --
+        document.getElementById('refreshDataBtn')?.addEventListener('click', async function() {
+            const btn = this;
+            if (btn.dataset.busy === '1') return;
+            btn.dataset.busy = '1';
+            const icon = btn.querySelector('i');
+            if (icon) {
+                icon.style.transition = 'transform 0.6s linear';
+                icon.style.transform = 'rotate(360deg)';
+            }
+            btn.disabled = true;
+            try {
+                if (window.canvasManager && typeof canvasManager.renderAll === 'function') {
+                    canvasManager.renderAll();
+                    // Give async chart fetches a moment so the spinner is visible
+                    await new Promise(r => setTimeout(r, 600));
+                }
+            } catch (e) {
+                console.warn('Refresh failed:', e);
+            } finally {
+                if (icon) {
+                    icon.style.transition = 'none';
+                    icon.style.transform = '';
+                }
+                btn.disabled = false;
+                btn.dataset.busy = '0';
+            }
+        });
 
         // Pre-populate topnav from server-side workspace context so it's visible immediately
         @if (ViewBag.WorkspaceGuid != null)

@@ -32,7 +32,7 @@ public class SubscriptionService
 
         plan.Plan = PlanType.FreeTrial;
         plan.TrialStartDate = DateTime.UtcNow;
-        plan.TrialEndDate = DateTime.UtcNow.AddDays(30);
+        plan.TrialEndDate = DateTime.UtcNow.AddDays(3);
         plan.HasUsedTrial = true;
 
         await _db.SaveChangesAsync();

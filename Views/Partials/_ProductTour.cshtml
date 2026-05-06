@@ -1,0 +1,90 @@
+@*
+    _ProductTour.cshtml — Boots the first-login product tour.
+    Loaded by _Layout.cshtml just before @RenderSection("Scripts").
+    Persistence: localStorage key `cp_tour_completed_v1`.
+    Replay: any element with data-action="start-product-tour" or
+            window.productTour.start(steps).
+*@
+<link rel="stylesheet" href="~/css/product-tour.css" asp-append-version="true" />
+<script src="~/js/product-tour.js" asp-append-version="true"></script>
+<script>
+    (function () {
+        // Build the step list once. Targets resolve at run-time so the same
+        // definition works on any page (missing targets → step shown as a
+        // centered card without spotlight, so the tour never crashes).
+        function _steps() {
+            return [
+                {
+                    title: 'Welcome to AI Insights 365 \uD83D\uDC4B',
+                    icon: 'bi-stars',
+                    body:
+                        '<p>Let\'s take a quick 60-second tour of the workspace so you know where everything lives.</p>' +
+                        '<p style="color:var(--pt-text-muted);font-size:.8rem">Use <kbd>\u2192</kbd> / <kbd>\u2190</kbd> to navigate, or <kbd>Esc</kbd> to skip.</p>'
+                },
+                {
+                    target: '#nav-ai-insights',
+                    placement: 'bottom',
+                    title: 'Workspaces & AI Insights',
+                    icon: 'bi-house-door',
+                    body:
+                        '<p>This is your gateway to <strong>workspaces</strong> \u2014 each one bundles a dataset, an AI agent and dashboards.</p>' +
+                        '<p>Click <strong>AI Insights</strong> any time to jump to your workspaces overview, switch between them, or create a new one.</p>'
+                },
+                {
+                    target: '#navUserMenuBtn',
+                    placement: 'bottom',
+                    title: 'Settings, Activity & more',
+                    icon: 'bi-person-circle',
+                    body:
+                        '<p>Your profile menu holds the rest of the controls:</p>' +
+                        '<ul class="pt-checklist">' +
+                            '<li><i class="bi bi-gear"></i><span><strong>Settings</strong> \u2014 organization, billing, plan & members</span></li>' +
+                            '<li><i class="bi bi-activity"></i><span><strong>Activity</strong> \u2014 audit log of who did what</span></li>' +
+                            '<li><i class="bi bi-info-circle"></i><span><strong>About</strong> \u2014 hosting region, encryption & GDPR info</span></li>' +
+                        '</ul>'
+                },
+                {
+                    type: 'datasource-preflight',
+                    title: 'Before creating a Datasource',
+                    icon: 'bi-database-add'
+                },
+                {
+                    title: 'You\'re all set \u2728',
+                    icon: 'bi-check2-circle',
+                    body:
+                        '<p>Head to <strong>AI Insights</strong> in the navbar to create your first workspace, then plug in your datasource and start asking questions.</p>' +
+                        '<p style="color:var(--pt-text-muted);font-size:.8rem">You can replay this tour anytime from your profile menu \u2192 <em>Take the tour</em>.</p>'
+                }
+            ];
+        }
+
+        // Manual replay link (in user menu)
+        document.addEventListener('click', function (e) {
+            var t = e.target.closest && e.target.closest('[data-action="start-product-tour"]');
+            if (!t) return;
+            e.preventDefault();
+            window.productTour.start(_steps());
+        });
+
+        // Auto-start on first login: only when a user is present in localStorage
+        // AND the completed flag is not set. Delay slightly so other navbar
+        // bootstrappers (user menu, plan features) finish painting first.
+        function _maybeAutoStart() {
+            try {
+                var u = JSON.parse(localStorage.getItem('cp_user') || 'null');
+                if (!u || !u.id) return;
+                if (window.productTour.hasCompleted()) return;
+                // Avoid showing tour on auth pages.
+                var p = (location.pathname || '').toLowerCase();
+                if (p.indexOf('/auth/') === 0) return;
+                setTimeout(function () { window.productTour.start(_steps()); }, 800);
+            } catch (e) { /* non-fatal */ }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _maybeAutoStart);
+        } else {
+            _maybeAutoStart();
+        }
+    })();
+</script>

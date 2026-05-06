@@ -134,6 +134,9 @@
 @section Scripts {
 <script>
     var editingDocId = 0;
+    // SEO values captured from the AI assistant — sent to /api/superadmin/docs/save
+    // so the SeoEntry row gets meaningful keywords/description instead of generic fallbacks.
+    var aiSeo = { metaDescription: '', metaKeywords: '' };
 
     function openForm() {
         editingDocId = 0;
@@ -146,6 +149,7 @@
         document.getElementById('docContent').value = '';
         document.getElementById('docPublished').checked = true;
         document.getElementById('formTitle').textContent = 'New Article';
+        aiSeo = { metaDescription: '', metaKeywords: '' };
         resetAiPanel();
         document.getElementById('docModal').style.display = 'flex';
     }
@@ -193,6 +197,9 @@
             });
             var data = await resp.json();
             if (!resp.ok || !data.success) { alert(data.error || 'AI generation failed.'); return; }
+
+            if (data.metaDescription) aiSeo.metaDescription = data.metaDescription;
+            if (data.metaKeywords) aiSeo.metaKeywords = data.metaKeywords;
 
             if (mode === 'all') {
                 if (!title && data.title) document.getElementById('docTitle').value = data.title;

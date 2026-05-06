@@ -334,4 +334,21 @@ app.UseStatusCodePages(async context =>
 
 app.MapDefaultControllerRoute();
 
+// Browsers auto-request /favicon.ico regardless of <link rel="icon"> tags.
+// We only ship favicon.svg, so serve it (with the correct content-type) at /favicon.ico
+// to prevent 404s in logs and crawler reports.
+app.MapGet("/favicon.ico", async context =>
+{
+    var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+    var svgPath = Path.Combine(env.WebRootPath, "favicon.svg");
+    if (!File.Exists(svgPath))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    context.Response.ContentType = "image/svg+xml";
+    context.Response.Headers.CacheControl = "public, max-age=86400";
+    await context.Response.SendFileAsync(svgPath);
+});
+
 app.Run();

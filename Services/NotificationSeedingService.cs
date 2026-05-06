@@ -90,9 +90,9 @@ public class NotificationSeedingService : BackgroundService
 
             if (plan == PlanType.FreeTrial)
             {
-                // 30-day trial assumption — matches existing banner logic.
+                // 3-day trial — matches SubscriptionService.ActivateTrialAsync.
                 var started = subStart ?? org.CreatedAt;
-                var endsAt = started.AddDays(30);
+                var endsAt = started.AddDays(3);
                 var daysLeft = (int)Math.Ceiling((endsAt - now).TotalDays);
 
                 if (daysLeft <= 0)
@@ -118,7 +118,7 @@ public class NotificationSeedingService : BackgroundService
                 }
                 else
                 {
-                    // Daily countdown notification (days 1..30). The day number is
+                    // Daily countdown notification (days 1..3). The day number is
                     // baked into SystemKey so each day produces a fresh row; the
                     // previous day's row is auto-hidden via ExpiresAt = end of that
                     // day, keeping the bell list clean.
@@ -133,23 +133,17 @@ public class NotificationSeedingService : BackgroundService
                         body = "This is the last day of your free trial. All AI features will be suspended at the end of today unless you upgrade.";
                         severity = "urgent";
                     }
-                    else if (daysLeft <= 7)
+                    else if (daysLeft == 2)
                     {
-                        title = $"Free trial ends in {daysLeft} days";
-                        body = "Upgrade to Pro or Enterprise to keep your AI workflows running.";
+                        title = "Free trial ends tomorrow";
+                        body = "Only 1 day left after today. Upgrade to Pro or Enterprise to keep your AI workflows running.";
                         severity = "high";
-                    }
-                    else if (daysLeft <= 14)
-                    {
-                        title = $"Free trial: {daysLeft} days remaining";
-                        body = "Your 30-day free trial is past the halfway mark. Upgrade any time to lock in continuous service.";
-                        severity = "normal";
                     }
                     else
                     {
                         title = $"Free trial: {daysLeft} days remaining";
-                        body = "Welcome to your 30-day free trial. We'll keep you posted as the end date approaches.";
-                        severity = "low";
+                        body = "Welcome to your 3-day free trial. Upgrade any time to lock in continuous service.";
+                        severity = "high";
                     }
 
                     await UpsertAsync(db, $"trial-day-{daysLeft}-org-{org.Id}", n =>

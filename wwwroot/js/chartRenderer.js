@@ -239,6 +239,15 @@ class ChartRenderer {
         try { data = await this.fetchData(chartDef); }
         catch(e) { console.warn('Data fetch failed:', e); data = { labels: [], values: [] }; }
 
+        // Stash the resolved dataset so external features (CSV export, PPT
+        // export, Q&A panel) can recover the underlying rows without having
+        // to re-issue the same datasource query.
+        try {
+            this._lastData = this._lastData || {};
+            if (chartDef && chartDef.id != null) this._lastData[chartDef.id] = data;
+            if (wrap) { wrap._chartData = data; wrap._chartDef = chartDef; }
+        } catch (_) { /* defensive */ }
+
         // Remove skeleton
         const sk = wrap.querySelector('.chart-loading-skeleton');
         if (sk) sk.remove();

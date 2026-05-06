@@ -11,153 +11,215 @@ class ExportManager {
     }
 
     async exportPdf() {
+        // One report-page per PDF-page, scale-to-fit so a tall canvas never
+        // overlaps the next sheet. Iterates window.canvasManager.pages,
+        // switching the active page so each one is fully rendered before
+        // capture, then restores the original active page when finished.
+        if (typeof window.jspdf === 'undefined') { alert('PDF library not loaded.'); return; }
+        const cm = window.canvasManager;
+        if (!cm) return;
         const container = document.getElementById('chart-canvas-drop');
-        if (!container || typeof window.jspdf === 'undefined') return;
+        if (!container) return;
 
-        const { jsPDF } = window.jspdf;
+        const pages = (cm.pages && cm.pages.length) ? cm.pages : [{ name: 'Page 1', charts: cm.charts || [] }];
+        const originalIndex = cm.activePageIndex || 0;
         const canvasName = document.getElementById('canvas-name-display')?.textContent || 'Report';
-        const now = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
-        const charts = window.canvasManager ? window.canvasManager.charts : [];
 
-        // A4 page settings (mm)
-        const pageW = 210, pageH = 297;
-        const marginX = 14, marginY = 16;
-        const contentW = pageW - marginX * 2;
+        const overlay = this._showExportOverlay('Generating PDF…');
+        try {
+            const { jsPDF } = window.jspdf;
+            let pdf = null;
 
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-        // ---- Cover / Header Page ----
-        pdf.setFillColor(74, 144, 217);
-        pdf.rect(0, 0, pageW, 50, 'F');
-
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(24);
-        pdf.text('ManageCharts', marginX, 22);
-
-        pdf.setFontSize(14);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(canvasName, marginX, 34);
-
-        pdf.setFontSize(9);
-        pdf.text(`Generated: ${now}  ·  ${charts.length} chart${charts.length !== 1 ? 's' : ''}`, marginX, 44);
-
-        // Reset text color
-        pdf.setTextColor(44, 62, 80);
-
-        // ---- Chart listing (table of contents) ----
-        let curY = 62;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
-        pdf.text('Chart Index', marginX, curY);
-
-        pdf.setDrawColor(74, 144, 217);
-        pdf.setLineWidth(0.4);
-        pdf.line(marginX, curY + 2, pageW - marginX, curY + 2);
-        curY += 8;
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9);
-        charts.forEach((c, i) => {
-            if (curY > pageH - 20) { pdf.addPage(); curY = marginY; }
-            pdf.setFillColor(i % 2 === 0 ? 248 : 255, i % 2 === 0 ? 249 : 255, i % 2 === 0 ? 250 : 255);
-            pdf.rect(marginX, curY - 4, contentW, 7, 'F');
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(`${i + 1}.`, marginX + 1, curY);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text(c.title || 'Untitled', marginX + 8, curY);
-            pdf.setTextColor(130, 140, 160);
-            pdf.text(c.chartType, pageW - marginX - pdf.getTextWidth(c.chartType), curY);
-            pdf.setTextColor(44, 62, 80);
-            curY += 7;
-        });
-
-        // ---- Charts: screenshot each card individually ----
-        const cards = document.querySelectorAll('.chart-card');
-        if (cards.length > 0) {
-            pdf.addPage();
-            pdf.setFillColor(74, 144, 217);
-            pdf.rect(0, 0, pageW, 12, 'F');
-            pdf.setTextColor(255, 255, 255);
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(10);
-            pdf.text('Charts', marginX, 8);
-            pdf.setTextColor(44, 62, 80);
-
-            curY = 20;
-            const chartPerRow = 2;
-            const chartCellW = (contentW - 6) / chartPerRow;
-            let colIdx = 0;
-
-            for (let i = 0; i < cards.length; i++) {
-                const card = cards[i];
-                const chartId = card.dataset.chartId;
-                const chartDef = charts.find(c => c.id === chartId);
-
-                try {
-                    const imgCanvas = await html2canvas(card, {
-                        backgroundColor: '#ffffff',
-                        scale: 1.5,
-                        useCORS: true,
-                        logging: false
-                    });
-
-                    const imgData = imgCanvas.toDataURL('image/png');
-                    const aspect = imgCanvas.height / imgCanvas.width;
-                    const imgW = chartCellW;
-                    const imgH = Math.min(imgW * aspect, 80);
-
-                    const xPos = marginX + colIdx * (chartCellW + 6);
-
-                    // Check page overflow
-                    if (curY + imgH + 8 > pageH - marginY) {
-                        pdf.addPage();
-                        pdf.setFillColor(74, 144, 217);
-                        pdf.rect(0, 0, pageW, 10, 'F');
-                        curY = 16;
-                        colIdx = 0;
-                    }
-
-                    // Chart title
-                    pdf.setFont('helvetica', 'bold');
-                    pdf.setFontSize(8);
-                    pdf.setTextColor(44, 62, 80);
-                    pdf.text(chartDef ? (chartDef.title || 'Chart') : 'Chart', xPos, curY);
-
-                    // Chart image
-                    pdf.addImage(imgData, 'PNG', xPos, curY + 2, imgW, imgH);
-
-                    // Light border
-                    pdf.setDrawColor(220, 227, 234);
-                    pdf.setLineWidth(0.3);
-                    pdf.rect(xPos, curY + 2, imgW, imgH);
-
-                    colIdx++;
-                    if (colIdx >= chartPerRow) {
-                        colIdx = 0;
-                        curY += imgH + 12;
-                    }
-                } catch (e) {
-                    console.warn('Could not capture chart', e);
+            for (let i = 0; i < pages.length; i++) {
+                this._updateExportOverlay(overlay, `Generating PDF… (page ${i + 1} of ${pages.length})`);
+                if (cm.activePageIndex !== i) {
+                    cm.switchPage(i);
+                    // Charts re-render via requestAnimationFrame; give them
+                    // time to fetch data and paint.
+                    await new Promise(r => setTimeout(r, 700));
                 }
+
+                const canvas = await html2canvas(container, {
+                    scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+                    windowWidth: container.scrollWidth,
+                    windowHeight: container.scrollHeight
+                });
+                const imgData = canvas.toDataURL('image/png');
+                const imgW = canvas.width, imgH = canvas.height;
+                const orientation = imgW >= imgH ? 'landscape' : 'portrait';
+
+                if (!pdf) pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+                else pdf.addPage('a4', orientation);
+
+                const pageW = pdf.internal.pageSize.getWidth();
+                const pageH = pdf.internal.pageSize.getHeight();
+                const margin = 8;
+                const availW = pageW - margin * 2;
+                const availH = pageH - margin * 2;
+                const ratio = Math.min(availW / imgW, availH / imgH);
+                const drawW = imgW * ratio;
+                const drawH = imgH * ratio;
+                pdf.addImage(imgData, 'PNG', (pageW - drawW) / 2, (pageH - drawH) / 2, drawW, drawH);
             }
-        }
 
-        // ---- Footer on each page ----
-        const totalPages = pdf.getNumberOfPages();
-        for (let p = 1; p <= totalPages; p++) {
-            pdf.setPage(p);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(7);
-            pdf.setTextColor(130, 140, 160);
-            pdf.text(`ManageCharts · ${canvasName} · Page ${p} of ${totalPages}`, marginX, pageH - 6);
-            pdf.text(now, pageW - marginX - pdf.getTextWidth(now), pageH - 6);
-            pdf.setDrawColor(220, 227, 234);
-            pdf.setLineWidth(0.3);
-            pdf.line(marginX, pageH - 10, pageW - marginX, pageH - 10);
+            pdf.save(`${canvasName.replace(/[^a-z0-9\-_]/gi,'_')}_report.pdf`);
+        } catch (e) {
+            console.error('PDF export failed:', e);
+            alert('Failed to export PDF.');
+        } finally {
+            // Restore the originally active page.
+            if (cm.activePageIndex !== originalIndex) {
+                cm.switchPage(originalIndex);
+            }
+            this._hideExportOverlay(overlay);
         }
+    }
 
-        pdf.save(`${canvasName.replace(/[^a-z0-9\-_]/gi,'_')}_report.pdf`);
+    // PowerPoint export — one report page per slide, 16:9 wide layout.
+    async exportPpt() {
+        if (typeof PptxGenJS === 'undefined') {
+            alert('PowerPoint export library failed to load.');
+            return;
+        }
+        const cm = window.canvasManager;
+        if (!cm) return;
+        const container = document.getElementById('chart-canvas-drop');
+        if (!container) return;
+
+        const pages = (cm.pages && cm.pages.length) ? cm.pages : [{ name: 'Page 1', charts: cm.charts || [] }];
+        const originalIndex = cm.activePageIndex || 0;
+        const canvasName = document.getElementById('canvas-name-display')?.textContent || 'Report';
+
+        const overlay = this._showExportOverlay('Generating PowerPoint…');
+        try {
+            const pptx = new PptxGenJS();
+            pptx.layout = 'LAYOUT_WIDE';
+            const slideW = 13.333, slideH = 7.5;
+
+            for (let i = 0; i < pages.length; i++) {
+                this._updateExportOverlay(overlay, `Generating PowerPoint… (slide ${i + 1} of ${pages.length})`);
+                if (cm.activePageIndex !== i) {
+                    cm.switchPage(i);
+                    await new Promise(r => setTimeout(r, 700));
+                }
+
+                const canvas = await html2canvas(container, {
+                    scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+                    windowWidth: container.scrollWidth,
+                    windowHeight: container.scrollHeight
+                });
+                const imgData = canvas.toDataURL('image/png');
+                const imgW = canvas.width, imgH = canvas.height;
+                const ratio = Math.min(slideW / imgW, slideH / imgH);
+                const drawW = imgW * ratio;
+                const drawH = imgH * ratio;
+                const slide = pptx.addSlide();
+                slide.background = { color: 'FFFFFF' };
+                slide.addImage({
+                    data: imgData,
+                    x: (slideW - drawW) / 2,
+                    y: (slideH - drawH) / 2,
+                    w: drawW, h: drawH
+                });
+            }
+
+            await pptx.writeFile({ fileName: `${canvasName.replace(/[^a-z0-9\-_]/gi,'_')}_report.pptx` });
+        } catch (e) {
+            console.error('PPT export failed:', e);
+            alert('Failed to export PowerPoint.');
+        } finally {
+            if (cm.activePageIndex !== originalIndex) {
+                cm.switchPage(originalIndex);
+            }
+            this._hideExportOverlay(overlay);
+        }
+    }
+
+    // Per-chart CSV export. Uses data already cached by chartRenderer when
+    // available; otherwise re-fetches via chartRenderer.fetchData.
+    async exportChartCsv(chartDef) {
+        try {
+            let data = null;
+            if (window.chartRenderer && chartRenderer._lastData && chartDef && chartDef.id != null) {
+                data = chartRenderer._lastData[chartDef.id];
+            }
+            if (!data && window.chartRenderer && typeof chartRenderer.fetchData === 'function') {
+                data = await chartRenderer.fetchData(chartDef);
+            }
+            if (!data) { alert('No data available for this chart yet.'); return; }
+
+            const esc = (v) => {
+                if (v === null || v === undefined) return '';
+                const s = String(v);
+                if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+                return s;
+            };
+            const buildCsv = (rows, headers) => {
+                const out = [headers.map(esc).join(',')];
+                rows.forEach(r => out.push(headers.map(h => esc(r[h])).join(',')));
+                return out.join('\r\n');
+            };
+
+            let csv;
+            if (Array.isArray(data.rawData) && data.rawData.length > 0) {
+                const headers = Object.keys(data.rawData[0]);
+                csv = buildCsv(data.rawData, headers);
+            } else if (Array.isArray(data.labels) && data.labels.length > 0) {
+                const headers = ['Label', 'Value'];
+                const rows = data.labels.map((l, i) => ({
+                    Label: l,
+                    Value: (data.values && data.values[i] !== undefined) ? data.values[i] : ''
+                }));
+                if (Array.isArray(data.multiValues)) {
+                    data.multiValues.forEach(mv => {
+                        headers.push(mv.field);
+                        rows.forEach((r, i) => {
+                            r[mv.field] = (mv.values && mv.values[i] !== undefined) ? mv.values[i] : '';
+                        });
+                    });
+                }
+                csv = buildCsv(rows, headers);
+            } else {
+                alert('No data available for this chart yet.');
+                return;
+            }
+
+            const baseName = (chartDef && (chartDef.title || chartDef.chartType)) || 'chart';
+            const safe = String(baseName).replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'chart';
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = safe + '.csv';
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+        } catch (e) {
+            console.error('Chart CSV export failed:', e);
+            alert('Failed to export CSV.');
+        }
+    }
+
+    // ── Lightweight overlay used by PDF / PPT exports ──
+    _showExportOverlay(label) {
+        let overlay = document.getElementById('em-export-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'em-export-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:99999;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = '<div style="background:#fff;border-radius:10px;padding:22px 28px;display:flex;align-items:center;gap:14px;min-width:260px;box-shadow:0 12px 40px rgba(0,0,0,0.25);"><div class="spinner-border text-primary" role="status" style="width:1.6rem;height:1.6rem;"></div><span id="em-export-label" style="font-size:0.92rem;color:#334155;font-weight:500;"></span></div>';
+            document.body.appendChild(overlay);
+        }
+        const labelEl = overlay.querySelector('#em-export-label');
+        if (labelEl) labelEl.textContent = label || 'Working…';
+        overlay.style.display = 'flex';
+        return overlay;
+    }
+    _updateExportOverlay(overlay, label) {
+        if (!overlay) return;
+        const labelEl = overlay.querySelector('#em-export-label');
+        if (labelEl) labelEl.textContent = label;
+    }
+    _hideExportOverlay(overlay) {
+        if (overlay) overlay.style.display = 'none';
     }
 
     exportJson() {

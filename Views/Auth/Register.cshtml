@@ -30,6 +30,7 @@
                                 <i class="bi bi-building input-icon"></i>
                                 <input type="text" class="form-control cp-input" id="regOrgName" placeholder="Acme Corp" required autocomplete="off" />
                             </div>
+                            <div id="regOrgNameHint" class="form-text mt-1" style="font-size:0.78rem;min-height:1.1em"></div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label-cp">Email Address</label>
@@ -60,8 +61,40 @@
 
 @section Scripts {
 <script>
+// Live organization-name availability check (debounced).
+let _orgNameCheckTimer = null;
+let _orgNameAvailable = null; // null=unknown, true=ok, false=taken
+$('#regOrgName').on('input', function() {
+    const val = $(this).val().trim();
+    const hint = $('#regOrgNameHint');
+    _orgNameAvailable = null;
+    if (_orgNameCheckTimer) clearTimeout(_orgNameCheckTimer);
+    if (!val) { hint.text('').css('color', ''); return; }
+    if (val.length < 2) { hint.text('Organization name is too short.').css('color', '#dc3545'); return; }
+    hint.text('Checking availability…').css('color', '#6c757d');
+    _orgNameCheckTimer = setTimeout(function() {
+        $.getJSON('/api/auth/organization-name-available', { name: val })
+            .done(function(r) {
+                if ($('#regOrgName').val().trim() !== val) return; // stale
+                _orgNameAvailable = !!r.available;
+                if (r.available) {
+                    hint.html('<i class="bi bi-check-circle-fill me-1"></i>Available').css('color', '#198754');
+                } else {
+                    hint.html('<i class="bi bi-x-circle-fill me-1"></i>' + (r.message || 'Not available')).css('color', '#dc3545');
+                }
+            })
+            .fail(function() { hint.text('').css('color', ''); });
+    }, 400);
+});
+
 $('#registerForm').on('submit', function(e) {
     e.preventDefault();
+    if (_orgNameAvailable === false) {
+        $('#regAlert').removeClass('d-none alert-success').addClass('alert alert-danger')
+            .text('Please choose a different organization name.');
+        $('#regOrgName').focus();
+        return;
+    }
     const btn = $('#regBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Creating account...');
     $.ajax({
         url: '/api/auth/register',
@@ -74,7 +107,13 @@ $('#registerForm').on('submit', function(e) {
             window.location.href = '/chat';
         },
         error: function(e) {
-            $('#regAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(e.responseJSON?.error || 'Registration failed.');
+            const err = e.responseJSON || {};
+            $('#regAlert').removeClass('d-none alert-success').addClass('alert alert-danger').text(err.error || 'Registration failed.');
+            if (err.field === 'organizationName') {
+                _orgNameAvailable = false;
+                $('#regOrgNameHint').html('<i class="bi bi-x-circle-fill me-1"></i>' + err.error).css('color', '#dc3545');
+                $('#regOrgName').focus();
+            }
             btn.prop('disabled', false).html('<i class="bi bi-rocket-takeoff me-2"></i>Create Account & Start Trial');
         }
     });

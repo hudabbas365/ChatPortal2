@@ -516,6 +516,27 @@ body.rv-qa-open .rv-layout {
     40% { transform: scale(1.2); opacity: 1; }
 }
 
+/* ── Per-chart CSV download button (shown in card header) ─ */
+.rv-chart-csv-btn {
+    margin-left: auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border: 1px solid var(--cp-border, #e2e8f0);
+    background: #fff; color: var(--cp-text-muted, #64748b);
+    border-radius: 6px; cursor: pointer;
+    font-size: 0.82rem; line-height: 1; padding: 0;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.rv-chart-csv-btn:hover {
+    background: var(--cp-primary, #4A90D9); color: #fff;
+    border-color: var(--cp-primary, #4A90D9);
+}
+.rv-page .chart-card-header { display: flex; align-items: center; gap: 8px; }
+
+/* While capturing for PDF/PPT, hide interactive affordances so they
+   don't appear in the exported snapshot. */
+.rv-exporting .rv-chart-csv-btn { display: none !important; }
+
 /* ── Print styles ────────────────────────────────────────── */
 @media print {
     body { background: #fff !important; }

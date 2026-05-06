@@ -570,6 +570,9 @@ class CanvasManager {
                         <button class="btn btn-xs btn-icon" data-action="explain" title="Explain with AI">
                             <i class="bi bi-lightbulb"></i>
                         </button>
+                        <button class="btn btn-xs btn-icon" data-action="csv" title="Download chart data as CSV">
+                            <i class="bi bi-filetype-csv"></i>
+                        </button>
                         <button class="btn btn-xs btn-icon" data-action="duplicate" title="Duplicate">
                             <i class="bi bi-copy"></i>
                         </button>
@@ -636,6 +639,17 @@ class CanvasManager {
             e.stopPropagation();
             this.deleteChart(chartDef.id);
         });
+        // Per-chart CSV download — pulls cached chart data from chartRenderer
+        // when available, falls back to a fresh fetch.
+        const csvBtn = card.querySelector('[data-action="csv"]');
+        if (csvBtn) {
+            csvBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.exportManager && typeof exportManager.exportChartCsv === 'function') {
+                    exportManager.exportChartCsv(chartDef);
+                }
+            });
+        }
         // Phase 30-B17: Explain with AI (only present on non-shape, non-navigation cards)
         const explainBtn = card.querySelector('[data-action="explain"]');
         if (explainBtn) {

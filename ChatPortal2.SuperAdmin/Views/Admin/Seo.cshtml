@@ -10,8 +10,11 @@
         <h1 class="page-title">SEO Management</h1>
         <p class="page-desc">Manage page metadata and search optimization</p>
     </div>
-    <button class="btn-primary-sm" onclick="openAddModal()"><i class="bi bi-plus-lg"></i> Add Entry</button>
-    <button class="btn-ghost-sm" style="margin-left:.5rem" onclick="autoFillSeo()"><i class="bi bi-magic"></i> Auto-Fill Pages</button>
+    <div class="d-flex flex-wrap gap-2">
+        <button class="btn-primary-sm" onclick="openAddModal()"><i class="bi bi-plus-lg"></i> Add Entry</button>
+        <button class="btn-ghost-sm" onclick="autoFillSeo()"><i class="bi bi-magic"></i> Auto-Fill Pages</button>
+        <button class="btn-ghost-sm" id="indexNowBulkBtn" style="color:#0a7cbd" onclick="pushAllToIndexNow()"><i class="bi bi-send"></i> Push All to IndexNow</button>
+    </div>
 </div>
 
 <div id="saveAlert" style="display:none;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);color:#34d399;border-radius:10px;font-size:.85rem;padding:.7rem 1rem;margin-bottom:1rem">
@@ -171,6 +174,31 @@ async function saveSeoEntry() {
         }
     } catch (e) {
         alert('Network error: ' + e.message);
+    }
+}
+
+async function pushAllToIndexNow() {
+    if (!confirm('Submit ALL indexable SEO URLs to IndexNow (Bing, Yandex, etc.)? noindex pages will be skipped.')) return;
+    var btn = document.getElementById('indexNowBulkBtn');
+    var originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
+    try {
+        var res = await fetch('/superadmin/seo/indexnow-bulk', { method: 'POST' });
+        var data = await res.json().catch(function () { return {}; });
+        var alertEl = document.getElementById('saveAlert');
+        if (res.ok && data.success) {
+            alertEl.innerHTML = '<i class="bi bi-check-circle me-1"></i>Submitted ' + (data.submitted || 0) + ' URL(s) to IndexNow.';
+            alertEl.style.display = 'block';
+            setTimeout(function () { alertEl.style.display = 'none'; }, 3000);
+        } else {
+            alert('IndexNow submission failed: ' + (data.error || ('HTTP ' + res.status)));
+        }
+    } catch (e) {
+        alert('Network error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
     }
 }
 

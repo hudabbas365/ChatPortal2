@@ -67,6 +67,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasIndex(o => o.OrganizationGuid)
             .IsUnique();
 
+        // Enforce unique organization Name at the DB level. The C# check in
+        // AuthController.RegisterApi is racy (two concurrent registrations
+        // can both pass AnyAsync and both succeed). SQL Server's default
+        // collation is case-insensitive, so this index also guards against
+        // "AIInsight365" vs "aiinsight365" duplicates.
+        builder.Entity<Organization>()
+            .HasIndex(o => o.Name)
+            .IsUnique()
+            .HasDatabaseName("IX_Organizations_Name_Unique");
+
         builder.Entity<Workspace>()
             .HasIndex(w => w.Guid)
             .IsUnique();

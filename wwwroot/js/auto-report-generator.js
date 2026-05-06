@@ -1428,25 +1428,78 @@
                         || ((_wsData.datasources || [])[0] && _wsData.datasources[0].id)
                         || null;
 
-                    var saveResp = await fetch('/api/reports', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '')
-                        },
-                        body: JSON.stringify({
-                            workspaceGuid: wsGuid,
-                            name: defaultName,
-                            datasourceId: _resolvedDsId,
-                            agentId: _resolvedAgentId,
-                            chartIds: allChartIds,
-                            canvasJson: canvasJson,
-                            createdBy: user?.id || null
-                        })
-                    });
+                    // Upsert by (workspace, agent): if the user already saved a
+                    // report manually for this agent (e.g. "My Report"), we must
+                    // overwrite that same Report row instead of creating a second
+                    // one with the auto-generated name. Without this lookup the
+                    // server's upsert-by-name only finds prior auto-reports with
+                    // the exact "Auto Report · <agent>" name and creates a new
+                    // row whenever the user-chosen name differs.
+                    var _resolvedGuid = global._currentReportGuid || null;
+                    if (!_resolvedGuid && wsGuid) {
+                        try {
+                            var _lookupUrl = '/api/reports?workspaceGuid=' + encodeURIComponent(wsGuid);
+                            if (_resolvedAgentId) _lookupUrl += '&agentId=' + encodeURIComponent(_resolvedAgentId);
+                            else if (global.currentAgentGuid) _lookupUrl += '&agentGuid=' + encodeURIComponent(global.currentAgentGuid);
+                            var _lookupResp = await fetch(_lookupUrl, {
+                                headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '') }
+                            });
+                            if (_lookupResp.ok) {
+                                var _existing = await _lookupResp.json();
+                                var _match = _resolvedAgentId
+                                    ? _existing.find(function (r) { return r.agentId === _resolvedAgentId; })
+                                    : (_existing[0] || null);
+                                if (_match) {
+                                    _resolvedGuid = _match.guid;
+                                    // Preserve the user-chosen name when overwriting
+                                    // an existing manual save; otherwise fall back to
+                                    // the agent-scoped auto name.
+                                    if (_match.name) defaultName = _match.name;
+                                }
+                            }
+                        } catch (_) { /* fall through to POST */ }
+                    }
+
+                    var saveResp;
+                    if (_resolvedGuid) {
+                        saveResp = await fetch('/api/reports/' + encodeURIComponent(_resolvedGuid), {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '')
+                            },
+                            body: JSON.stringify({
+                                name: defaultName,
+                                chartIds: allChartIds,
+                                canvasJson: canvasJson,
+                                status: 'Draft'
+                            })
+                        });
+                    } else {
+                        saveResp = await fetch('/api/reports', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + (localStorage.getItem('cp_token') || '')
+                            },
+                            body: JSON.stringify({
+                                workspaceGuid: wsGuid,
+                                name: defaultName,
+                                datasourceId: _resolvedDsId,
+                                agentId: _resolvedAgentId,
+                                chartIds: allChartIds,
+                                canvasJson: canvasJson,
+                                createdBy: user?.id || null
+                            })
+                        });
+                    }
                     if (saveResp.ok) {
                         var saved = await saveResp.json();
                         global._lastAutoReport = saved;
+                        // Track the guid so subsequent Save Draft / Save Report
+                        // clicks update this same Report row instead of forking
+                        // a new one.
+                        if (saved && saved.guid) global._currentReportGuid = saved.guid;
                         _toast('Report saved as “' + defaultName + '”.', 'success');
                     } else {
                         console.warn('[auto-report] Save failed (HTTP ' + saveResp.status + ')');

@@ -4,6 +4,7 @@ using AIInsights.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
@@ -138,6 +139,23 @@ public class AuthController : Controller
     [HttpGet("/auth/register")]
     public IActionResult Register() => View();
 
+    [HttpGet("/api/auth/organization-name-available")]
+    public async Task<IActionResult> OrganizationNameAvailable([FromQuery] string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Ok(new { available = false, message = "Organization name is required." });
+        var trimmed = name.Trim();
+        if (trimmed.Length < 2)
+            return Ok(new { available = false, message = "Organization name is too short." });
+        var lower = trimmed.ToLower();
+        var taken = await _db.Organizations.AnyAsync(o => o.Name.ToLower() == lower);
+        return Ok(new
+        {
+            available = !taken,
+            message = taken ? $"Organization name '{trimmed}' is already taken." : "Available"
+        });
+    }
+
     [HttpPost("/api/auth/register")]
     public async Task<IActionResult> RegisterApi([FromBody] RegisterRequest req)
     {
@@ -145,10 +163,27 @@ public class AuthController : Controller
             return BadRequest(new { error = "Email and password are required." });
 
         // Create Organization first (with FreeTrial plan so token budget is available)
-        var orgName = !string.IsNullOrWhiteSpace(req.OrganizationName) ? req.OrganizationName : (req.FullName ?? req.Email) + "'s Organization";
+        var orgName = !string.IsNullOrWhiteSpace(req.OrganizationName) ? req.OrganizationName.Trim() : (req.FullName ?? req.Email) + "'s Organization";
+
+        // Enforce unique organization name (case-insensitive).
+        var orgNameLower = orgName.ToLower();
+        var nameTaken = await _db.Organizations.AnyAsync(o => o.Name.ToLower() == orgNameLower);
+        if (nameTaken)
+            return BadRequest(new { error = $"Organization name '{orgName}' is already taken. Please choose a different name.", field = "organizationName" });
+
         var org = new Organization { Name = orgName, Plan = PlanType.FreeTrial };
         _db.Organizations.Add(org);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueNameViolation(ex))
+        {
+            // Race: another request registered the same name between the
+            // AnyAsync check above and our SaveChangesAsync. Surface the
+            // same friendly error the pre-check returns.
+            return BadRequest(new { error = $"Organization name '{orgName}' is already taken. Please choose a different name.", field = "organizationName" });
+        }
 
         var user = new ApplicationUser
         {
@@ -163,13 +198,13 @@ public class AuthController : Controller
         if (!result.Succeeded)
             return BadRequest(new { error = string.Join(", ", result.Errors.Select(e => e.Description)) });
 
-        // Create 30-day free trial subscription
+        // Create 3-day free trial subscription (matches SubscriptionService.ActivateTrialAsync).
         _db.SubscriptionPlans.Add(new SubscriptionPlan
         {
             UserId = user.Id,
             Plan = PlanType.FreeTrial,
             TrialStartDate = DateTime.UtcNow,
-            TrialEndDate = DateTime.UtcNow.AddDays(30),
+            TrialEndDate = DateTime.UtcNow.AddDays(3),
             HasUsedTrial = true
         });
         await _db.SaveChangesAsync();
@@ -188,6 +223,24 @@ public class AuthController : Controller
         _ = _emailService.SendEmailConfirmationAsync(user.Email!, user.FullName, confirmUrl);
 
         return Ok(new { token, user = new { user.Id, user.Email, user.FullName, user.Role, user.OrganizationId, orgName = org.Name } });
+    }
+
+    // Detects a duplicate-key violation against the IX_Organizations_Name_Unique
+    // index. SqlException numbers 2601 (duplicate key in unique index) and 2627
+    // (unique constraint) both surface here; we walk the inner-exception chain
+    // because EF Core wraps the provider exception inside DbUpdateException.
+    private static bool IsUniqueNameViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+        {
+            var msg = inner.Message ?? string.Empty;
+            if (msg.Contains("IX_Organizations_Name_Unique", StringComparison.OrdinalIgnoreCase)) return true;
+            if (inner is Microsoft.Data.SqlClient.SqlException sql &&
+                (sql.Number == 2601 || sql.Number == 2627) &&
+                msg.Contains("Organizations", StringComparison.OrdinalIgnoreCase) &&
+                msg.Contains("Name", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     [HttpPost("/api/auth/login")]
