@@ -118,6 +118,8 @@ builder.Services.AddScoped<InvoicePdfService>();
 builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddHostedService<IntegrationHealthService>();
 builder.Services.AddHostedService<WeeklyDigestService>();
+builder.Services.AddScoped<OrganizationRetentionService>();
+builder.Services.AddHostedService<OrganizationRetentionCleanupJob>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DigestSenderService>();

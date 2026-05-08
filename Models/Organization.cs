@@ -55,6 +55,11 @@ public class Organization
     public bool IsBlocked { get; set; } = false;
     public string? BlockedReason { get; set; }
     public DateTime? BlockedAt { get; set; }
+    
+    // ── Soft Deletion / Deactivation ──
+    public bool IsActive { get; set; } = true;
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeactivatedAt { get; set; }
 
     // ── Payment Records ──
     public List<PaymentRecord> PaymentRecords { get; set; } = new();
