@@ -19,6 +19,10 @@ namespace AIInsights.Controllers;
 [ApiController]
 public class DatasourceController : ControllerBase
 {
+    private const int DefaultPreviewLoadRows = 5000;
+    private const int MaxPreviewLoadRows = 10000;
+    private const int TransformPreviewPageSize = 1000;
+
     private static readonly List<string> DatasourceTypes = new()
     {
         "SQL Server",
@@ -567,6 +571,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost("{guid}/transform/draft")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveTransformDraft(string guid, [FromBody] TransformDraftUpsertRequest? req)
     {
         try { await _antiforgery.ValidateRequestAsync(HttpContext); }
@@ -619,8 +624,12 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost("{guid}/transform/validate")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateTransform(string guid, [FromBody] TransformValidateRequest? req)
     {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);
@@ -641,6 +650,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost("{guid}/transform/preview")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewTransform(string guid, [FromBody] TransformPreviewRequest? req)
     {
         try { await _antiforgery.ValidateRequestAsync(HttpContext); }
@@ -656,7 +666,7 @@ public class DatasourceController : ControllerBase
 
         var rows = req?.Rows ?? new();
         if (rows.Count == 0 && (req?.AutoLoadDatasourceRows ?? true))
-            rows = await LoadDatasourcePreviewRowsAsync(ds, req?.AutoLoadMaxRows ?? 5000);
+            rows = await LoadDatasourcePreviewRowsAsync(ds, req?.AutoLoadMaxRows ?? DefaultPreviewLoadRows);
 
         var sourceRows = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
         if (req?.SourceRows?.Count > 0)
@@ -670,7 +680,7 @@ public class DatasourceController : ControllerBase
             foreach (var sds in sourceDatasources)
             {
                 if (sourceRows.ContainsKey(sds.Guid)) continue;
-                sourceRows[sds.Guid] = await LoadDatasourcePreviewRowsAsync(sds, req.AutoLoadMaxRows ?? 5000);
+                sourceRows[sds.Guid] = await LoadDatasourcePreviewRowsAsync(sds, req.AutoLoadMaxRows ?? DefaultPreviewLoadRows);
             }
         }
 
@@ -690,7 +700,7 @@ public class DatasourceController : ControllerBase
             rows,
             sourceRows.Count > 0 ? sourceRows : null,
             req?.Page ?? 1,
-            req?.PageSize ?? 1000);
+            req?.PageSize ?? TransformPreviewPageSize);
 
         var audit = new TransformRunAudit
         {
@@ -725,6 +735,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost("{guid}/transform/publish")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PublishTransform(string guid, [FromBody] TransformPublishRequest? req)
     {
         try { await _antiforgery.ValidateRequestAsync(HttpContext); }
@@ -752,8 +763,12 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpPost("transform/workbench")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> GetMultiDatasourceWorkbench([FromBody] TransformWorkbenchRequest? req)
     {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
         var guids = req?.DatasourceGuids?.Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().ToList() ?? new();
         if (guids.Count == 0) return BadRequest(new { error = "At least one datasource guid is required." });
 
@@ -770,7 +785,7 @@ public class DatasourceController : ControllerBase
         var allColumns = new List<string>();
         foreach (var ds in datasources)
         {
-            var rows = await LoadDatasourcePreviewRowsAsync(ds, 1000);
+            var rows = await LoadDatasourcePreviewRowsAsync(ds, TransformPreviewPageSize);
             var schema = rows.FirstOrDefault()?.Keys.ToList() ?? new List<string>();
             allColumns.AddRange(schema);
             payload.Add(new
@@ -794,7 +809,7 @@ public class DatasourceController : ControllerBase
 
     private async Task<List<Dictionary<string, object>>> LoadDatasourcePreviewRowsAsync(Datasource ds, int maxRows)
     {
-        maxRows = Math.Clamp(maxRows <= 0 ? 5000 : maxRows, 1, 10000);
+        maxRows = Math.Clamp(maxRows <= 0 ? DefaultPreviewLoadRows : maxRows, 1, MaxPreviewLoadRows);
         var rows = new List<Dictionary<string, object>>();
 
         if (QueryExecutionService.RestApiTypes.Contains(ds.Type))
@@ -811,18 +826,42 @@ public class DatasourceController : ControllerBase
 
         if (QueryExecutionService.PowerBiTypes.Contains(ds.Type))
         {
-            var dax = "EVALUATE TOPN(" + maxRows + ", " + (ds.SelectedTables?.Split(',').FirstOrDefault()?.Trim() ?? "") + ")";
+            var rawTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            var safeDaxTable = BuildSafeDaxTableName(rawTable ?? "");
+            if (string.IsNullOrWhiteSpace(safeDaxTable)) return rows;
+            var dax = $"EVALUATE TOPN({maxRows}, '{safeDaxTable}')";
             var pbi = await _queryService.ExecuteReadOnlyAsync(ds, dax, maxRows);
             return pbi.Success ? pbi.Data : rows;
         }
 
         var firstTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
         if (string.IsNullOrWhiteSpace(firstTable)) return rows;
-        var safeTable = new string(firstTable.Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '.' || ch == '[' || ch == ']' || ch == ' ').ToArray());
+        var safeTable = BuildSafeSqlTableIdentifier(firstTable);
         if (string.IsNullOrWhiteSpace(safeTable)) return rows;
-        var sql = $"SELECT TOP {Math.Min(maxRows, 10000)} * FROM {safeTable}";
+        var sql = $"SELECT TOP {Math.Min(maxRows, MaxPreviewLoadRows)} * FROM {safeTable}";
         var result = await _queryService.ExecuteReadOnlyAsync(ds, sql, maxRows);
         return result.Success ? result.Data : rows;
+    }
+
+    private static string BuildSafeSqlTableIdentifier(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var cleaned = raw.Trim().Trim('[', ']', '"', '`');
+        var segments = cleaned.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var safeSegments = new List<string>();
+        foreach (var seg in segments)
+        {
+            var safe = new string(seg.Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
+            if (string.IsNullOrWhiteSpace(safe)) return "";
+            safeSegments.Add("[" + safe + "]");
+        }
+        return string.Join(".", safeSegments);
+    }
+
+    private static string BuildSafeDaxTableName(string raw)
+    {
+        var safe = new string((raw ?? "").Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ' ').ToArray()).Trim();
+        return safe.Replace("'", "''", StringComparison.Ordinal);
     }
 
     /// <summary>

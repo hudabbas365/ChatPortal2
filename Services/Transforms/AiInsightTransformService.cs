@@ -162,6 +162,13 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
                         audit.Add("Combine: rows appended from selected source tables.");
                         break;
                     case "merge_tables":
+                        var leftKey = ReadString(rule.Raw, "left_key", "");
+                        var rightKey = ReadString(rule.Raw, "right_key", leftKey);
+                        if (string.IsNullOrWhiteSpace(leftKey) || string.IsNullOrWhiteSpace(rightKey))
+                        {
+                            audit.Add("Combine warning: merge_tables skipped because left_key/right_key were not provided.");
+                            break;
+                        }
                         rows = ApplyMergeTables(rows, rule.Raw, sourceData);
                         audit.Add("Combine: table merge completed.");
                         break;

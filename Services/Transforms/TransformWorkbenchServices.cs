@@ -6,6 +6,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AIInsights.Services.Transforms;
 
+internal static class TransformWorkbenchConstants
+{
+    public const int MaxPreviewPageSize = 1000;
+}
+
 public record TransformValidationIssue(string Code, string Message, string? Reference = null);
 
 public sealed class TransformValidationSummary
@@ -171,7 +176,7 @@ public sealed class TransformPreviewService : ITransformPreviewService
         }, sourceRows);
         sw.Stop();
 
-        var safePageSize = Math.Clamp(pageSize <= 0 ? 1000 : pageSize, 1, 1000);
+        var safePageSize = Math.Clamp(pageSize <= 0 ? TransformWorkbenchConstants.MaxPreviewPageSize : pageSize, 1, TransformWorkbenchConstants.MaxPreviewPageSize);
         var safePage = Math.Max(page, 1);
         var totalRows = result.RowCount;
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalRows / (double)safePageSize));

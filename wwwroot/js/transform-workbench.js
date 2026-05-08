@@ -29,9 +29,9 @@
       if (s.params){
         Object.keys(s.params).forEach(k => {
           const val = s.params[k];
-          if (Array.isArray(val)) lines.push(`${k} = [${val.map(x=>`"${String(x).replace(/"/g,'\\"')}"`).join(', ')}]`);
+          if (Array.isArray(val)) lines.push(`${k} = [${val.map(x=>`"${String(x).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ')}]`);
           else if (typeof val === 'boolean') lines.push(`${k} = ${val ? 'true':'false'}`);
-          else if (val != null && val !== '') lines.push(`${k} = "${String(val).replace(/"/g,'\\"')}"`);
+          else if (val != null && val !== '') lines.push(`${k} = "${String(val).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
         });
       }
       lines.push('');
@@ -255,7 +255,10 @@
   async function doValidate(modal, state){
     state.toml = modal.querySelector('#twbToml').value || '';
     const validation = await fetchJson(`/api/datasources/${encodeURIComponent(state.dsGuid)}/transform/validate`, {
-      method:'POST', credentials:'same-origin', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ toml: state.toml })
+      method:'POST',
+      credentials:'same-origin',
+      headers:{ 'Content-Type':'application/json', 'RequestVerificationToken': token() },
+      body: JSON.stringify({ toml: state.toml })
     });
     modal.querySelector('#twbStatusValidation').textContent = validation.success ? 'Valid' : 'Invalid';
     modal.querySelector('#twbAiHint').textContent = validation.aiSuggestion || (validation.success ? 'Validation passed.' : 'Fix syntax and validate again.');
