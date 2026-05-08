@@ -34,6 +34,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<IntegrationHealthCheck> IntegrationHealthChecks => Set<IntegrationHealthCheck>();
     public DbSet<DigestRun> DigestRuns => Set<DigestRun>();
     public DbSet<PlanChangeLog> PlanChangeLogs => Set<PlanChangeLog>();
+    public DbSet<TransformDraft> TransformDrafts => Set<TransformDraft>();
+    public DbSet<TransformSource> TransformSources => Set<TransformSource>();
+    public DbSet<TransformStep> TransformSteps => Set<TransformStep>();
+    public DbSet<TransformRunAudit> TransformRunAudits => Set<TransformRunAudit>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -243,5 +247,56 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(p => p.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<TransformDraft>()
+            .HasIndex(d => d.Guid)
+            .IsUnique();
+
+        builder.Entity<TransformDraft>()
+            .HasOne(d => d.Datasource)
+            .WithMany()
+            .HasForeignKey(d => d.DatasourceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<TransformSource>()
+            .HasOne(s => s.TransformDraft)
+            .WithMany(d => d.Sources)
+            .HasForeignKey(s => s.TransformDraftId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<TransformSource>()
+            .HasOne(s => s.Datasource)
+            .WithMany()
+            .HasForeignKey(s => s.DatasourceId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        builder.Entity<TransformSource>()
+            .HasIndex(s => new { s.TransformDraftId, s.DatasourceId, s.Alias })
+            .IsUnique();
+
+        builder.Entity<TransformStep>()
+            .HasOne(s => s.TransformDraft)
+            .WithMany(d => d.Steps)
+            .HasForeignKey(s => s.TransformDraftId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<TransformStep>()
+            .HasIndex(s => new { s.TransformDraftId, s.SortOrder });
+
+        builder.Entity<TransformRunAudit>()
+            .HasIndex(a => a.RunGuid)
+            .IsUnique();
+
+        builder.Entity<TransformRunAudit>()
+            .HasOne(a => a.Datasource)
+            .WithMany()
+            .HasForeignKey(a => a.DatasourceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<TransformRunAudit>()
+            .HasOne(a => a.TransformDraft)
+            .WithMany()
+            .HasForeignKey(a => a.TransformDraftId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

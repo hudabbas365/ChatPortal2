@@ -7,6 +7,7 @@ public interface IAiInsightTransformService
 {
     bool HasEnabledTransform(Datasource ds);
     QueryExecutionResult Apply(Datasource ds, QueryExecutionResult result);
+    QueryExecutionResult ApplyWithSources(Datasource ds, QueryExecutionResult result, Dictionary<string, List<Dictionary<string, object>>>? sourceData);
     TransformParseResult Parse(string? toml);
 }
 
@@ -87,6 +88,12 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
     }
 
     public QueryExecutionResult Apply(Datasource ds, QueryExecutionResult result)
+        => ApplyWithSources(ds, result, null);
+
+    public QueryExecutionResult ApplyWithSources(
+        Datasource ds,
+        QueryExecutionResult result,
+        Dictionary<string, List<Dictionary<string, object>>>? sourceData)
     {
         if (!result.Success || !HasEnabledTransform(ds)) return result;
 
@@ -149,6 +156,61 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
                     case "aggregate":
                         rows = ApplyAggregation(rows, rule.Raw);
                         audit.Add("Aggregation: grouped and summarized.");
+                        break;
+                    case "append_rows":
+                        rows = ApplyAppendRows(rows, rule.Raw, sourceData);
+                        audit.Add("Combine: rows appended from selected source tables.");
+                        break;
+                    case "merge_tables":
+                        var leftKey = ReadString(rule.Raw, "left_key", "");
+                        var rightKey = ReadString(rule.Raw, "right_key", leftKey);
+                        if (string.IsNullOrWhiteSpace(leftKey) || string.IsNullOrWhiteSpace(rightKey))
+                        {
+                            audit.Add("Combine warning: merge_tables skipped because left_key/right_key were not provided.");
+                            break;
+                        }
+                        rows = ApplyMergeTables(rows, rule.Raw, sourceData);
+                        audit.Add("Combine: table merge completed.");
+                        break;
+                    case "pivot_table":
+                        rows = ApplyPivotTable(rows, rule.Raw);
+                        audit.Add("Shape: pivot table applied.");
+                        break;
+                    case "unpivot_table":
+                        rows = ApplyUnpivotTable(rows, rule.Raw);
+                        audit.Add("Shape: unpivot table applied.");
+                        break;
+                    case "transpose_table":
+                        rows = ApplyTransposeTable(rows, rule.Raw);
+                        audit.Add("Shape: transpose table applied.");
+                        break;
+                    case "filter_rows":
+                        rows = ApplyFilterRows(rows, rule.Raw);
+                        audit.Add("Shape: filter rows applied.");
+                        break;
+                    case "sort_rows":
+                        rows = ApplySortRows(rows, rule.Raw);
+                        audit.Add("Shape: sort rows applied.");
+                        break;
+                    case "select_columns":
+                        rows = ApplySelectColumns(rows, rule.Raw);
+                        audit.Add("Shape: select columns applied.");
+                        break;
+                    case "rename_columns":
+                        ApplyRenameColumns(rows, rule.Raw);
+                        audit.Add("Shape: rename columns applied.");
+                        break;
+                    case "split_column":
+                        ApplySplitColumn(rows, rule.Raw);
+                        audit.Add("Clean: split column applied.");
+                        break;
+                    case "replace_values":
+                        ApplyReplaceValues(rows, rule.Raw);
+                        audit.Add("Clean: replace values applied.");
+                        break;
+                    case "cast_types":
+                        ApplyCastTypes(rows, rule.Raw);
+                        audit.Add("Validate: cast types applied.");
                         break;
                     case "flatten_json":
                         ApplyFlatten(rows, rule.Raw);
@@ -416,6 +478,250 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
             output.Add(row);
         }
         return output;
+    }
+
+    private static List<Dictionary<string, object>> ApplyAppendRows(
+        List<Dictionary<string, object>> rows,
+        Dictionary<string, object> raw,
+        Dictionary<string, List<Dictionary<string, object>>>? sourceData)
+    {
+        var aliases = ReadStringList(raw, "sources");
+        if (sourceData == null || aliases.Count == 0) return rows;
+        foreach (var alias in aliases)
+        {
+            if (!sourceData.TryGetValue(alias, out var toAppend) || toAppend == null) continue;
+            rows.AddRange(toAppend.Select(r => new Dictionary<string, object>(r, StringComparer.OrdinalIgnoreCase)));
+        }
+        return rows;
+    }
+
+    private static List<Dictionary<string, object>> ApplyMergeTables(
+        List<Dictionary<string, object>> rows,
+        Dictionary<string, object> raw,
+        Dictionary<string, List<Dictionary<string, object>>>? sourceData)
+    {
+        if (sourceData == null || sourceData.Count == 0) return rows;
+        var leftAlias = ReadString(raw, "left_source", "left");
+        var rightAlias = ReadString(raw, "right_source", "right");
+        var leftRows = sourceData.TryGetValue(leftAlias, out var lRows) ? lRows : rows;
+        var rightRows = sourceData.TryGetValue(rightAlias, out var rRows) ? rRows : rows;
+        var leftKey = ReadString(raw, "left_key", "");
+        var rightKey = ReadString(raw, "right_key", leftKey);
+        if (string.IsNullOrWhiteSpace(leftKey) || string.IsNullOrWhiteSpace(rightKey)) return rows;
+        var joinType = ReadString(raw, "join_type", "left").ToLowerInvariant();
+        var rightLookup = rightRows
+            .Where(r => r.TryGetValue(rightKey, out var rv) && rv != null)
+            .GroupBy(r => r[rightKey]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var merged = new List<Dictionary<string, object>>();
+        foreach (var left in leftRows)
+        {
+            var key = left.TryGetValue(leftKey, out var lv) ? lv?.ToString() ?? "" : "";
+            if (rightLookup.TryGetValue(key, out var matches) && matches.Count > 0)
+            {
+                foreach (var right in matches)
+                {
+                    var row = new Dictionary<string, object>(left, StringComparer.OrdinalIgnoreCase);
+                    foreach (var kv in right)
+                    {
+                        var target = row.ContainsKey(kv.Key) ? $"{rightAlias}_{kv.Key}" : kv.Key;
+                        row[target] = kv.Value;
+                    }
+                    merged.Add(row);
+                }
+            }
+            else if (joinType is "left" or "full")
+            {
+                merged.Add(new Dictionary<string, object>(left, StringComparer.OrdinalIgnoreCase));
+            }
+        }
+
+        if (joinType is "right" or "full")
+        {
+            var leftKeys = new HashSet<string>(leftRows
+                .Select(r => r.TryGetValue(leftKey, out var lv) ? lv?.ToString() ?? "" : ""), StringComparer.OrdinalIgnoreCase);
+            foreach (var right in rightRows)
+            {
+                var key = right.TryGetValue(rightKey, out var rv) ? rv?.ToString() ?? "" : "";
+                if (leftKeys.Contains(key)) continue;
+                merged.Add(new Dictionary<string, object>(right, StringComparer.OrdinalIgnoreCase));
+            }
+        }
+
+        return merged;
+    }
+
+    private static List<Dictionary<string, object>> ApplyPivotTable(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var index = ReadString(raw, "index", "");
+        var columns = ReadString(raw, "columns", "");
+        var values = ReadString(raw, "values", "");
+        if (string.IsNullOrWhiteSpace(index) || string.IsNullOrWhiteSpace(columns) || string.IsNullOrWhiteSpace(values))
+            return rows;
+
+        var pivot = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var indexValue = row.TryGetValue(index, out var iv) ? iv?.ToString() ?? "" : "";
+            var colValue = row.TryGetValue(columns, out var cv) ? cv?.ToString() ?? "" : "";
+            var cellValue = row.TryGetValue(values, out var vv) ? vv : null;
+            if (!pivot.TryGetValue(indexValue, out var target))
+            {
+                target = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [index] = indexValue };
+                pivot[indexValue] = target;
+            }
+            target[colValue] = cellValue ?? "";
+        }
+
+        return pivot.Values.ToList();
+    }
+
+    private static List<Dictionary<string, object>> ApplyUnpivotTable(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var columns = ReadStringList(raw, "columns");
+        var nameField = ReadString(raw, "name_field", "attribute");
+        var valueField = ReadString(raw, "value_field", "value");
+        if (columns.Count == 0) return rows;
+        var output = new List<Dictionary<string, object>>();
+        foreach (var row in rows)
+        {
+            var baseFields = row.Where(kv => !columns.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+            foreach (var c in columns)
+            {
+                var nr = new Dictionary<string, object>(baseFields, StringComparer.OrdinalIgnoreCase)
+                {
+                    [nameField] = c,
+                    [valueField] = row.TryGetValue(c, out var v) ? v ?? "" : ""
+                };
+                output.Add(nr);
+            }
+        }
+        return output;
+    }
+
+    private static List<Dictionary<string, object>> ApplyTransposeTable(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        if (rows.Count == 0) return rows;
+        var keyColumn = ReadString(raw, "key_column", "Field");
+        var valuePrefix = ReadString(raw, "value_prefix", "Row");
+        var allColumns = rows.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var output = new List<Dictionary<string, object>>();
+        foreach (var col in allColumns)
+        {
+            var nr = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [keyColumn] = col };
+            for (var i = 0; i < rows.Count; i++)
+                nr[$"{valuePrefix}{i + 1}"] = rows[i].TryGetValue(col, out var v) ? v ?? "" : "";
+            output.Add(nr);
+        }
+        return output;
+    }
+
+    private static List<Dictionary<string, object>> ApplyFilterRows(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var condition = ReadString(raw, "condition", "");
+        if (string.IsNullOrWhiteSpace(condition)) return rows;
+        return rows.Where(r => EvaluateCondition(condition, r)).ToList();
+    }
+
+    private static List<Dictionary<string, object>> ApplySortRows(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var by = ReadString(raw, "by", "");
+        if (string.IsNullOrWhiteSpace(by)) return rows;
+        var direction = ReadString(raw, "direction", "asc").ToLowerInvariant();
+        return direction == "desc"
+            ? rows.OrderByDescending(r => r.TryGetValue(by, out var v) ? v?.ToString() ?? "" : "", StringComparer.OrdinalIgnoreCase).ToList()
+            : rows.OrderBy(r => r.TryGetValue(by, out var v) ? v?.ToString() ?? "" : "", StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static List<Dictionary<string, object>> ApplySelectColumns(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var include = ReadStringList(raw, "include");
+        var exclude = ReadStringList(raw, "exclude");
+        if (include.Count == 0 && exclude.Count == 0) return rows;
+        return rows.Select(r =>
+        {
+            var output = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (include.Count > 0)
+            {
+                foreach (var c in include)
+                    if (r.TryGetValue(c, out var v)) output[c] = v ?? "";
+            }
+            else
+            {
+                foreach (var kv in r)
+                    if (!exclude.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                        output[kv.Key] = kv.Value;
+            }
+            return output;
+        }).ToList();
+    }
+
+    private static void ApplyRenameColumns(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var mapping = ReadStringDictionary(raw, "mapping");
+        if (mapping.Count == 0) return;
+        foreach (var row in rows)
+        {
+            foreach (var (oldName, newName) in mapping)
+            {
+                if (string.IsNullOrWhiteSpace(newName) || !row.TryGetValue(oldName, out var value)) continue;
+                row.Remove(oldName);
+                row[newName] = value;
+            }
+        }
+    }
+
+    private static void ApplySplitColumn(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var field = ReadString(raw, "field", "");
+        var delimiter = ReadString(raw, "delimiter", ",");
+        var targets = ReadStringList(raw, "targets");
+        if (string.IsNullOrWhiteSpace(field) || targets.Count == 0) return;
+        foreach (var row in rows)
+        {
+            var input = row.TryGetValue(field, out var v) ? v?.ToString() ?? "" : "";
+            var parts = input.Split(delimiter);
+            for (var i = 0; i < targets.Count; i++)
+                row[targets[i]] = i < parts.Length ? parts[i].Trim() : "";
+        }
+    }
+
+    private static void ApplyReplaceValues(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var field = ReadString(raw, "field", "");
+        var find = ReadString(raw, "find", "");
+        var replace = ReadString(raw, "replace", "");
+        if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(find)) return;
+        foreach (var row in rows)
+        {
+            if (!row.TryGetValue(field, out var value) || value == null) continue;
+            row[field] = (value.ToString() ?? "").Replace(find, replace, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void ApplyCastTypes(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)
+    {
+        var types = ReadStringDictionary(raw, "types");
+        if (types.Count == 0) return;
+        foreach (var row in rows)
+        {
+            foreach (var (field, targetType) in types)
+            {
+                if (!row.TryGetValue(field, out var value) || value == null) continue;
+                var text = value.ToString() ?? "";
+                row[field] = targetType.ToLowerInvariant() switch
+                {
+                    "int" or "integer" when int.TryParse(text, out var i) => i,
+                    "decimal" or "number" when decimal.TryParse(text, out var d) => d,
+                    "double" when double.TryParse(text, out var db) => db,
+                    "bool" or "boolean" when bool.TryParse(text, out var b) => b,
+                    "datetime" or "date" when DateTime.TryParse(text, out var dt) => dt,
+                    _ => value
+                };
+            }
+        }
     }
 
     private static void ApplyFlatten(List<Dictionary<string, object>> rows, Dictionary<string, object> raw)

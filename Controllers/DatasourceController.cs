@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace AIInsights.Controllers;
 
@@ -18,6 +19,10 @@ namespace AIInsights.Controllers;
 [ApiController]
 public class DatasourceController : ControllerBase
 {
+    private const int DefaultPreviewLoadRows = 5000;
+    private const int MaxPreviewLoadRows = 10000;
+    private const int TransformPreviewPageSize = 1000;
+
     private static readonly List<string> DatasourceTypes = new()
     {
         "SQL Server",
@@ -54,9 +59,28 @@ public class DatasourceController : ControllerBase
     private readonly IQueryCacheInvalidator _cacheInvalidator;
     private readonly IEnumerable<IDatasourceTypeService> _datasourceServices;
     private readonly IAiInsightTransformService _transformService;
+    private readonly ITransformValidationService _transformValidation;
+    private readonly ITransformDraftService _transformDrafts;
+    private readonly ITransformPreviewService _transformPreview;
+    private readonly ITransformPublishService _transformPublish;
+    private readonly ITransformSuggestionService _transformSuggestion;
     private readonly IAntiforgery _antiforgery;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices, IAiInsightTransformService transformService, IAntiforgery antiforgery)
+    public DatasourceController(
+        AppDbContext db,
+        IQueryExecutionService queryService,
+        IWorkspacePermissionService permissions,
+        IEncryptionService encryption,
+        IRelationshipService relationships,
+        IQueryCacheInvalidator cacheInvalidator,
+        IEnumerable<IDatasourceTypeService> datasourceServices,
+        IAiInsightTransformService transformService,
+        ITransformValidationService transformValidation,
+        ITransformDraftService transformDrafts,
+        ITransformPreviewService transformPreview,
+        ITransformPublishService transformPublish,
+        ITransformSuggestionService transformSuggestion,
+        IAntiforgery antiforgery)
     {
         _db = db;
         _queryService = queryService;
@@ -66,6 +90,11 @@ public class DatasourceController : ControllerBase
         _cacheInvalidator = cacheInvalidator;
         _datasourceServices = datasourceServices;
         _transformService = transformService;
+        _transformValidation = transformValidation;
+        _transformDrafts = transformDrafts;
+        _transformPreview = transformPreview;
+        _transformPublish = transformPublish;
+        _transformSuggestion = transformSuggestion;
         _antiforgery = antiforgery;
     }
 
@@ -501,6 +530,26 @@ public class DatasourceController : ControllerBase
         if (access != null) return access;
 
         var parse = _transformService.Parse(ds.TransformToml);
+        var draftList = await _db.TransformDrafts
+            .Where(d => d.DatasourceId == ds.Id)
+            .OrderByDescending(d => d.UpdatedAt)
+            .Take(20)
+            .Select(d => new
+            {
+                draftGuid = d.Guid,
+                d.Name,
+                d.Status,
+                d.UpdatedAt,
+                d.PublishedAt
+            })
+            .ToListAsync();
+
+        var relatedDatasources = await _db.Datasources
+            .Where(d => d.WorkspaceId == ds.WorkspaceId)
+            .OrderBy(d => d.Name)
+            .Select(d => new { d.Id, d.Guid, d.Name, d.Type })
+            .ToListAsync();
+
         return Ok(new
         {
             datasourceId = ds.Id,
@@ -509,11 +558,99 @@ public class DatasourceController : ControllerBase
             toml = ds.TransformToml ?? "",
             parseSuccess = parse.Success,
             parseError = parse.Error,
-            ruleCount = parse.Definition?.Rules.Count ?? 0
+            ruleCount = parse.Definition?.Rules.Count ?? 0,
+            workbench = new
+            {
+                drafts = draftList,
+                datasources = relatedDatasources,
+                leftPanel = new { multiDatasource = true, aiAssist = true },
+                centerPanel = new { pageSize = 1000, tableLike = true },
+                rightPanel = new { steps = parse.Definition?.Rules.Count ?? 0 }
+            }
+        });
+    }
+
+    [HttpPost("{guid}/transform/draft")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveTransformDraft(string guid, [FromBody] TransformDraftUpsertRequest? req)
+    {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        req ??= new TransformDraftUpsertRequest();
+        var draft = await _transformDrafts.SaveDraftAsync(ds, req, User.FindFirstValue(ClaimTypes.NameIdentifier));
+        return Ok(new
+        {
+            success = true,
+            draftGuid = draft.Guid,
+            draftStatus = draft.Status,
+            draftUpdatedAt = draft.UpdatedAt
+        });
+    }
+
+    [HttpGet("{guid}/transform/draft/{draftId}")]
+    public async Task<IActionResult> LoadTransformDraft(string guid, string draftId)
+    {
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var draft = await _transformDrafts.LoadDraftAsync(ds.Id, draftId);
+        if (draft == null) return NotFound();
+
+        return Ok(new
+        {
+            success = true,
+            draftGuid = draft.Guid,
+            draft.Name,
+            draft.Status,
+            draft.TomlDefinition,
+            draft.StepsJson,
+            sourceAliases = draft.Sources.OrderBy(s => s.SortOrder).Select(s => s.Alias).ToList(),
+            draft.UpdatedAt
+        });
+    }
+
+    [HttpPost("{guid}/transform/validate")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ValidateTransform(string guid, [FromBody] TransformValidateRequest? req)
+    {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var validation = _transformValidation.ValidateToml(req?.Toml ?? ds.TransformToml);
+        return Ok(new
+        {
+            success = validation.Success,
+            syntaxErrors = validation.Issues.Select(i => new { code = i.Code, message = i.Message, reference = i.Reference }),
+            stepCount = validation.ParsedSteps.Count,
+            message = validation.Success ? "Validation passed." : "Validation failed.",
+            aiSuggestion = validation.Suggestion
         });
     }
 
     [HttpPost("{guid}/transform/preview")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewTransform(string guid, [FromBody] TransformPreviewRequest? req)
     {
         try { await _antiforgery.ValidateRequestAsync(HttpContext); }
@@ -528,6 +665,25 @@ public class DatasourceController : ControllerBase
         if (access != null) return access;
 
         var rows = req?.Rows ?? new();
+        if (rows.Count == 0 && (req?.AutoLoadDatasourceRows ?? true))
+            rows = await LoadDatasourcePreviewRowsAsync(ds, req?.AutoLoadMaxRows ?? DefaultPreviewLoadRows);
+
+        var sourceRows = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
+        if (req?.SourceRows?.Count > 0)
+        {
+            foreach (var kv in req.SourceRows)
+                sourceRows[kv.Key] = kv.Value ?? new List<Dictionary<string, object>>();
+        }
+        if (req?.DatasourceGuids?.Count > 1)
+        {
+            var sourceDatasources = await _db.Datasources.Where(d => req.DatasourceGuids.Contains(d.Guid)).ToListAsync();
+            foreach (var sds in sourceDatasources)
+            {
+                if (sourceRows.ContainsKey(sds.Guid)) continue;
+                sourceRows[sds.Guid] = await LoadDatasourcePreviewRowsAsync(sds, req.AutoLoadMaxRows ?? DefaultPreviewLoadRows);
+            }
+        }
+
         var previewDatasource = new Datasource
         {
             Id = ds.Id,
@@ -537,20 +693,175 @@ public class DatasourceController : ControllerBase
             TransformEnabled = req?.Enabled ?? ds.TransformEnabled,
             TransformToml = req?.Toml ?? ds.TransformToml
         };
-        var transformed = _transformService.Apply(previewDatasource, new QueryExecutionResult
+
+        var preview = _transformPreview.Preview(
+            previewDatasource,
+            req?.Toml ?? ds.TransformToml,
+            rows,
+            sourceRows.Count > 0 ? sourceRows : null,
+            req?.Page ?? 1,
+            req?.PageSize ?? TransformPreviewPageSize);
+
+        var audit = new TransformRunAudit
         {
-            Success = true,
-            Data = rows,
-            RowCount = rows.Count
-        });
+            DatasourceId = ds.Id,
+            Success = preview.Success,
+            InputRowCount = rows.Count,
+            OutputRowCount = preview.TotalRowCount,
+            DurationMs = preview.RenderDurationMs,
+            MessagesJson = JsonSerializer.Serialize(preview.Audit),
+            Error = preview.Error,
+            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.TransformRunAudits.Add(audit);
+        await _db.SaveChangesAsync();
+
         return Ok(new
         {
-            success = transformed.Success,
-            rowCount = transformed.RowCount,
-            data = transformed.Data,
-            error = transformed.Error,
-            audit = transformed.TransformAudit
+            success = preview.Success,
+            rowCount = preview.TotalRowCount,
+            page = preview.Page,
+            pageSize = preview.PageSize,
+            totalPages = preview.TotalPages,
+            data = preview.PagedRows,
+            beforeRowCount = rows.Count,
+            error = preview.Error,
+            audit = preview.Audit,
+            warnings = preview.Warnings,
+            renderDurationMs = preview.RenderDurationMs,
+            stepSummary = preview.StepSummary
         });
+    }
+
+    [HttpPost("{guid}/transform/publish")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PublishTransform(string guid, [FromBody] TransformPublishRequest? req)
+    {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var publish = await _transformPublish.PublishAsync(ds, req?.Toml ?? ds.TransformToml, User.FindFirstValue(ClaimTypes.NameIdentifier), req?.DraftGuid);
+        if (!publish.Success)
+            return BadRequest(new { success = false, error = publish.Error });
+
+        return Ok(new
+        {
+            success = true,
+            enabled = ds.TransformEnabled,
+            toml = ds.TransformToml ?? "",
+            publishTimestamp = DateTime.UtcNow
+        });
+    }
+
+    [HttpPost("transform/workbench")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> GetMultiDatasourceWorkbench([FromBody] TransformWorkbenchRequest? req)
+    {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
+        var guids = req?.DatasourceGuids?.Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().ToList() ?? new();
+        if (guids.Count == 0) return BadRequest(new { error = "At least one datasource guid is required." });
+
+        var datasources = await _db.Datasources.Where(d => guids.Contains(d.Guid)).ToListAsync();
+        if (datasources.Count == 0) return NotFound();
+
+        foreach (var ds in datasources)
+        {
+            var access = await EnsureViewAccessAsync(ds);
+            if (access != null) return access;
+        }
+
+        var payload = new List<object>();
+        var allColumns = new List<string>();
+        foreach (var ds in datasources)
+        {
+            var rows = await LoadDatasourcePreviewRowsAsync(ds, TransformPreviewPageSize);
+            var schema = rows.FirstOrDefault()?.Keys.ToList() ?? new List<string>();
+            allColumns.AddRange(schema);
+            payload.Add(new
+            {
+                ds.Id,
+                ds.Guid,
+                ds.Name,
+                ds.Type,
+                schema,
+                sampleRowCount = rows.Count
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            datasources = payload,
+            aiSuggestion = _transformSuggestion.SuggestNextStep(allColumns)
+        });
+    }
+
+    private async Task<List<Dictionary<string, object>>> LoadDatasourcePreviewRowsAsync(Datasource ds, int maxRows)
+    {
+        maxRows = Math.Clamp(maxRows <= 0 ? DefaultPreviewLoadRows : maxRows, 1, MaxPreviewLoadRows);
+        var rows = new List<Dictionary<string, object>>();
+
+        if (QueryExecutionService.RestApiTypes.Contains(ds.Type))
+        {
+            var rest = await _queryService.ExecuteRestApiAsync(ds, maxRows);
+            return rest.Success ? rest.Data : rows;
+        }
+
+        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type))
+        {
+            var file = await _queryService.ExecuteFileUrlAsync(ds, maxRows);
+            return file.Success ? file.Data : rows;
+        }
+
+        if (QueryExecutionService.PowerBiTypes.Contains(ds.Type))
+        {
+            var rawTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            var safeDaxTable = BuildSafeDaxTableName(rawTable ?? "");
+            if (string.IsNullOrWhiteSpace(safeDaxTable)) return rows;
+            var dax = $"EVALUATE TOPN({maxRows}, '{safeDaxTable}')";
+            var pbi = await _queryService.ExecuteReadOnlyAsync(ds, dax, maxRows);
+            return pbi.Success ? pbi.Data : rows;
+        }
+
+        var firstTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(firstTable)) return rows;
+        var safeTable = BuildSafeSqlTableIdentifier(firstTable);
+        if (string.IsNullOrWhiteSpace(safeTable)) return rows;
+        var sql = $"SELECT TOP {Math.Min(maxRows, MaxPreviewLoadRows)} * FROM {safeTable}";
+        var result = await _queryService.ExecuteReadOnlyAsync(ds, sql, maxRows);
+        return result.Success ? result.Data : rows;
+    }
+
+    private static string BuildSafeSqlTableIdentifier(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var cleaned = raw.Trim().Trim('[', ']', '"', '`');
+        var segments = cleaned.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var safeSegments = new List<string>();
+        foreach (var seg in segments)
+        {
+            var safe = new string(seg.Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
+            if (string.IsNullOrWhiteSpace(safe)) return "";
+            safeSegments.Add("[" + safe + "]");
+        }
+        return string.Join(".", safeSegments);
+    }
+
+    private static string BuildSafeDaxTableName(string raw)
+    {
+        var safe = new string((raw ?? "").Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ' ').ToArray()).Trim();
+        return safe.Replace("'", "''", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -722,4 +1033,26 @@ public class TransformPreviewRequest
     public bool? Enabled { get; set; }
     public string? Toml { get; set; }
     public List<Dictionary<string, object>> Rows { get; set; } = new();
+    public int? Page { get; set; }
+    public int? PageSize { get; set; }
+    public bool? AutoLoadDatasourceRows { get; set; }
+    public int? AutoLoadMaxRows { get; set; }
+    public List<string>? DatasourceGuids { get; set; }
+    public Dictionary<string, List<Dictionary<string, object>>>? SourceRows { get; set; }
+}
+
+public class TransformValidateRequest
+{
+    public string? Toml { get; set; }
+}
+
+public class TransformPublishRequest
+{
+    public string? Toml { get; set; }
+    public string? DraftGuid { get; set; }
+}
+
+public class TransformWorkbenchRequest
+{
+    public List<string>? DatasourceGuids { get; set; }
 }

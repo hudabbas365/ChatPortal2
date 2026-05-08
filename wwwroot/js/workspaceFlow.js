@@ -757,6 +757,7 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh Cache
                             </button>
                             <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="dsTransformWorkbenchBtn"><i class="bi bi-layout-three-columns me-1"></i>Open Workbench</button>
                                 <button type="button" class="btn btn-sm btn-primary" id="dsTransformSaveBtn"><i class="bi bi-save me-1"></i>Save Transform</button>
                                 ${footerHtml}
                                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -851,6 +852,16 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                 });
             }
             const transformSaveBtn = modal.querySelector('#dsTransformSaveBtn');
+            const transformWorkbenchBtn = modal.querySelector('#dsTransformWorkbenchBtn');
+            if (transformWorkbenchBtn) {
+                transformWorkbenchBtn.addEventListener('click', () => {
+                    if (window.transformWorkbench && typeof window.transformWorkbench.open === 'function') {
+                        window.transformWorkbench.open(ds);
+                    } else {
+                        alert('Transform workbench is not available.');
+                    }
+                });
+            }
             if (transformSaveBtn) {
                 transformSaveBtn.addEventListener('click', async () => {
                     const status = modal.querySelector('#dsTransformStatus');
