@@ -3,6 +3,11 @@
     ViewData["Title"] = "Organizations";
     ViewData["ActivePage"] = "orgs";
     Layout = "~/Views/Shared/_Layout.cshtml";
+    var duplicateNames = Model
+        .GroupBy(o => o.Name)
+        .Where(g => g.Count() > 1)
+        .Select(g => g.Key)
+        .ToHashSet(StringComparer.Ordinal);
 }
 
 <div class="page-header d-flex justify-content-between align-items-center">
@@ -10,6 +15,9 @@
         <h1 class="page-title">Organizations</h1>
         <p class="page-desc">@Model.Count registered organizations</p>
     </div>
+    <a href="/superadmin/organizations/trash" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-trash"></i> Trash
+    </a>
 </div>
 
 <div class="card-panel" style="overflow-x:auto">
@@ -38,6 +46,8 @@
                 var trialCount = org.Users?.Count(u => u.Subscription?.IsTrialActive == true) ?? 0;
                 var revenue = proCount * AIInsights.Models.PlanPricing.ProPricePerUser
                             + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
+                var isDuplicateName = duplicateNames.Contains(org.Name);
+                var disambiguationToken = $"{org.Name}#{org.OrganizationGuid.ToString("N")[^4..]}";
                 <tr>
                     <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
                     <td>
@@ -115,6 +125,10 @@
                             <button type="button" class="btn-ghost-sm sa-org-delete-btn"
                                     data-org-id="@org.Id"
                                     data-org-name="@org.Name"
+                                    data-org-guid="@org.OrganizationGuid"
+                                    data-org-guid-compact="@org.OrganizationGuid.ToString("N")"
+                                    data-is-duplicate-name="@(isDuplicateName ? "true" : "false")"
+                                    data-confirm-token="@disambiguationToken"
                                     data-user-count="@(org.Users?.Count ?? 0)"
                                     data-ws-count="@(org.Workspaces?.Count ?? 0)"
                                     title="Delete organization and all related data"
@@ -150,6 +164,13 @@
                 You are about to permanently delete
                 <strong id="saDelOrgName" style="color:#1e3a5f"></strong>.
             </p>
+            <div style="margin:0 0 .65rem;font-size:.78rem;color:var(--text-dim)">
+                <div><strong>Internal Id:</strong> <code id="saDelOrgId">-</code></div>
+                <div><strong>Organization GUID:</strong> <code id="saDelOrgGuid">-</code></div>
+            </div>
+            <div id="saDelDuplicateWarn" style="display:none;margin:0 0 .75rem;padding:.6rem .7rem;border-radius:8px;border:1px solid #fcd34d;background:#fffbeb;color:#92400e;font-size:.8rem;font-weight:600">
+                ⚠️ Another organization shares this name. To prevent accidental deletion, type the disambiguation token below.
+            </div>
             <p style="margin:0 0 .65rem;color:var(--text-dim)">
                 The following will be removed:
             </p>
@@ -159,9 +180,12 @@
                 <li>All agents, datasources &amp; connection strings</li>
                 <li>Token usage, payment records, activity logs &amp; notifications</li>
             </ul>
-            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+            <label id="saDelConfirmLabel" style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
                 Type the organization name to confirm
             </label>
+            <div id="saDelTokenHint" style="display:none;font-size:.78rem;color:var(--text-dim);margin-top:.4rem">
+                Required token: <code id="saDelRequiredToken"></code>
+            </div>
             <input type="text" id="saDelConfirmInput" class="form-control form-control-sm mt-1"
                    autocomplete="off" placeholder="Organization name"
                    style="font-family:ui-monospace,Menlo,Consolas,monospace" />
@@ -273,21 +297,39 @@ document.addEventListener('click', function (e) {
     var nameEl        = document.getElementById('saDelOrgName');
     var userCountEl   = document.getElementById('saDelUserCount');
     var wsCountEl     = document.getElementById('saDelWsCount');
+    var orgIdEl       = document.getElementById('saDelOrgId');
+    var orgGuidEl     = document.getElementById('saDelOrgGuid');
+    var duplicateWarn = document.getElementById('saDelDuplicateWarn');
+    var confirmLabel  = document.getElementById('saDelConfirmLabel');
+    var tokenHint     = document.getElementById('saDelTokenHint');
+    var requiredTokenEl = document.getElementById('saDelRequiredToken');
     var confirmInput  = document.getElementById('saDelConfirmInput');
     var confirmBtn    = document.getElementById('saDelConfirmBtn');
     var cancelBtn     = document.getElementById('saDelCancelBtn');
     var errEl         = document.getElementById('saDelError');
     var pendingOrgId  = null;
+    var pendingOrgGuid = '';
     var pendingName   = '';
+    var pendingExpectedConfirm = '';
 
-    function open(orgId, orgName, userCount, wsCount) {
+    function open(orgId, orgName, orgGuid, userCount, wsCount, isDuplicateName, confirmToken) {
         pendingOrgId = orgId;
+        pendingOrgGuid = orgGuid || '';
         pendingName  = orgName || '';
+        pendingExpectedConfirm = isDuplicateName ? (confirmToken || '') : pendingName;
         nameEl.textContent      = pendingName;
         userCountEl.textContent = userCount;
         wsCountEl.textContent   = wsCount;
+        orgIdEl.textContent     = pendingOrgId || '-';
+        orgGuidEl.textContent   = pendingOrgGuid || '-';
+        duplicateWarn.style.display = isDuplicateName ? '' : 'none';
+        tokenHint.style.display = isDuplicateName ? '' : 'none';
+        requiredTokenEl.textContent = isDuplicateName ? pendingExpectedConfirm : '';
+        confirmLabel.textContent = isDuplicateName
+            ? 'Type the disambiguation token to confirm'
+            : 'Type the organization name to confirm';
         confirmInput.value      = '';
-        confirmInput.placeholder = pendingName;
+        confirmInput.placeholder = pendingExpectedConfirm || pendingName;
         confirmBtn.disabled     = true;
         confirmBtn.innerHTML    = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
         errEl.style.display     = 'none';
@@ -299,11 +341,13 @@ document.addEventListener('click', function (e) {
     function close() {
         backdrop.style.display = 'none';
         pendingOrgId = null;
+        pendingOrgGuid = '';
         pendingName  = '';
+        pendingExpectedConfirm = '';
     }
 
     confirmInput.addEventListener('input', function () {
-        confirmBtn.disabled = confirmInput.value !== pendingName;
+        confirmBtn.disabled = confirmInput.value !== pendingExpectedConfirm;
     });
 
     cancelBtn.addEventListener('click', close);
@@ -315,13 +359,14 @@ document.addEventListener('click', function (e) {
     });
 
     confirmBtn.addEventListener('click', async function () {
-        if (!pendingOrgId || confirmInput.value !== pendingName) return;
+        if (!pendingOrgId || confirmInput.value !== pendingExpectedConfirm) return;
         confirmBtn.disabled  = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting…';
         errEl.style.display  = 'none';
         try {
             var url = '/api/admin/super/orgs/' + pendingOrgId
-                    + '?confirm=' + encodeURIComponent(pendingName);
+                    + '?confirm=' + encodeURIComponent(pendingExpectedConfirm)
+                    + '&orgGuid=' + encodeURIComponent(pendingOrgGuid || '');
             var r = await fetch(url, { method: 'DELETE', credentials: 'same-origin' });
             var data = await r.json().catch(function () { return {}; });
             if (!r.ok) {
@@ -353,8 +398,11 @@ document.addEventListener('click', function (e) {
         open(
             btn.dataset.orgId,
             btn.dataset.orgName || '',
+            btn.dataset.orgGuid || '',
             btn.dataset.userCount || '0',
-            btn.dataset.wsCount   || '0'
+            btn.dataset.wsCount   || '0',
+            btn.dataset.isDuplicateName === 'true',
+            btn.dataset.confirmToken || ''
         );
     });
 })();

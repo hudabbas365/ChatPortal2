@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace AIInsights.SuperAdmin.Controllers;
 
@@ -187,6 +189,46 @@ public class SuperAdminController : Controller
         return View("~/Views/Admin/Organizations.cshtml", orgs);
     }
 
+    [HttpGet("/superadmin/organizations/trash")]
+    public async Task<IActionResult> OrganizationsTrash()
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var now = DateTime.UtcNow;
+        var archives = await _db.OrganizationDeletionArchives
+            .OrderByDescending(a => a.DeletedAt)
+            .Select(a => new OrganizationTrashRowViewModel
+            {
+                ArchiveId = a.Id,
+                Name = a.Name,
+                OriginalOrganizationGuid = a.OriginalOrganizationGuid,
+                DeletedAt = a.DeletedAt,
+                DeletedByDisplayName = a.DeletedByDisplayName,
+                DeletedByUserId = a.DeletedByUserId,
+                ExpiresAt = a.ExpiresAt,
+                RestoredAt = a.RestoredAt,
+                SizeBytes = a.SizeBytes,
+                IsExpired = a.ExpiresAt <= now
+            })
+            .ToListAsync();
+
+        return View("~/Views/Admin/OrganizationsTrash.cshtml", archives);
+    }
+
+    public class OrganizationTrashRowViewModel
+    {
+        public int ArchiveId { get; set; }
+        public string Name { get; set; } = "";
+        public Guid OriginalOrganizationGuid { get; set; }
+        public DateTime DeletedAt { get; set; }
+        public string? DeletedByDisplayName { get; set; }
+        public string? DeletedByUserId { get; set; }
+        public DateTime ExpiresAt { get; set; }
+        public DateTime? RestoredAt { get; set; }
+        public int SizeBytes { get; set; }
+        public bool IsExpired { get; set; }
+    }
+
     [HttpGet("/api/admin/super/orgs")]
     public async Task<IActionResult> GetOrganizationsForPlanEditor()
     {
@@ -254,21 +296,34 @@ public class SuperAdminController : Controller
     /// method explicitly cleans up the rest inside a single transaction.
     /// </summary>
     [HttpDelete("/api/admin/super/orgs/{id}")]
-    public async Task<IActionResult> DeleteOrganization(int id, [FromQuery] string? confirm)
+    public async Task<IActionResult> DeleteOrganization(int id, [FromQuery] string? confirm, [FromQuery] Guid? orgGuid = null)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
 
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
-        // Require an explicit name match to guard against accidental deletes.
+        if (orgGuid.HasValue && orgGuid.Value != org.OrganizationGuid)
+            return BadRequest(new { error = "Organization GUID does not match the selected organization." });
+
+        var duplicateNameCount = await _db.Organizations.CountAsync(o => o.Name == org.Name);
+        var expectedConfirm = duplicateNameCount > 1
+            ? BuildDisambiguationToken(org.Name, org.OrganizationGuid)
+            : org.Name;
+
         if (string.IsNullOrWhiteSpace(confirm) ||
-            !string.Equals(confirm.Trim(), org.Name, StringComparison.Ordinal))
+            !string.Equals(confirm.Trim(), expectedConfirm, StringComparison.Ordinal))
         {
-            return BadRequest(new { error = "Confirmation text does not match the organization name." });
+            var message = duplicateNameCount > 1
+                ? "Confirmation text does not match the required disambiguation token."
+                : "Confirmation text does not match the organization name.";
+            return BadRequest(new { error = message });
         }
 
         var actorId = GetCurrentUserId();
+        var actorDisplayName = !string.IsNullOrWhiteSpace(actorId)
+            ? await _db.Users.Where(u => u.Id == actorId).Select(u => u.FullName).FirstOrDefaultAsync()
+            : null;
         var orgName = org.Name;
 
         await using var tx = await _db.Database.BeginTransactionAsync();
@@ -288,6 +343,34 @@ public class SuperAdminController : Controller
             var reportIds = workspaceIds.Count > 0
                 ? await _db.Reports.Where(r => workspaceIds.Contains(r.WorkspaceId)).Select(r => r.Id).ToListAsync()
                 : new List<int>();
+
+            // Archive snapshot before any destructive delete.
+            try
+            {
+                var snapshot = await BuildDeletionSnapshotAsync(id, userIds, workspaceIds, reportIds);
+                var snapshotJson = JsonSerializer.Serialize(snapshot, OrganizationArchiveJsonOptions);
+                var deletedAt = DateTime.UtcNow;
+                var snapshotSizeBytes = Encoding.UTF8.GetByteCount(snapshotJson);
+
+                _db.OrganizationDeletionArchives.Add(new OrganizationDeletionArchive
+                {
+                    OriginalOrganizationId = org.Id,
+                    OriginalOrganizationGuid = org.OrganizationGuid,
+                    Name = org.Name,
+                    DeletedAt = deletedAt,
+                    DeletedByUserId = actorId,
+                    DeletedByDisplayName = actorDisplayName,
+                    ExpiresAt = deletedAt.AddDays(30),
+                    Snapshot = snapshotJson,
+                    SizeBytes = snapshotSizeBytes
+                });
+                await _db.SaveChangesAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to archive organization before deletion." });
+            }
 
             // ── Tables that don't cascade — clean them explicitly.
             // ActivityLog (Org or User)
@@ -399,6 +482,717 @@ public class SuperAdminController : Controller
             await tx.RollbackAsync();
             return StatusCode(500, new { error = "Failed to delete organization.", detail = ex.Message });
         }
+    }
+
+    [HttpPost("/api/admin/super/orgs/trash/{archiveId}/restore")]
+    public async Task<IActionResult> RestoreOrganizationArchive(int archiveId)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var archive = await _db.OrganizationDeletionArchives.FirstOrDefaultAsync(a => a.Id == archiveId);
+        if (archive == null) return NotFound();
+        if (archive.RestoredAt != null) return BadRequest(new { error = "Archive has already been restored." });
+        if (archive.ExpiresAt <= DateTime.UtcNow) return BadRequest(new { error = "Archive has expired and can no longer be restored." });
+
+        OrganizationDeletionSnapshot? snapshot;
+        try
+        {
+            snapshot = JsonSerializer.Deserialize<OrganizationDeletionSnapshot>(archive.Snapshot, OrganizationArchiveJsonOptions);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to read archive snapshot.", detail = ex.Message });
+        }
+
+        if (snapshot?.Organization == null)
+            return BadRequest(new { error = "Archive snapshot is invalid." });
+
+        if (await _db.Organizations.AnyAsync(o => o.OrganizationGuid == archive.OriginalOrganizationGuid))
+            return BadRequest(new { error = "An organization with this GUID already exists. Restore aborted." });
+
+        var now = DateTime.UtcNow;
+        var callerId = GetCurrentUserId() ?? "";
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var oldOrgId = snapshot.Organization.Id;
+
+            var restoredOrg = new Organization
+            {
+                OrganizationGuid = archive.OriginalOrganizationGuid,
+                Name = snapshot.Organization.Name,
+                LogoUrl = snapshot.Organization.LogoUrl,
+                CreatedAt = snapshot.Organization.CreatedAt,
+                Plan = snapshot.Organization.Plan,
+                EnterpriseExtraTokenPacks = snapshot.Organization.EnterpriseExtraTokenPacks,
+                PurchasedLicenses = snapshot.Organization.PurchasedLicenses,
+                PurchasedProfessionalLicenses = snapshot.Organization.PurchasedProfessionalLicenses,
+                PurchasedEnterpriseLicenses = snapshot.Organization.PurchasedEnterpriseLicenses,
+                PayPalSubscriptionId = snapshot.Organization.PayPalSubscriptionId,
+                PayPalPlanId = snapshot.Organization.PayPalPlanId,
+                SubscriptionStatus = snapshot.Organization.SubscriptionStatus,
+                SubscriptionStartDate = snapshot.Organization.SubscriptionStartDate,
+                SubscriptionNextBillingDate = snapshot.Organization.SubscriptionNextBillingDate,
+                PayPalProSubscriptionId = snapshot.Organization.PayPalProSubscriptionId,
+                PayPalEntSubscriptionId = snapshot.Organization.PayPalEntSubscriptionId,
+                FailedPaymentCount = snapshot.Organization.FailedPaymentCount,
+                GraceUntil = snapshot.Organization.GraceUntil,
+                IsEmailVerified = snapshot.Organization.IsEmailVerified,
+                EmailVerificationToken = snapshot.Organization.EmailVerificationToken,
+                EmailVerificationTokenExpiry = snapshot.Organization.EmailVerificationTokenExpiry,
+                LicenseStartsAt = snapshot.Organization.LicenseStartsAt,
+                LicenseEndsAt = snapshot.Organization.LicenseEndsAt,
+                AutoRenew = snapshot.Organization.AutoRenew,
+                LicenseNotes = snapshot.Organization.LicenseNotes,
+                IsBlocked = snapshot.Organization.IsBlocked,
+                BlockedReason = snapshot.Organization.BlockedReason,
+                BlockedAt = snapshot.Organization.BlockedAt
+            };
+            _db.Organizations.Add(restoredOrg);
+            await _db.SaveChangesAsync();
+            var newOrgId = restoredOrg.Id;
+
+            var oldToNewUserIds = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (snapshot.Users.Count > 0)
+            {
+                var oldIds = snapshot.Users.Select(u => u.Id).ToList();
+                var existingIds = await _db.Users
+                    .Where(u => oldIds.Contains(u.Id))
+                    .Select(u => u.Id)
+                    .ToListAsync();
+                var existingSet = existingIds.ToHashSet(StringComparer.Ordinal);
+
+                var usersToInsert = new List<ApplicationUser>();
+                foreach (var old in snapshot.Users)
+                {
+                    var newUserId = existingSet.Contains(old.Id) ? Guid.NewGuid().ToString() : old.Id;
+                    oldToNewUserIds[old.Id] = newUserId;
+
+                    usersToInsert.Add(new ApplicationUser
+                    {
+                        Id = newUserId,
+                        UserName = old.UserName,
+                        NormalizedUserName = old.NormalizedUserName,
+                        Email = old.Email,
+                        NormalizedEmail = old.NormalizedEmail,
+                        EmailConfirmed = old.EmailConfirmed,
+                        PasswordHash = old.PasswordHash,
+                        SecurityStamp = old.SecurityStamp,
+                        ConcurrencyStamp = old.ConcurrencyStamp,
+                        PhoneNumber = old.PhoneNumber,
+                        PhoneNumberConfirmed = old.PhoneNumberConfirmed,
+                        TwoFactorEnabled = old.TwoFactorEnabled,
+                        LockoutEnd = old.LockoutEnd,
+                        LockoutEnabled = old.LockoutEnabled,
+                        AccessFailedCount = old.AccessFailedCount,
+                        FullName = old.FullName,
+                        Role = old.Role,
+                        OrganizationId = newOrgId,
+                        Status = old.Status,
+                        CreatedAt = old.CreatedAt,
+                        LastSeenAt = old.LastSeenAt,
+                        StripeCustomerId = old.StripeCustomerId,
+                        CardBrand = old.CardBrand,
+                        CardLast4 = old.CardLast4,
+                        LastLoginIp = old.LastLoginIp,
+                        LastLoginCountry = old.LastLoginCountry,
+                        LastLoginCity = old.LastLoginCity,
+                        LastLoginAt = old.LastLoginAt,
+                        MustChangePassword = old.MustChangePassword
+                    });
+                }
+
+                _db.Users.AddRange(usersToInsert);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.SubscriptionPlans.Count > 0)
+            {
+                var plans = snapshot.SubscriptionPlans
+                    .Where(s => oldToNewUserIds.ContainsKey(s.UserId))
+                    .Select(s => new SubscriptionPlan
+                    {
+                        UserId = oldToNewUserIds[s.UserId],
+                        Plan = s.Plan,
+                        TrialStartDate = s.TrialStartDate,
+                        TrialEndDate = s.TrialEndDate,
+                        HasUsedTrial = s.HasUsedTrial,
+                        CreatedAt = s.CreatedAt
+                    })
+                    .ToList();
+                _db.SubscriptionPlans.AddRange(plans);
+                await _db.SaveChangesAsync();
+            }
+
+            var workspaceMap = new Dictionary<int, int>();
+            if (snapshot.Workspaces.Count > 0)
+            {
+                var workspaces = snapshot.Workspaces.Select(w => new Workspace
+                {
+                    Guid = w.Guid,
+                    Name = w.Name,
+                    Description = w.Description,
+                    LogoUrl = w.LogoUrl,
+                    OwnerId = w.OwnerId != null && oldToNewUserIds.TryGetValue(w.OwnerId, out var ownerId) ? ownerId : w.OwnerId,
+                    OrganizationId = newOrgId,
+                    CreatedAt = w.CreatedAt
+                }).ToList();
+
+                _db.Workspaces.AddRange(workspaces);
+                await _db.SaveChangesAsync();
+                for (var i = 0; i < workspaces.Count; i++) workspaceMap[snapshot.Workspaces[i].Id] = workspaces[i].Id;
+            }
+
+            var datasourceMap = new Dictionary<int, int>();
+            if (snapshot.WorkspaceMemories.Count > 0)
+            {
+                var memories = snapshot.WorkspaceMemories
+                    .Where(m => workspaceMap.ContainsKey(m.WorkspaceId))
+                    .Select(m => new WorkspaceMemory
+                    {
+                        WorkspaceId = workspaceMap[m.WorkspaceId],
+                        Content = m.Content,
+                        Source = m.Source,
+                        Category = m.Category,
+                        CreatedAt = m.CreatedAt
+                    })
+                    .ToList();
+                _db.WorkspaceMemories.AddRange(memories);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.Datasources.Count > 0)
+            {
+                var datasources = snapshot.Datasources.Select(d => new Datasource
+                {
+                    Guid = d.Guid,
+                    Name = d.Name,
+                    Type = d.Type,
+                    ConnectionString = d.ConnectionString,
+                    DbUser = d.DbUser,
+                    DbPassword = d.DbPassword,
+                    SelectedTables = d.SelectedTables,
+                    XmlaEndpoint = d.XmlaEndpoint,
+                    MicrosoftAccountTenantId = d.MicrosoftAccountTenantId,
+                    ApiUrl = d.ApiUrl,
+                    ApiKey = d.ApiKey,
+                    ApiMethod = d.ApiMethod,
+                    TransformEnabled = d.TransformEnabled,
+                    TransformToml = d.TransformToml,
+                    OrganizationId = newOrgId,
+                    WorkspaceId = d.WorkspaceId.HasValue && workspaceMap.TryGetValue(d.WorkspaceId.Value, out var wsId) ? wsId : null,
+                    CreatedAt = d.CreatedAt
+                }).ToList();
+
+                _db.Datasources.AddRange(datasources);
+                await _db.SaveChangesAsync();
+                for (var i = 0; i < datasources.Count; i++) datasourceMap[snapshot.Datasources[i].Id] = datasources[i].Id;
+            }
+
+            var agentMap = new Dictionary<int, int>();
+            if (snapshot.Agents.Count > 0)
+            {
+                var agents = snapshot.Agents.Select(a => new Agent
+                {
+                    Guid = a.Guid,
+                    Name = a.Name,
+                    SystemPrompt = a.SystemPrompt,
+                    DatasourceId = a.DatasourceId.HasValue && datasourceMap.TryGetValue(a.DatasourceId.Value, out var dsId) ? dsId : null,
+                    WorkspaceId = a.WorkspaceId.HasValue && workspaceMap.TryGetValue(a.WorkspaceId.Value, out var wsId) ? wsId : null,
+                    OrganizationId = newOrgId,
+                    CreatedAt = a.CreatedAt
+                }).ToList();
+
+                _db.Agents.AddRange(agents);
+                await _db.SaveChangesAsync();
+                for (var i = 0; i < agents.Count; i++) agentMap[snapshot.Agents[i].Id] = agents[i].Id;
+            }
+
+            var dashboardMap = new Dictionary<int, int>();
+            if (snapshot.Dashboards.Count > 0)
+            {
+                var dashboards = snapshot.Dashboards
+                    .Where(d => workspaceMap.ContainsKey(d.WorkspaceId))
+                    .Select(d => new Dashboard
+                    {
+                        Guid = d.Guid,
+                        Name = d.Name,
+                        WorkspaceId = workspaceMap[d.WorkspaceId],
+                        AgentId = d.AgentId.HasValue && agentMap.TryGetValue(d.AgentId.Value, out var aId) ? aId : null,
+                        DatasourceId = d.DatasourceId.HasValue && datasourceMap.TryGetValue(d.DatasourceId.Value, out var dsId) ? dsId : null,
+                        CreatedAt = d.CreatedAt
+                    }).ToList();
+
+                _db.Dashboards.AddRange(dashboards);
+                await _db.SaveChangesAsync();
+                var source = snapshot.Dashboards.Where(d => workspaceMap.ContainsKey(d.WorkspaceId)).ToList();
+                for (var i = 0; i < dashboards.Count; i++) dashboardMap[source[i].Id] = dashboards[i].Id;
+            }
+
+            var reportMap = new Dictionary<int, int>();
+            if (snapshot.Reports.Count > 0)
+            {
+                var reports = snapshot.Reports
+                    .Where(r => workspaceMap.ContainsKey(r.WorkspaceId))
+                    .Select(r => new Report
+                    {
+                        Guid = r.Guid,
+                        Name = r.Name,
+                        WorkspaceId = workspaceMap[r.WorkspaceId],
+                        DashboardId = r.DashboardId.HasValue && dashboardMap.TryGetValue(r.DashboardId.Value, out var dId) ? dId : null,
+                        DatasourceId = r.DatasourceId.HasValue && datasourceMap.TryGetValue(r.DatasourceId.Value, out var dsId) ? dsId : null,
+                        AgentId = r.AgentId.HasValue && agentMap.TryGetValue(r.AgentId.Value, out var aId) ? aId : null,
+                        ChartIds = r.ChartIds,
+                        CanvasJson = r.CanvasJson,
+                        Status = r.Status,
+                        ShareToken = r.ShareToken,
+                        EmbedTokenVersion = r.EmbedTokenVersion,
+                        CreatedBy = r.CreatedBy != null && oldToNewUserIds.TryGetValue(r.CreatedBy, out var createdBy) ? createdBy : r.CreatedBy,
+                        CreatedAt = r.CreatedAt,
+                        UpdatedAt = r.UpdatedAt
+                    }).ToList();
+
+                _db.Reports.AddRange(reports);
+                await _db.SaveChangesAsync();
+                var source = snapshot.Reports.Where(r => workspaceMap.ContainsKey(r.WorkspaceId)).ToList();
+                for (var i = 0; i < reports.Count; i++) reportMap[source[i].Id] = reports[i].Id;
+            }
+
+            if (snapshot.ReportRevisions.Count > 0)
+            {
+                var revisions = snapshot.ReportRevisions
+                    .Where(rr => reportMap.ContainsKey(rr.ReportId))
+                    .Select(rr => new ReportRevision
+                    {
+                        ReportId = reportMap[rr.ReportId],
+                        Kind = rr.Kind,
+                        Name = rr.Name,
+                        CanvasJson = rr.CanvasJson,
+                        ReportName = rr.ReportName,
+                        CreatedBy = rr.CreatedBy != null && oldToNewUserIds.TryGetValue(rr.CreatedBy, out var createdBy) ? createdBy : rr.CreatedBy,
+                        CreatedAt = rr.CreatedAt
+                    })
+                    .ToList();
+                _db.ReportRevisions.AddRange(revisions);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.SharedReports.Count > 0)
+            {
+                var sharedReports = snapshot.SharedReports
+                    .Where(sr => reportMap.ContainsKey(sr.ReportId) && oldToNewUserIds.ContainsKey(sr.UserId))
+                    .Select(sr => new SharedReport
+                    {
+                        ReportId = reportMap[sr.ReportId],
+                        UserId = oldToNewUserIds[sr.UserId],
+                        SharedAt = sr.SharedAt
+                    })
+                    .ToList();
+                _db.SharedReports.AddRange(sharedReports);
+                await _db.SaveChangesAsync();
+            }
+
+            var chatMessageMap = new Dictionary<int, int>();
+            if (snapshot.ChatMessages.Count > 0)
+            {
+                var chatMessages = snapshot.ChatMessages
+                    .Where(m => workspaceMap.ContainsKey(m.WorkspaceId) && oldToNewUserIds.ContainsKey(m.UserId))
+                    .Select(m => new ChatMessage
+                    {
+                        Role = m.Role,
+                        Content = m.Content,
+                        GeneratedQuery = m.GeneratedQuery,
+                        QueryDescription = m.QueryDescription,
+                        ResultJson = m.ResultJson,
+                        IsPinned = m.IsPinned,
+                        WorkspaceId = workspaceMap[m.WorkspaceId],
+                        AgentId = m.AgentId,
+                        UserId = oldToNewUserIds[m.UserId],
+                        CreatedAt = m.CreatedAt
+                    })
+                    .ToList();
+                _db.ChatMessages.AddRange(chatMessages);
+                await _db.SaveChangesAsync();
+                var source = snapshot.ChatMessages
+                    .Where(m => workspaceMap.ContainsKey(m.WorkspaceId) && oldToNewUserIds.ContainsKey(m.UserId))
+                    .ToList();
+                for (var i = 0; i < chatMessages.Count; i++) chatMessageMap[source[i].Id] = chatMessages[i].Id;
+            }
+
+            if (snapshot.PinnedResults.Count > 0)
+            {
+                var pinnedResults = snapshot.PinnedResults
+                    .Where(p => workspaceMap.ContainsKey(p.WorkspaceId)
+                                && oldToNewUserIds.ContainsKey(p.UserId)
+                                && chatMessageMap.ContainsKey(p.ChatMessageId))
+                    .Select(p => new PinnedResult
+                    {
+                        DatasetName = p.DatasetName,
+                        JsonData = p.JsonData,
+                        ChatMessageId = chatMessageMap[p.ChatMessageId],
+                        WorkspaceId = workspaceMap[p.WorkspaceId],
+                        UserId = oldToNewUserIds[p.UserId],
+                        CreatedAt = p.CreatedAt
+                    })
+                    .ToList();
+                _db.PinnedResults.AddRange(pinnedResults);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.WorkspaceUsers.Count > 0)
+            {
+                var workspaceUsers = snapshot.WorkspaceUsers
+                    .Where(wu => workspaceMap.ContainsKey(wu.WorkspaceId) && oldToNewUserIds.ContainsKey(wu.UserId))
+                    .Select(wu => new WorkspaceUser
+                    {
+                        WorkspaceId = workspaceMap[wu.WorkspaceId],
+                        UserId = oldToNewUserIds[wu.UserId],
+                        Role = wu.Role,
+                        CreatedAt = wu.CreatedAt
+                    })
+                    .ToList();
+                _db.WorkspaceUsers.AddRange(workspaceUsers);
+                await _db.SaveChangesAsync();
+            }
+
+            var notificationMap = new Dictionary<int, int>();
+            if (snapshot.Notifications.Count > 0)
+            {
+                var notifications = snapshot.Notifications.Select(n => new Notification
+                {
+                    Scope = n.Scope,
+                    OrganizationId = n.OrganizationId == oldOrgId ? newOrgId : n.OrganizationId,
+                    TargetUserId = n.TargetUserId != null && oldToNewUserIds.TryGetValue(n.TargetUserId, out var targetUserId) ? targetUserId : n.TargetUserId,
+                    TargetUserIdsCsv = RemapUserIdsCsv(n.TargetUserIdsCsv, oldToNewUserIds),
+                    TargetRolesCsv = n.TargetRolesCsv,
+                    Title = n.Title,
+                    Body = n.Body,
+                    Type = n.Type,
+                    Severity = n.Severity,
+                    Link = n.Link,
+                    CreatedAt = n.CreatedAt,
+                    ExpiresAt = n.ExpiresAt,
+                    CreatedByUserId = n.CreatedByUserId != null && oldToNewUserIds.TryGetValue(n.CreatedByUserId, out var createdById) ? createdById : n.CreatedByUserId,
+                    CreatedByRole = n.CreatedByRole,
+                    SystemKey = n.SystemKey,
+                    ScheduleAt = n.ScheduleAt,
+                    DeliveredAt = n.DeliveredAt,
+                    DeliveryStatus = n.DeliveryStatus,
+                    IsRecalled = n.IsRecalled,
+                    RecalledAt = n.RecalledAt,
+                    RecalledByUserId = n.RecalledByUserId != null && oldToNewUserIds.TryGetValue(n.RecalledByUserId, out var recalledById) ? recalledById : n.RecalledByUserId
+                }).ToList();
+
+                _db.Notifications.AddRange(notifications);
+                await _db.SaveChangesAsync();
+                for (var i = 0; i < notifications.Count; i++) notificationMap[snapshot.Notifications[i].Id] = notifications[i].Id;
+            }
+
+            if (snapshot.UserNotifications.Count > 0)
+            {
+                var userNotifications = snapshot.UserNotifications
+                    .Where(un => oldToNewUserIds.ContainsKey(un.UserId) && notificationMap.ContainsKey(un.NotificationId))
+                    .Select(un => new UserNotification
+                    {
+                        UserId = oldToNewUserIds[un.UserId],
+                        NotificationId = notificationMap[un.NotificationId],
+                        ReadAt = un.ReadAt,
+                        DismissedAt = un.DismissedAt,
+                        IsClicked = un.IsClicked,
+                        ClickedAt = un.ClickedAt,
+                        EmailSent = un.EmailSent
+                    })
+                    .ToList();
+                _db.UserNotifications.AddRange(userNotifications);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.SupportTickets.Count > 0)
+            {
+                var tickets = snapshot.SupportTickets.Select(t => new SupportTicket
+                {
+                    TicketNumber = t.TicketNumber,
+                    OrganizationId = t.OrganizationId == oldOrgId ? newOrgId : t.OrganizationId,
+                    UserId = t.UserId != null && oldToNewUserIds.TryGetValue(t.UserId, out var ticketUserId) ? ticketUserId : t.UserId,
+                    RequesterName = t.RequesterName,
+                    RequesterEmail = t.RequesterEmail,
+                    Category = t.Category,
+                    Priority = t.Priority,
+                    Subject = t.Subject,
+                    Message = t.Message,
+                    Status = t.Status,
+                    CreatedAt = t.CreatedAt,
+                    ResolvedAt = t.ResolvedAt,
+                    AssignedToUserId = t.AssignedToUserId != null && oldToNewUserIds.TryGetValue(t.AssignedToUserId, out var assignedToId) ? assignedToId : t.AssignedToUserId,
+                    Response = t.Response
+                }).ToList();
+                _db.SupportTickets.AddRange(tickets);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.TokenUsages.Count > 0)
+            {
+                var tokenUsages = snapshot.TokenUsages.Select(t => new TokenUsage
+                {
+                    OrganizationId = newOrgId,
+                    UserId = oldToNewUserIds.TryGetValue(t.UserId, out var tokenUserId) ? tokenUserId : t.UserId,
+                    TokensUsed = t.TokensUsed,
+                    Year = t.Year,
+                    Month = t.Month,
+                    CreatedAt = t.CreatedAt
+                }).ToList();
+                _db.TokenUsages.AddRange(tokenUsages);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.PaymentRecords.Count > 0)
+            {
+                var payments = snapshot.PaymentRecords.Select(p => new PaymentRecord
+                {
+                    OrganizationId = newOrgId,
+                    UserId = p.UserId != null && oldToNewUserIds.TryGetValue(p.UserId, out var payUserId) ? payUserId : p.UserId,
+                    PaymentType = p.PaymentType,
+                    PaymentMethod = p.PaymentMethod,
+                    Amount = p.Amount,
+                    Currency = p.Currency,
+                    Status = p.Status,
+                    PayPalOrderId = p.PayPalOrderId,
+                    PayPalSubscriptionId = p.PayPalSubscriptionId,
+                    PayPalEventId = p.PayPalEventId,
+                    Description = p.Description,
+                    ErrorMessage = p.ErrorMessage,
+                    PlanKey = p.PlanKey,
+                    CreatedAt = p.CreatedAt,
+                    InvoiceNumber = p.InvoiceNumber,
+                    Quantity = p.Quantity,
+                    UnitPrice = p.UnitPrice,
+                    Subtotal = p.Subtotal,
+                    TaxAmount = p.TaxAmount,
+                    TaxRegion = p.TaxRegion,
+                    TaxRatePercent = p.TaxRatePercent,
+                    TokensAdded = p.TokensAdded,
+                    BillingName = p.BillingName,
+                    BillingEmail = p.BillingEmail,
+                    BillingCompany = p.BillingCompany,
+                    BillingAddressLine1 = p.BillingAddressLine1,
+                    BillingAddressLine2 = p.BillingAddressLine2,
+                    BillingCity = p.BillingCity,
+                    BillingState = p.BillingState,
+                    BillingPostalCode = p.BillingPostalCode,
+                    BillingCountry = p.BillingCountry,
+                    LineItemsJson = p.LineItemsJson,
+                    PayerEmail = p.PayerEmail,
+                    PayerName = p.PayerName,
+                    CaptureId = p.CaptureId,
+                    PdfPath = p.PdfPath,
+                    PaidAt = p.PaidAt,
+                    DueDate = p.DueDate
+                }).ToList();
+                _db.PaymentRecords.AddRange(payments);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.PlanChangeLogs.Count > 0)
+            {
+                var planLogs = snapshot.PlanChangeLogs.Select(p => new PlanChangeLog
+                {
+                    OrganizationId = newOrgId,
+                    FromPlan = p.FromPlan,
+                    ToPlan = p.ToPlan,
+                    FromPurchasedLicenses = p.FromPurchasedLicenses,
+                    ToPurchasedLicenses = p.ToPurchasedLicenses,
+                    FromLicenseEndsAt = p.FromLicenseEndsAt,
+                    ToLicenseEndsAt = p.ToLicenseEndsAt,
+                    ChangeType = p.ChangeType,
+                    Reason = p.Reason,
+                    ChangedByUserId = p.ChangedByUserId != null && oldToNewUserIds.TryGetValue(p.ChangedByUserId, out var changedById) ? changedById : p.ChangedByUserId,
+                    ChangedByEmail = p.ChangedByEmail,
+                    CreatedAt = p.CreatedAt
+                }).ToList();
+                _db.PlanChangeLogs.AddRange(planLogs);
+                await _db.SaveChangesAsync();
+            }
+
+            if (snapshot.ActivityLogs.Count > 0)
+            {
+                var logs = snapshot.ActivityLogs.Select(l => new ActivityLog
+                {
+                    Action = l.Action,
+                    Description = l.Description,
+                    UserId = oldToNewUserIds.TryGetValue(l.UserId, out var logUserId) ? logUserId : l.UserId,
+                    OrganizationId = l.OrganizationId == oldOrgId ? newOrgId : l.OrganizationId,
+                    CreatedAt = l.CreatedAt
+                }).ToList();
+                _db.ActivityLogs.AddRange(logs);
+                await _db.SaveChangesAsync();
+            }
+
+            archive.RestoredAt = now;
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Action = "OrganizationRestored",
+                Description = $"SuperAdmin restored organization '{archive.Name}' from archive #{archive.Id}.",
+                UserId = callerId,
+                OrganizationId = newOrgId,
+                CreatedAt = now
+            });
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return Ok(new { success = true, archiveId, restoredOrganizationId = newOrgId, organizationGuid = archive.OriginalOrganizationGuid });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, new { error = "Failed to restore organization archive.", detail = ex.Message });
+        }
+    }
+
+    [HttpPost("/api/admin/super/orgs/trash/{archiveId}/purge")]
+    public async Task<IActionResult> PurgeOrganizationArchive(int archiveId)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+
+        var archive = await _db.OrganizationDeletionArchives.FirstOrDefaultAsync(a => a.Id == archiveId);
+        if (archive == null) return NotFound();
+
+        var callerId = GetCurrentUserId() ?? "";
+        _db.OrganizationDeletionArchives.Remove(archive);
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "OrganizationArchivePurged",
+            Description = $"SuperAdmin purged organization archive #{archive.Id} for '{archive.Name}' (GUID={archive.OriginalOrganizationGuid}).",
+            UserId = callerId,
+            OrganizationId = null,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, archiveId });
+    }
+
+    private static string BuildDisambiguationToken(string name, Guid organizationGuid)
+    {
+        var compactGuid = organizationGuid.ToString("N");
+        return $"{name}#{compactGuid[^4..]}";
+    }
+
+    private static string? RemapUserIdsCsv(string? csv, IReadOnlyDictionary<string, string> userIdMap)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return csv;
+        var remapped = csv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(id => userIdMap.TryGetValue(id, out var mapped) ? mapped : id)
+            .ToArray();
+        return string.Join(",", remapped);
+    }
+
+    private async Task<OrganizationDeletionSnapshot> BuildDeletionSnapshotAsync(
+        int organizationId,
+        IReadOnlyList<string> userIds,
+        IReadOnlyList<int> workspaceIds,
+        IReadOnlyList<int> reportIds)
+    {
+        var snapshot = new OrganizationDeletionSnapshot
+        {
+            Organization = await _db.Organizations.AsNoTracking().FirstAsync(o => o.Id == organizationId),
+            Users = userIds.Count > 0
+                ? await _db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToListAsync()
+                : new List<ApplicationUser>(),
+            SubscriptionPlans = userIds.Count > 0
+                ? await _db.SubscriptionPlans.AsNoTracking().Where(s => userIds.Contains(s.UserId)).ToListAsync()
+                : new List<SubscriptionPlan>(),
+            Workspaces = await _db.Workspaces.AsNoTracking().Where(w => w.OrganizationId == organizationId).ToListAsync(),
+            WorkspaceMemories = workspaceIds.Count > 0
+                ? await _db.WorkspaceMemories.AsNoTracking().Where(m => workspaceIds.Contains(m.WorkspaceId)).ToListAsync()
+                : new List<WorkspaceMemory>(),
+            Agents = await _db.Agents.AsNoTracking().Where(a => a.OrganizationId == organizationId).ToListAsync(),
+            Datasources = await _db.Datasources.AsNoTracking().Where(d => d.OrganizationId == organizationId).ToListAsync(),
+            Reports = workspaceIds.Count > 0
+                ? await _db.Reports.AsNoTracking().Where(r => workspaceIds.Contains(r.WorkspaceId)).ToListAsync()
+                : new List<Report>(),
+            Dashboards = workspaceIds.Count > 0
+                ? await _db.Dashboards.AsNoTracking().Where(d => workspaceIds.Contains(d.WorkspaceId)).ToListAsync()
+                : new List<Dashboard>(),
+            ChatMessages = (workspaceIds.Count > 0 || userIds.Count > 0)
+                ? await _db.ChatMessages.AsNoTracking()
+                    .Where(m => (workspaceIds.Count > 0 && workspaceIds.Contains(m.WorkspaceId))
+                                || (userIds.Count > 0 && userIds.Contains(m.UserId)))
+                    .ToListAsync()
+                : new List<ChatMessage>(),
+            PinnedResults = (workspaceIds.Count > 0 || userIds.Count > 0)
+                ? await _db.PinnedResults.AsNoTracking()
+                    .Where(p => (workspaceIds.Count > 0 && workspaceIds.Contains(p.WorkspaceId))
+                                || (userIds.Count > 0 && userIds.Contains(p.UserId)))
+                    .ToListAsync()
+                : new List<PinnedResult>(),
+            TokenUsages = await _db.TokenUsages.AsNoTracking().Where(t => t.OrganizationId == organizationId).ToListAsync(),
+            PaymentRecords = await _db.PaymentRecords.AsNoTracking().Where(p => p.OrganizationId == organizationId).ToListAsync(),
+            PlanChangeLogs = await _db.PlanChangeLogs.AsNoTracking().Where(p => p.OrganizationId == organizationId).ToListAsync(),
+            Notifications = userIds.Count > 0
+                ? await _db.Notifications.AsNoTracking()
+                    .Where(n => n.OrganizationId == organizationId
+                                || (n.TargetUserId != null && userIds.Contains(n.TargetUserId)))
+                    .ToListAsync()
+                : await _db.Notifications.AsNoTracking().Where(n => n.OrganizationId == organizationId).ToListAsync(),
+            UserNotifications = userIds.Count > 0
+                ? await _db.UserNotifications.AsNoTracking().Where(n => userIds.Contains(n.UserId)).ToListAsync()
+                : new List<UserNotification>(),
+            SupportTickets = userIds.Count > 0
+                ? await _db.SupportTickets.AsNoTracking()
+                    .Where(t => t.OrganizationId == organizationId
+                                || (t.UserId != null && userIds.Contains(t.UserId))
+                                || (t.AssignedToUserId != null && userIds.Contains(t.AssignedToUserId)))
+                    .ToListAsync()
+                : await _db.SupportTickets.AsNoTracking().Where(t => t.OrganizationId == organizationId).ToListAsync(),
+            ActivityLogs = userIds.Count > 0
+                ? await _db.ActivityLogs.AsNoTracking()
+                    .Where(l => l.OrganizationId == organizationId || (l.UserId != null && userIds.Contains(l.UserId)))
+                    .ToListAsync()
+                : await _db.ActivityLogs.AsNoTracking().Where(l => l.OrganizationId == organizationId).ToListAsync(),
+            WorkspaceUsers = userIds.Count > 0
+                ? await _db.WorkspaceUsers.AsNoTracking().Where(wu => userIds.Contains(wu.UserId)).ToListAsync()
+                : new List<WorkspaceUser>(),
+            SharedReports = reportIds.Count > 0
+                ? await _db.SharedReports.AsNoTracking().Where(sr => reportIds.Contains(sr.ReportId)).ToListAsync()
+                : new List<SharedReport>(),
+            ReportRevisions = reportIds.Count > 0
+                ? await _db.ReportRevisions.AsNoTracking().Where(rr => reportIds.Contains(rr.ReportId)).ToListAsync()
+                : new List<ReportRevision>()
+        };
+
+        return snapshot;
+    }
+
+    private static readonly JsonSerializerOptions OrganizationArchiveJsonOptions = new()
+    {
+        ReferenceHandler = ReferenceHandler.IgnoreCycles,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true
+    };
+
+    private sealed class OrganizationDeletionSnapshot
+    {
+        public Organization Organization { get; set; } = new();
+        public List<ApplicationUser> Users { get; set; } = new();
+        public List<SubscriptionPlan> SubscriptionPlans { get; set; } = new();
+        public List<Workspace> Workspaces { get; set; } = new();
+        public List<WorkspaceMemory> WorkspaceMemories { get; set; } = new();
+        public List<Agent> Agents { get; set; } = new();
+        public List<Datasource> Datasources { get; set; } = new();
+        public List<Report> Reports { get; set; } = new();
+        public List<Dashboard> Dashboards { get; set; } = new();
+        public List<ChatMessage> ChatMessages { get; set; } = new();
+        public List<PinnedResult> PinnedResults { get; set; } = new();
+        public List<TokenUsage> TokenUsages { get; set; } = new();
+        public List<PaymentRecord> PaymentRecords { get; set; } = new();
+        public List<PlanChangeLog> PlanChangeLogs { get; set; } = new();
+        public List<Notification> Notifications { get; set; } = new();
+        public List<UserNotification> UserNotifications { get; set; } = new();
+        public List<SupportTicket> SupportTickets { get; set; } = new();
+        public List<ActivityLog> ActivityLogs { get; set; } = new();
+        public List<WorkspaceUser> WorkspaceUsers { get; set; } = new();
+        public List<SharedReport> SharedReports { get; set; } = new();
+        public List<ReportRevision> ReportRevisions { get; set; } = new();
     }
 
     [HttpGet("/superadmin/activity")]

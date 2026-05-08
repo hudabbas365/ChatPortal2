@@ -1,0 +1,101 @@
+@model List<AIInsights.SuperAdmin.Controllers.SuperAdminController.OrganizationTrashRowViewModel>
+@{
+    ViewData["Title"] = "Organizations Trash";
+    ViewData["ActivePage"] = "orgs";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1 class="page-title">Organizations Trash</h1>
+        <p class="page-desc">@Model.Count archived organization deletions</p>
+    </div>
+    <a href="/superadmin/organizations" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Organizations
+    </a>
+</div>
+
+<div class="card-panel" style="overflow-x:auto">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Original GUID</th>
+                <th>Deleted At</th>
+                <th>Deleted By</th>
+                <th>Expires At</th>
+                <th>Size</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var row in Model)
+        {
+            var status = row.RestoredAt != null ? "Restored" : (row.IsExpired ? "Expired" : "Archived");
+            var canRestore = row.RestoredAt == null && !row.IsExpired;
+            <tr data-archive-id="@row.ArchiveId">
+                <td style="font-weight:600;color:#1e3a5f">@row.Name</td>
+                <td><code>@row.OriginalOrganizationGuid</code></td>
+                <td>@row.DeletedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</td>
+                <td>@(row.DeletedByDisplayName ?? row.DeletedByUserId ?? "Unknown")</td>
+                <td>@row.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</td>
+                <td>@(row.SizeBytes.ToString("N0")) bytes</td>
+                <td>
+                    <span class="badge-sm @(status == "Archived" ? "badge-emerald" : status == "Restored" ? "badge-indigo" : "badge-amber")">@status</span>
+                </td>
+                <td>
+                    <div class="d-flex gap-1">
+                        <button class="btn-ghost-sm sa-restore-archive-btn" data-archive-id="@row.ArchiveId" @(canRestore ? "" : "disabled")>
+                            <i class="bi bi-arrow-counterclockwise"></i> Restore
+                        </button>
+                        <button class="btn-ghost-sm sa-purge-archive-btn" data-archive-id="@row.ArchiveId" style="color:#b91c1c;border-color:#fecaca">
+                            <i class="bi bi-trash3"></i> Purge now
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<script>
+async function archiveAction(url, successMessage) {
+    const res = await fetch(url, { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
+    alert(successMessage);
+    window.location.reload();
+}
+
+document.addEventListener('click', async function (e) {
+    const restoreBtn = e.target.closest('.sa-restore-archive-btn');
+    if (restoreBtn) {
+        e.preventDefault();
+        if (restoreBtn.hasAttribute('disabled')) return;
+        const archiveId = restoreBtn.dataset.archiveId;
+        if (!archiveId) return;
+        if (!confirm('Restore this archived organization and related records?')) return;
+        try {
+            await archiveAction('/api/admin/super/orgs/trash/' + archiveId + '/restore', 'Archive restored successfully.');
+        } catch (err) {
+            alert(err && err.message ? err.message : 'Restore failed.');
+        }
+        return;
+    }
+
+    const purgeBtn = e.target.closest('.sa-purge-archive-btn');
+    if (purgeBtn) {
+        e.preventDefault();
+        const archiveId = purgeBtn.dataset.archiveId;
+        if (!archiveId) return;
+        if (!confirm('Purge this archive permanently? This cannot be undone.')) return;
+        try {
+            await archiveAction('/api/admin/super/orgs/trash/' + archiveId + '/purge', 'Archive purged successfully.');
+        } catch (err) {
+            alert(err && err.message ? err.message : 'Purge failed.');
+        }
+    }
+});
+</script>

@@ -38,6 +38,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TransformSource> TransformSources => Set<TransformSource>();
     public DbSet<TransformStep> TransformSteps => Set<TransformStep>();
     public DbSet<TransformRunAudit> TransformRunAudits => Set<TransformRunAudit>();
+    public DbSet<OrganizationDeletionArchive> OrganizationDeletionArchives => Set<OrganizationDeletionArchive>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -80,6 +81,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasIndex(o => o.Name)
             .IsUnique()
             .HasDatabaseName("IX_Organizations_Name_Unique");
+
+        builder.Entity<OrganizationDeletionArchive>()
+            .Property(a => a.Name)
+            .HasMaxLength(450);
+
+        builder.Entity<OrganizationDeletionArchive>()
+            .Property(a => a.DeletedByUserId)
+            .HasMaxLength(450);
 
         builder.Entity<Workspace>()
             .HasIndex(w => w.Guid)
