@@ -83,21 +83,18 @@ public sealed class TransformDefinitionParser : ITransformDefinitionParser
 
 public sealed class TransformValidationService : ITransformValidationService
 {
-    private static readonly HashSet<string> SupportedRules = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "remove_duplicates", "handle_nulls", "standardize_format", "convert_units", "apply_naming_convention", "map_codes",
-        "kpi_classification", "sentiment_score", "derived_field", "aggregate", "flatten_json", "validate_schema", "referential_integrity",
-        "append_rows", "merge_tables", "pivot_table", "unpivot_table", "transpose_table", "filter_rows", "sort_rows", "select_columns",
-        "rename_columns", "split_column", "replace_values", "cast_types"
-    };
-
+    private readonly HashSet<string> _supportedRules;
     private readonly ITransformDefinitionParser _parser;
     private readonly ITransformSuggestionService _suggestion;
 
-    public TransformValidationService(ITransformDefinitionParser parser, ITransformSuggestionService suggestion)
+    public TransformValidationService(
+        ITransformDefinitionParser parser,
+        ITransformSuggestionService suggestion,
+        IEnumerable<ITransformRuleHandler> handlers)
     {
         _parser = parser;
         _suggestion = suggestion;
+        _supportedRules = new HashSet<string>(handlers.Select(h => h.Type), StringComparer.OrdinalIgnoreCase);
     }
 
     public TransformValidationSummary ValidateToml(string? toml)
@@ -127,7 +124,7 @@ public sealed class TransformValidationService : ITransformValidationService
         for (var i = 0; i < parsedSteps.Count; i++)
         {
             var s = parsedSteps[i];
-            if (!SupportedRules.Contains(s.Type))
+            if (!_supportedRules.Contains(s.Type))
                 issues.Add(new TransformValidationIssue("unsupported_rule", $"Unsupported transform type '{s.Type}'.", $"step[{i}].type"));
         }
 
