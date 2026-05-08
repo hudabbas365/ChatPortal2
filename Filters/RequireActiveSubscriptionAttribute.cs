@@ -58,6 +58,7 @@ public class RequireActiveSubscriptionAttribute : Attribute, IAsyncActionFilter
     /// </summary>
     public static bool IsGated(Organization org)
     {
+        if (org.IsDeleted || !org.IsActive) return true;
         if (org.IsBlocked) return true;
         if (string.Equals(org.SubscriptionStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase)) return true;
         if (org.Plan == PlanType.Free &&

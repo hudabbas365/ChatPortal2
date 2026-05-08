@@ -307,8 +307,14 @@ public class AuthController : Controller
         if (user.OrganizationId.HasValue)
         {
             var org = await _db.Organizations.FindAsync(user.OrganizationId.Value);
-            if (org != null && org.IsBlocked)
+            if (org != null && (org.IsBlocked || org.IsDeleted || !org.IsActive))
             {
+                if (org.IsDeleted || !org.IsActive)
+                {
+                    _logger.LogWarning("Login blocked: organization '{OrgName}' (ID:{OrgId}) is deactivated. User: '{Email}'.", org.Name, org.Id, user.Email);
+                    return Unauthorized(new { error = "org_deactivated", message = "Your organization has been deactivated by a Super Admin. Contact support@AIInsights365.net to request restoration." });
+                }
+
                 _logger.LogWarning("Login blocked: organization '{OrgName}' (ID:{OrgId}) is blocked. User: '{Email}'.", org.Name, org.Id, user.Email);
                 return Unauthorized(new { error = "org_blocked", message = $"Your organization has been blocked. Reason: {org.BlockedReason ?? "Contact support for details."}. Please contact support@AIInsights365.net to resolve this issue." });
             }
