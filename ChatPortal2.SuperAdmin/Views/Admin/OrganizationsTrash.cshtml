@@ -49,7 +49,7 @@
                         <button class="btn-ghost-sm sa-restore-archive-btn" data-archive-id="@row.ArchiveId" @(canRestore ? "" : "disabled")>
                             <i class="bi bi-arrow-counterclockwise"></i> Restore
                         </button>
-                        <button class="btn-ghost-sm sa-purge-archive-btn" data-archive-id="@row.ArchiveId" style="color:#b91c1c;border-color:#fecaca">
+                        <button class="btn-ghost-sm sa-purge-archive-btn" data-archive-id="@row.ArchiveId" aria-label="Permanently delete archive" style="color:#b91c1c;border-color:#fecaca">
                             <i class="bi bi-trash3"></i> Purge now
                         </button>
                     </div>
@@ -61,8 +61,17 @@
 </div>
 
 <script>
+function getCsrfToken() {
+    const cookie = document.cookie.split('; ').find(v => v.startsWith('XSRF-TOKEN='));
+    return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+}
+
 async function archiveAction(url, successMessage) {
-    const res = await fetch(url, { method: 'POST', credentials: 'same-origin' });
+    const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'RequestVerificationToken': getCsrfToken() }
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
     alert(successMessage);

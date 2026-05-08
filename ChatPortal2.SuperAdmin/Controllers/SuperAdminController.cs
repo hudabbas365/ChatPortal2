@@ -485,6 +485,7 @@ public class SuperAdminController : Controller
     }
 
     [HttpPost("/api/admin/super/orgs/trash/{archiveId}/restore")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RestoreOrganizationArchive(int archiveId)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -565,14 +566,26 @@ public class SuperAdminController : Controller
                 var usersToInsert = new List<ApplicationUser>();
                 foreach (var old in snapshot.Users)
                 {
-                    var newUserId = existingSet.Contains(old.Id) ? Guid.NewGuid().ToString() : old.Id;
+                    var userIdCollision = existingSet.Contains(old.Id);
+                    var newUserId = userIdCollision ? Guid.NewGuid().ToString() : old.Id;
                     oldToNewUserIds[old.Id] = newUserId;
+
+                    var restoredUserName = old.UserName;
+                    var restoredNormalizedUserName = old.NormalizedUserName;
+                    if (userIdCollision)
+                    {
+                        var suffix = newUserId[..8];
+                        restoredUserName = string.IsNullOrWhiteSpace(old.UserName)
+                            ? $"restored-{suffix}"
+                            : $"{old.UserName}.restored.{suffix}";
+                        restoredNormalizedUserName = restoredUserName.ToUpperInvariant();
+                    }
 
                     usersToInsert.Add(new ApplicationUser
                     {
                         Id = newUserId,
-                        UserName = old.UserName,
-                        NormalizedUserName = old.NormalizedUserName,
+                        UserName = restoredUserName,
+                        NormalizedUserName = restoredNormalizedUserName,
                         Email = old.Email,
                         NormalizedEmail = old.NormalizedEmail,
                         EmailConfirmed = old.EmailConfirmed,
@@ -1049,6 +1062,7 @@ public class SuperAdminController : Controller
     }
 
     [HttpPost("/api/admin/super/orgs/trash/{archiveId}/purge")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PurgeOrganizationArchive(int archiveId)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
