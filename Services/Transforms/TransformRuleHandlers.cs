@@ -244,20 +244,30 @@ public sealed class HandleNullsHandler : ITransformRuleHandler
             fields = rows.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var strategy = RuleHelpers.ReadString(raw, "strategy", "replace").ToLowerInvariant();
         var replacement = RuleHelpers.ReadString(raw, "value");
-        foreach (var row in rows.ToArray())
+        if (strategy == "drop_row")
         {
-            var drop = false;
-            foreach (var f in fields)
+            rows.RemoveAll(row =>
+                fields.Any(f =>
+                {
+                    row.TryGetValue(f, out var v);
+                    return v == null
+                        || string.IsNullOrWhiteSpace(v.ToString())
+                        || string.Equals(v.ToString(), "NULL", StringComparison.OrdinalIgnoreCase);
+                }));
+        }
+        else
+        {
+            foreach (var row in rows)
             {
-                row.TryGetValue(f, out var v);
-                var isMissing = v == null
-                    || string.IsNullOrWhiteSpace(v.ToString())
-                    || string.Equals(v.ToString(), "NULL", StringComparison.OrdinalIgnoreCase);
-                if (!isMissing) continue;
-                if (strategy == "drop_row") { drop = true; break; }
-                row[f] = replacement;
+                foreach (var f in fields)
+                {
+                    row.TryGetValue(f, out var v);
+                    var isMissing = v == null
+                        || string.IsNullOrWhiteSpace(v.ToString())
+                        || string.Equals(v.ToString(), "NULL", StringComparison.OrdinalIgnoreCase);
+                    if (isMissing) row[f] = replacement;
+                }
             }
-            if (drop) rows.Remove(row);
         }
         audit.Add("Data cleansing: handled null/missing values.");
         return rows;
@@ -646,7 +656,7 @@ public sealed class MergeTablesHandler : ITransformRuleHandler
         // producing a silent self-join. Detect and skip with a warning instead.
         if (!hasLeft && !hasRight)
         {
-            audit.Add($"Combine warning: merge_tables skipped — neither source '{leftAlias}' nor '{rightAlias}' found in provided source data.");
+            audit.Add($"Combine warning: merge_tables skipped - neither source '{leftAlias}' nor '{rightAlias}' found in provided source data.");
             return rows;
         }
 

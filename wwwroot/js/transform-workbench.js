@@ -227,7 +227,10 @@
   async function loadWorkbenchState(modal, state){
     // Fetch handler metadata and datasource transform state in parallel
     const [handlersData, data] = await Promise.all([
-      fetchJson('/api/transforms/handlers', { credentials:'same-origin' }).catch(()=> []),
+      fetchJson('/api/transforms/handlers', { credentials:'same-origin' }).catch(err => {
+        console.error('[twb] Failed to load handler metadata:', err);
+        return [];
+      }),
       fetchJson(`/api/datasources/${encodeURIComponent(state.dsGuid)}/transform`, { credentials:'same-origin' })
     ]);
     state.handlers = Array.isArray(handlersData) ? handlersData : [];

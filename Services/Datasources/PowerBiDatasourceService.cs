@@ -132,6 +132,7 @@ public class PowerBiDatasourceService : IDatasourceTypeService
     internal static string BuildSafeDaxTableName(string raw)
     {
         var safe = new string((raw ?? "").Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ' ').ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(safe)) return "";
         return safe.Replace("'", "''", StringComparison.Ordinal);
     }
 }
