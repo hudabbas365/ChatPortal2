@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using AIInsights.Models;
+using AIInsights.Services.Transforms;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using MySqlConnector;
@@ -23,6 +24,7 @@ public class QueryExecutionResult
     public List<Dictionary<string, object>> Data { get; set; } = new();
     public int RowCount { get; set; }
     public string? Error { get; set; }
+    public List<string> TransformAudit { get; set; } = new();
 }
 
 public class QueryExecutionService : IQueryExecutionService
@@ -31,13 +33,23 @@ public class QueryExecutionService : IQueryExecutionService
     private readonly IPowerBiService _powerBi;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IFileDatasourceService _fileDs;
+    private readonly IAiInsightTransformService _transformService;
+    private readonly ILogger<QueryExecutionService> _logger;
 
-    public QueryExecutionService(IEncryptionService encryption, IPowerBiService powerBi, IHttpClientFactory httpClientFactory, IFileDatasourceService fileDs)
+    public QueryExecutionService(
+        IEncryptionService encryption,
+        IPowerBiService powerBi,
+        IHttpClientFactory httpClientFactory,
+        IFileDatasourceService fileDs,
+        IAiInsightTransformService transformService,
+        ILogger<QueryExecutionService> logger)
     {
         _encryption = encryption;
         _powerBi = powerBi;
         _httpClientFactory = httpClientFactory;
         _fileDs = fileDs;
+        _transformService = transformService;
+        _logger = logger;
     }
 
     public static readonly HashSet<string> SqlTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -321,9 +333,10 @@ public class QueryExecutionService : IQueryExecutionService
         {
             var isDmv = sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
                       && sql.Contains("$SYSTEM.", StringComparison.OrdinalIgnoreCase);
-            return isDmv
+            var pbiResult = isDmv
                 ? await _powerBi.ExecuteDmvAsync(ds, sql, maxRows)
                 : await _powerBi.ExecuteDaxAsync(ds, sql, maxRows);
+            return ApplyTransforms(ds, pbiResult);
         }
 
         // SECURITY: when the datasource has a SelectedTables whitelist, ensure the query
@@ -369,12 +382,12 @@ public class QueryExecutionService : IQueryExecutionService
                 results.Add(row);
             }
 
-            return new QueryExecutionResult
+            return ApplyTransforms(ds, new QueryExecutionResult
             {
                 Success = true,
                 Data = results,
                 RowCount = results.Count
-            };
+            });
         }
         catch (Exception ex)
         {
@@ -633,7 +646,7 @@ public class QueryExecutionService : IQueryExecutionService
             var json = await response.Content.ReadAsStringAsync();
             var rows = ParseJsonToRows(json, maxRows);
 
-            return new QueryExecutionResult { Success = true, Data = rows, RowCount = rows.Count };
+            return ApplyTransforms(ds, new QueryExecutionResult { Success = true, Data = rows, RowCount = rows.Count });
         }
         catch (Exception ex)
         {
@@ -648,8 +661,20 @@ public class QueryExecutionService : IQueryExecutionService
         return _fileDs.TestAsync(url);
     }
 
-    public Task<QueryExecutionResult> ExecuteFileUrlAsync(Datasource ds, int maxRows = 1000)
-        => _fileDs.ExecuteAsync(ds, maxRows);
+    public async Task<QueryExecutionResult> ExecuteFileUrlAsync(Datasource ds, int maxRows = 1000)
+    {
+        var result = await _fileDs.ExecuteAsync(ds, maxRows);
+        return ApplyTransforms(ds, result);
+    }
+
+    private QueryExecutionResult ApplyTransforms(Datasource ds, QueryExecutionResult result)
+    {
+        if (!_transformService.HasEnabledTransform(ds)) return result;
+        var transformed = _transformService.Apply(ds, result);
+        if (!transformed.Success && !string.IsNullOrWhiteSpace(transformed.Error))
+            _logger.LogWarning("AI Insight transform failed for datasource {DatasourceId}: {Error}", ds.Id, transformed.Error);
+        return transformed;
+    }
 
     private static List<Dictionary<string, object>> ParseJsonToRows(string json, int maxRows)
     {

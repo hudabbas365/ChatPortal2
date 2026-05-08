@@ -3,6 +3,7 @@ using AIInsights.Filters;
 using AIInsights.Models;
 using AIInsights.Services;
 using AIInsights.Services.Datasources;
+using AIInsights.Services.Transforms;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -51,8 +52,9 @@ public class DatasourceController : ControllerBase
     private readonly IRelationshipService _relationships;
     private readonly IQueryCacheInvalidator _cacheInvalidator;
     private readonly IEnumerable<IDatasourceTypeService> _datasourceServices;
+    private readonly IAiInsightTransformService _transformService;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices, IAiInsightTransformService transformService)
     {
         _db = db;
         _queryService = queryService;
@@ -61,6 +63,7 @@ public class DatasourceController : ControllerBase
         _relationships = relationships;
         _cacheInvalidator = cacheInvalidator;
         _datasourceServices = datasourceServices;
+        _transformService = transformService;
     }
 
     private IDatasourceTypeService? ResolveTypeService(string? type) =>
@@ -163,6 +166,8 @@ public class DatasourceController : ControllerBase
             DbPassword = !string.IsNullOrEmpty(d.DbPassword) ? "••••••" : null,
             d.SelectedTables,
             XmlaEndpoint = !string.IsNullOrEmpty(d.XmlaEndpoint) ? "••••••" : null,
+            d.TransformEnabled,
+            d.TransformToml,
             d.OrganizationId,
             d.WorkspaceId,
             d.CreatedAt
@@ -432,12 +437,20 @@ public class DatasourceController : ControllerBase
         if (req.ApiUrl != null) ds.ApiUrl = _encryption.Encrypt(req.ApiUrl);
         if (req.ApiKey != null) ds.ApiKey = _encryption.Encrypt(req.ApiKey);
         if (req.ApiMethod != null) ds.ApiMethod = req.ApiMethod;
+        if (req.TransformEnabled.HasValue) ds.TransformEnabled = req.TransformEnabled.Value;
+        if (req.TransformToml != null)
+        {
+            var parse = _transformService.Parse(req.TransformToml);
+            if (!parse.Success)
+                return BadRequest(new { error = parse.Error ?? "Invalid transform TOML." });
+            ds.TransformToml = req.TransformToml;
+        }
 
         await _db.SaveChangesAsync();
         // Flush any cached query results for this datasource — connection details or
         // selected tables may have changed, so stale results must not be served.
         _cacheInvalidator.InvalidateDatasource(ds.Id);
-        return Ok(new { ds.Id, ds.Guid, ds.Name, ds.SelectedTables });
+        return Ok(new { ds.Id, ds.Guid, ds.Name, ds.SelectedTables, ds.TransformEnabled, ds.TransformToml });
     }
 
     [HttpDelete("{guid}")]
@@ -471,6 +484,67 @@ public class DatasourceController : ControllerBase
         await _db.SaveChangesAsync();
         _cacheInvalidator.InvalidateDatasource(ds.Id);
         return Ok(new { success = true });
+    }
+
+    [HttpGet("{guid}/transform")]
+    public async Task<IActionResult> GetTransform(string guid)
+    {
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var parse = _transformService.Parse(ds.TransformToml);
+        return Ok(new
+        {
+            datasourceId = ds.Id,
+            datasourceGuid = ds.Guid,
+            enabled = ds.TransformEnabled,
+            toml = ds.TransformToml ?? "",
+            parseSuccess = parse.Success,
+            parseError = parse.Error,
+            ruleCount = parse.Definition?.Rules.Count ?? 0
+        });
+    }
+
+    [HttpPost("{guid}/transform/preview")]
+    public async Task<IActionResult> PreviewTransform(string guid, [FromBody] TransformPreviewRequest? req)
+    {
+        var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
+        if (ds == null && int.TryParse(guid, out var intId))
+            ds = await _db.Datasources.FindAsync(intId);
+        if (ds == null) return NotFound();
+
+        var access = await EnsureViewAccessAsync(ds);
+        if (access != null) return access;
+
+        var rows = req?.Rows ?? new();
+        var previewDatasource = new Datasource
+        {
+            Id = ds.Id,
+            Guid = ds.Guid,
+            Name = ds.Name,
+            Type = ds.Type,
+            TransformEnabled = req?.Enabled ?? ds.TransformEnabled,
+            TransformToml = req?.Toml ?? ds.TransformToml
+        };
+        var transformed = _transformService.Apply(previewDatasource, new QueryExecutionResult
+        {
+            Success = true,
+            Data = rows,
+            RowCount = rows.Count
+        });
+        return Ok(new
+        {
+            success = transformed.Success,
+            rowCount = transformed.RowCount,
+            data = transformed.Data,
+            error = transformed.Error,
+            audit = transformed.TransformAudit
+        });
     }
 
     /// <summary>
@@ -630,7 +704,16 @@ public class DatasourceRequest
     public string? ApiUrl { get; set; }
     public string? ApiKey { get; set; }
     public string? ApiMethod { get; set; }
+    public bool? TransformEnabled { get; set; }
+    public string? TransformToml { get; set; }
     public int OrganizationId { get; set; }
     public int? WorkspaceId { get; set; }
     public string? UserId { get; set; }
+}
+
+public class TransformPreviewRequest
+{
+    public bool? Enabled { get; set; }
+    public string? Toml { get; set; }
+    public List<Dictionary<string, object>> Rows { get; set; } = new();
 }

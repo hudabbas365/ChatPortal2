@@ -16,6 +16,8 @@ public class Datasource
     public string? ApiUrl { get; set; }
     public string? ApiKey { get; set; }
     public string? ApiMethod { get; set; } // GET, POST, PUT, DELETE, PATCH
+    public bool TransformEnabled { get; set; }
+    public string? TransformToml { get; set; }
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
     public int? WorkspaceId { get; set; }
