@@ -246,8 +246,8 @@ public class OrganizationRetentionService
         bool immediateDeletion)
     {
         var safeOrg = WebUtility.HtmlEncode(orgName);
-        var deactivatedAt = deactivatedAtUtc.ToString("yyyy-MM-dd HH:mm 'UTC'");
-        var deleteAt = permanentDeleteAtUtc.ToString("yyyy-MM-dd HH:mm 'UTC'");
+        var deactivatedAt = DateTime.SpecifyKind(deactivatedAtUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm K");
+        var deleteAt = DateTime.SpecifyKind(permanentDeleteAtUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm K");
         var timingCopy = immediateDeletion
             ? "A Super Admin requested immediate permanent deletion. The organization is now being permanently deleted."
             : $"The organization will be permanently deleted on <strong>{deleteAt}</strong> unless restored before that time.";

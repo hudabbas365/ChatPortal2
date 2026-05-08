@@ -249,6 +249,18 @@
 </style>
 
 <script>
+function getCookie(name) {
+    const value = '; ' + document.cookie;
+    const parts = value.split('; ' + name + '=');
+    if (parts.length !== 2) return null;
+    return decodeURIComponent(parts.pop().split(';').shift());
+}
+
+function xsrfHeaders(extra = {}) {
+    const token = getCookie('XSRF-TOKEN');
+    return token ? Object.assign({ 'RequestVerificationToken': token }, extra) : extra;
+}
+
 function showToast(message, type = 'success', title = null) {
     const host = document.getElementById('toastHost');
     if (!host) return;
@@ -285,7 +297,7 @@ async function saveOrgPlan(id) {
     }
     const r = await fetch('/api/admin/super/orgs/' + id + '/plan', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: xsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
     });
     const data = await r.json().catch(() => ({}));
@@ -387,7 +399,11 @@ document.addEventListener('click', function (e) {
                     ? '/api/admin/super/orgs/' + pendingOrgId + '/permanent'
                     : '/api/admin/super/orgs/' + pendingOrgId)
                 + '?confirm=' + encodeURIComponent(pendingName);
-            var r = await fetch(url, { method: 'DELETE', credentials: 'same-origin' });
+            var r = await fetch(url, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+                headers: xsrfHeaders()
+            });
             var data = await r.json().catch(function () { return {}; });
             if (!r.ok) {
                 errEl.textContent = data.error || ('Delete failed (HTTP ' + r.status + ').');
@@ -429,7 +445,8 @@ document.addEventListener('click', function (e) {
         try {
             var r = await fetch('/api/admin/super/orgs/' + orgId + '/restore', {
                 method: 'POST',
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                headers: xsrfHeaders()
             });
             var data = await r.json().catch(function () { return {}; });
             if (!r.ok) {

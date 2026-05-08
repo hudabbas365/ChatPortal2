@@ -260,6 +260,7 @@ public class SuperAdminController : Controller
     /// <summary>
     /// Soft-deletes (deactivates) an organization.
     /// </summary>
+    [ValidateAntiForgeryToken]
     [HttpDelete("/api/admin/super/orgs/{id}")]
     public async Task<IActionResult> DeleteOrganization(int id, [FromQuery] string? confirm)
     {
@@ -315,6 +316,7 @@ public class SuperAdminController : Controller
         });
     }
 
+    [ValidateAntiForgeryToken]
     [HttpPost("/api/admin/super/orgs/{id}/restore")]
     public async Task<IActionResult> RestoreOrganization(int id)
     {
@@ -323,7 +325,7 @@ public class SuperAdminController : Controller
         if (org == null) return NotFound();
         if (!org.IsDeleted)
             return BadRequest(new { error = "Organization is already active." });
-        if (org.DeactivatedAt.HasValue && org.DeactivatedAt.Value <= DateTime.UtcNow.AddDays(-90))
+        if (org.DeactivatedAt.HasValue && org.DeactivatedAt.Value < DateTime.UtcNow.AddDays(-90))
             return BadRequest(new { error = "Organization is past the 90-day restore window." });
 
         var actorId = GetCurrentUserId() ?? "";
@@ -347,6 +349,7 @@ public class SuperAdminController : Controller
         return Ok(new { success = true, restoredOrgId = id, name = org.Name });
     }
 
+    [ValidateAntiForgeryToken]
     [HttpDelete("/api/admin/super/orgs/{id}/permanent")]
     public async Task<IActionResult> DeleteOrganizationPermanently(int id, [FromQuery] string? confirm)
     {
