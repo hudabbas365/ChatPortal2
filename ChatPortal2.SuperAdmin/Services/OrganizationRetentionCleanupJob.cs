@@ -1,4 +1,5 @@
 using AIInsights.Data;
+using AIInsights.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace AIInsights.SuperAdmin.Services;
@@ -41,7 +42,7 @@ public class OrganizationRetentionCleanupJob : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var retention = scope.ServiceProvider.GetRequiredService<OrganizationRetentionService>();
         var now = DateTime.UtcNow;
-        var deleteCutoff = now.AddDays(-90);
+        var deleteCutoff = now.AddDays(-Organization.SoftDeleteRetentionDays);
 
         var expiredOrgs = await db.Organizations
             .Where(o => o.IsDeleted && o.DeactivatedAt != null && o.DeactivatedAt <= deleteCutoff)

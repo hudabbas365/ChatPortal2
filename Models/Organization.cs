@@ -2,6 +2,8 @@ namespace AIInsights.Models;
 
 public class Organization
 {
+    public const int SoftDeleteRetentionDays = 90;
+
     public int Id { get; set; }
     public Guid OrganizationGuid { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";

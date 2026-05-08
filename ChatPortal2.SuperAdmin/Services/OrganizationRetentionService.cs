@@ -19,7 +19,7 @@ public class OrganizationRetentionService
         _logger = logger;
     }
 
-    public DateTime GetPermanentDeleteAtUtc(DateTime deactivatedAtUtc) => deactivatedAtUtc.AddDays(90);
+    public DateTime GetPermanentDeleteAtUtc(DateTime deactivatedAtUtc) => deactivatedAtUtc.AddDays(Organization.SoftDeleteRetentionDays);
 
     public async Task<int> SendPrePermanentDeletionEmailAsync(
         Organization org,
@@ -246,8 +246,8 @@ public class OrganizationRetentionService
         bool immediateDeletion)
     {
         var safeOrg = WebUtility.HtmlEncode(orgName);
-        var deactivatedAt = DateTime.SpecifyKind(deactivatedAtUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm K");
-        var deleteAt = DateTime.SpecifyKind(permanentDeleteAtUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm K");
+        var deactivatedAt = deactivatedAtUtc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");
+        var deleteAt = permanentDeleteAtUtc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");
         var timingCopy = immediateDeletion
             ? "A Super Admin requested immediate permanent deletion. The organization is now being permanently deleted."
             : $"The organization will be permanently deleted on <strong>{deleteAt}</strong> unless restored before that time.";

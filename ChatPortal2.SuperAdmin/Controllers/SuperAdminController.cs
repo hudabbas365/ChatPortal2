@@ -325,7 +325,7 @@ public class SuperAdminController : Controller
         if (org == null) return NotFound();
         if (!org.IsDeleted)
             return BadRequest(new { error = "Organization is already active." });
-        if (org.DeactivatedAt.HasValue && org.DeactivatedAt.Value < DateTime.UtcNow.AddDays(-90))
+        if (org.DeactivatedAt.HasValue && org.DeactivatedAt.Value < DateTime.UtcNow.AddDays(-Organization.SoftDeleteRetentionDays))
             return BadRequest(new { error = "Organization is past the 90-day restore window." });
 
         var actorId = GetCurrentUserId() ?? "";

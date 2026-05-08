@@ -47,7 +47,7 @@
                     <td>
                         @if (isDeactivated)
                         {
-                            var purgeAt = org.DeactivatedAt?.AddDays(90);
+                            var purgeAt = org.DeactivatedAt?.AddDays(AIInsights.Models.Organization.SoftDeleteRetentionDays);
                             <span class="badge-sm badge-amber">Deactivated</span>
                             if (purgeAt.HasValue)
                             {
@@ -357,7 +357,7 @@ document.addEventListener('click', function (e) {
             confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
         } else {
             titleEl.textContent = 'Deactivate organization';
-            subtitleEl.textContent = 'Organization can be restored within 90 days.';
+            subtitleEl.textContent = 'Organization can be restored within @AIInsights.Models.Organization.SoftDeleteRetentionDays days.';
             listTitleEl.textContent = 'The following access will be disabled:';
             impactListEl.style.display = 'none';
             confirmBtn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Deactivate';
