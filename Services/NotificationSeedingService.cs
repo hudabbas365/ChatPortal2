@@ -65,6 +65,9 @@ public class NotificationSeedingService : BackgroundService
 
         foreach (var org in orgs)
         {
+            if (org.IsDeleted || !org.IsActive)
+                continue;
+
             // Email not verified.
             if (!org.IsEmailVerified)
             {

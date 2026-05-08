@@ -662,6 +662,9 @@ namespace AIInsights.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("DeactivatedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("EmailVerificationToken")
                         .HasColumnType("nvarchar(max)");
 
@@ -678,6 +681,12 @@ namespace AIInsights.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsBlocked")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsEmailVerified")

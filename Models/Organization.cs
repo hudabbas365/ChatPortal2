@@ -2,6 +2,8 @@ namespace AIInsights.Models;
 
 public class Organization
 {
+    public const int SoftDeleteRetentionDays = 90;
+
     public int Id { get; set; }
     public Guid OrganizationGuid { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
@@ -55,6 +57,11 @@ public class Organization
     public bool IsBlocked { get; set; } = false;
     public string? BlockedReason { get; set; }
     public DateTime? BlockedAt { get; set; }
+    
+    // ── Soft Deletion / Deactivation ──
+    public bool IsActive { get; set; } = true;
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeactivatedAt { get; set; }
 
     // ── Payment Records ──
     public List<PaymentRecord> PaymentRecords { get; set; } = new();

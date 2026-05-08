@@ -1,6 +1,7 @@
 using AIInsights.Data;
 using AIInsights.Models;
 using AIInsights.Services;
+using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,12 +16,18 @@ public class SuperAdminController : Controller
     private readonly AppDbContext _db;
     private readonly CohereService _cohere;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly OrganizationRetentionService _orgRetention;
 
-    public SuperAdminController(AppDbContext db, CohereService cohere, IServiceScopeFactory scopeFactory)
+    public SuperAdminController(
+        AppDbContext db,
+        CohereService cohere,
+        IServiceScopeFactory scopeFactory,
+        OrganizationRetentionService orgRetention)
     {
         _db = db;
         _cohere = cohere;
         _scopeFactory = scopeFactory;
+        _orgRetention = orgRetention;
     }
 
     protected string? GetCurrentUserId() =>
@@ -60,6 +67,7 @@ public class SuperAdminController : Controller
         // Recent organizations list — surfaces the OrganizationGuid on the dashboard so
         // SuperAdmin can copy it without having to navigate into the Organizations page.
         ViewBag.RecentOrganizations = await _db.Organizations
+            .Where(o => !o.IsDeleted && o.IsActive)
             .OrderByDescending(o => o.CreatedAt)
             .ThenBy(o => o.Id)
             .Select(o => new OrgGuidRow
@@ -93,7 +101,7 @@ public class SuperAdminController : Controller
 
     private async Task<DashboardStatsDto> GetDashboardStatsAsync()
     {
-        var totalOrgs = await _db.Organizations.CountAsync();
+        var totalOrgs = await _db.Organizations.CountAsync(o => !o.IsDeleted && o.IsActive);
         var totalUsers = await _db.Users.CountAsync();
         var totalWorkspaces = await _db.Workspaces.CountAsync();
         var totalMessages = await _db.ChatMessages.CountAsync();
@@ -181,7 +189,8 @@ public class SuperAdminController : Controller
                 .ThenInclude(u => u.Subscription)
             .Include(o => o.Workspaces)
             .AsSplitQuery()
-            .OrderByDescending(o => o.CreatedAt)
+            .OrderBy(o => o.IsDeleted)
+            .ThenByDescending(o => o.CreatedAt)
             .ThenBy(o => o.Id)
             .ToListAsync();
         return View("~/Views/Admin/Organizations.cshtml", orgs);
@@ -192,6 +201,7 @@ public class SuperAdminController : Controller
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var orgs = await _db.Organizations
+            .Where(o => !o.IsDeleted && o.IsActive)
             .OrderBy(o => o.Name)
             .Select(o => new { o.Id, o.Name, plan = o.Plan.ToString() })
             .ToListAsync();
@@ -204,6 +214,8 @@ public class SuperAdminController : Controller
         if (!await IsSuperAdminAsync()) return StatusCode(403);
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
+        if (org.IsDeleted || !org.IsActive)
+            return BadRequest(new { error = "Cannot update plan for a deactivated organization." });
         if (!Enum.TryParse<PlanType>(req.Plan, true, out var plan))
             return BadRequest(new { error = "Invalid plan. Use: Free, FreeTrial, Professional, Enterprise" });
 
@@ -246,13 +258,9 @@ public class SuperAdminController : Controller
     }
 
     /// <summary>
-    /// Permanently deletes an organization and all of its related data:
-    /// users, subscriptions, workspaces, agents, datasources, dashboards,
-    /// reports, chat messages, pinned results, token usage, payment records,
-    /// activity logs, notifications, support tickets, etc.
-    /// Many relationships already cascade via the model configuration; this
-    /// method explicitly cleans up the rest inside a single transaction.
+    /// Soft-deletes (deactivates) an organization.
     /// </summary>
+    [ValidateAntiForgeryToken]
     [HttpDelete("/api/admin/super/orgs/{id}")]
     public async Task<IActionResult> DeleteOrganization(int id, [FromQuery] string? confirm)
     {
@@ -268,137 +276,110 @@ public class SuperAdminController : Controller
             return BadRequest(new { error = "Confirmation text does not match the organization name." });
         }
 
-        var actorId = GetCurrentUserId();
-        var orgName = org.Name;
+        if (org.IsDeleted)
+            return BadRequest(new { error = "Organization is already deactivated." });
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var actorId = GetCurrentUserId() ?? "";
+        var now = DateTime.UtcNow;
+        org.IsDeleted = true;
+        org.IsActive = false;
+        org.DeactivatedAt = now;
+        org.IsBlocked = true;
+        org.BlockedAt = now;
+        org.BlockedReason ??= "Organization deactivated by Super Admin.";
+
+        _db.ActivityLogs.Add(new ActivityLog
         {
-            // ── Collect dependent IDs up-front
-            var userIds = await _db.Users
-                .Where(u => u.OrganizationId == id)
-                .Select(u => u.Id)
-                .ToListAsync();
+            Action = "Org.Deactivated",
+            Description = $"SuperAdmin deactivated organization '{org.Name}' (Id={org.Id}).",
+            UserId = actorId,
+            OrganizationId = org.Id,
+            CreatedAt = now
+        });
 
-            var workspaceIds = await _db.Workspaces
-                .Where(w => w.OrganizationId == id)
-                .Select(w => w.Id)
-                .ToListAsync();
+        var permanentDeleteAt = _orgRetention.GetPermanentDeleteAtUtc(now);
+        await _orgRetention.SendPrePermanentDeletionEmailAsync(
+            org,
+            actorId,
+            permanentDeleteAtUtc: permanentDeleteAt,
+            immediateDeletion: false);
 
-            var reportIds = workspaceIds.Count > 0
-                ? await _db.Reports.Where(r => workspaceIds.Contains(r.WorkspaceId)).Select(r => r.Id).ToListAsync()
-                : new List<int>();
+        await _db.SaveChangesAsync();
 
-            // ── Tables that don't cascade — clean them explicitly.
-            // ActivityLog (Org or User)
-            await _db.ActivityLogs
-                .Where(l => l.OrganizationId == id || (l.UserId != null && userIds.Contains(l.UserId)))
-                .ExecuteDeleteAsync();
-
-            // SupportTickets
-            await _db.SupportTickets
-                .Where(t => t.OrganizationId == id
-                            || (t.UserId != null && userIds.Contains(t.UserId))
-                            || (t.AssignedToUserId != null && userIds.Contains(t.AssignedToUserId)))
-                .ExecuteDeleteAsync();
-
-            // Notifications + UserNotifications
-            await _db.UserNotifications
-                .Where(n => userIds.Contains(n.UserId))
-                .ExecuteDeleteAsync();
-
-            await _db.Notifications
-                .Where(n => n.OrganizationId == id
-                            || (n.TargetUserId != null && userIds.Contains(n.TargetUserId)))
-                .ExecuteDeleteAsync();
-
-            // ChatMessages (per workspace and per user)
-            if (workspaceIds.Count > 0)
-            {
-                await _db.ChatMessages
-                    .Where(m => workspaceIds.Contains(m.WorkspaceId))
-                    .ExecuteDeleteAsync();
-            }
-            if (userIds.Count > 0)
-            {
-                await _db.ChatMessages
-                    .Where(m => userIds.Contains(m.UserId))
-                    .ExecuteDeleteAsync();
-            }
-
-            // PinnedResults (per workspace and per user)
-            if (workspaceIds.Count > 0)
-            {
-                await _db.PinnedResults
-                    .Where(p => workspaceIds.Contains(p.WorkspaceId))
-                    .ExecuteDeleteAsync();
-            }
-            if (userIds.Count > 0)
-            {
-                await _db.PinnedResults
-                    .Where(p => userIds.Contains(p.UserId))
-                    .ExecuteDeleteAsync();
-            }
-
-            // SharedReports for the org's reports (cascade also handles this, but
-            // we delete here defensively before report rows go away).
-            if (reportIds.Count > 0)
-            {
-                await _db.SharedReports
-                    .Where(sr => reportIds.Contains(sr.ReportId))
-                    .ExecuteDeleteAsync();
-                await _db.ReportRevisions
-                    .Where(rr => reportIds.Contains(rr.ReportId))
-                    .ExecuteDeleteAsync();
-            }
-
-            // Identity-related: detach users from org so cascade-on-delete on the
-            // org row doesn't try to SetNull-then-Cascade across competing paths,
-            // and so we can hard-delete the user rows ourselves.
-            if (userIds.Count > 0)
-            {
-                // SubscriptionPlans cascade with User, but delete explicitly to
-                // avoid SQL Server multiple-cascade-path errors on some schemas.
-                await _db.SubscriptionPlans
-                    .Where(s => userIds.Contains(s.UserId))
-                    .ExecuteDeleteAsync();
-
-                await _db.WorkspaceUsers
-                    .Where(wu => userIds.Contains(wu.UserId))
-                    .ExecuteDeleteAsync();
-
-                // Identity user rows
-                await _db.Users
-                    .Where(u => userIds.Contains(u.Id))
-                    .ExecuteDeleteAsync();
-            }
-
-            // Finally remove the organization itself. Remaining dependents
-            // (Workspaces, Agents, Datasources, TokenUsages, PaymentRecords,
-            // PlanChangeLogs, Dashboards/Reports under workspaces, etc.) are
-            // wired with cascade in OnModelCreating and will be removed by SQL.
-            _db.Organizations.Remove(org);
-            await _db.SaveChangesAsync();
-
-            // Audit trail (after the org row is gone — log carries no FK on Org).
-            _db.ActivityLogs.Add(new ActivityLog
-            {
-                Action = "OrganizationDeleted",
-                Description = $"SuperAdmin deleted organization '{orgName}' (Id={id}) and all related data.",
-                UserId = actorId ?? "",
-                OrganizationId = null,
-                CreatedAt = DateTime.UtcNow
-            });
-            await _db.SaveChangesAsync();
-
-            await tx.CommitAsync();
-            return Ok(new { success = true, deletedOrgId = id, name = orgName });
-        }
-        catch (Exception ex)
+        return Ok(new
         {
-            await tx.RollbackAsync();
-            return StatusCode(500, new { error = "Failed to delete organization.", detail = ex.Message });
+            success = true,
+            deactivatedOrgId = id,
+            name = org.Name,
+            deactivatedAt = now,
+            permanentDeleteAfter = permanentDeleteAt
+        });
+    }
+
+    [ValidateAntiForgeryToken]
+    [HttpPost("/api/admin/super/orgs/{id}/restore")]
+    public async Task<IActionResult> RestoreOrganization(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+        if (!org.IsDeleted)
+            return BadRequest(new { error = "Organization is already active." });
+        if (org.DeactivatedAt.HasValue && org.DeactivatedAt.Value < DateTime.UtcNow.AddDays(-Organization.SoftDeleteRetentionDays))
+            return BadRequest(new { error = "Organization is past the 90-day restore window." });
+
+        var actorId = GetCurrentUserId() ?? "";
+        org.IsDeleted = false;
+        org.IsActive = true;
+        org.DeactivatedAt = null;
+        org.IsBlocked = false;
+        org.BlockedAt = null;
+        org.BlockedReason = null;
+
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Action = "Org.Restored",
+            Description = $"SuperAdmin restored organization '{org.Name}' (Id={org.Id}).",
+            UserId = actorId,
+            OrganizationId = org.Id,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, restoredOrgId = id, name = org.Name });
+    }
+
+    [ValidateAntiForgeryToken]
+    [HttpDelete("/api/admin/super/orgs/{id}/permanent")]
+    public async Task<IActionResult> DeleteOrganizationPermanently(int id, [FromQuery] string? confirm)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var org = await _db.Organizations.FindAsync(id);
+        if (org == null) return NotFound();
+        if (!org.IsDeleted)
+            return BadRequest(new { error = "Organization must be deactivated first before permanent deletion." });
+
+        if (string.IsNullOrWhiteSpace(confirm) ||
+            !string.Equals(confirm.Trim(), org.Name, StringComparison.Ordinal))
+        {
+            return BadRequest(new { error = "Confirmation text does not match the organization name." });
         }
+
+        var actorId = GetCurrentUserId() ?? "";
+        await _orgRetention.SendPrePermanentDeletionEmailAsync(
+            org,
+            actorId,
+            permanentDeleteAtUtc: DateTime.UtcNow,
+            immediateDeletion: true);
+        await _db.SaveChangesAsync();
+
+        var (ok, err) = await _orgRetention.PermanentlyDeleteOrganizationAsync(
+            org,
+            actorId,
+            source: "manual_superadmin");
+        if (!ok) return StatusCode(500, new { error = "Failed to permanently delete organization.", detail = err });
+
+        return Ok(new { success = true, deletedOrgId = id, name = org.Name });
     }
 
     [HttpGet("/superadmin/activity")]

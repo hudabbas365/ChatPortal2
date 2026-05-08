@@ -8,7 +8,9 @@
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h1 class="page-title">Organizations</h1>
-        <p class="page-desc">@Model.Count registered organizations</p>
+        <p class="page-desc">
+            @(Model.Count(o => !o.IsDeleted && o.IsActive)) active · @(Model.Count(o => o.IsDeleted || !o.IsActive)) deactivated
+        </p>
     </div>
 </div>
 
@@ -17,6 +19,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Org ID</th>
                 <th>Users</th>
                 <th>Pro</th>
@@ -33,6 +36,7 @@
         <tbody>
             @foreach (var org in Model)
             {
+                var isDeactivated = org.IsDeleted || !org.IsActive;
                 var proCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Professional) ?? 0;
                 var entCount = org.Users?.Count(u => u.Subscription?.Plan == AIInsights.Models.PlanType.Enterprise) ?? 0;
                 var trialCount = org.Users?.Count(u => u.Subscription?.IsTrialActive == true) ?? 0;
@@ -40,6 +44,21 @@
                             + entCount * AIInsights.Models.PlanPricing.EnterprisePricePerUser;
                 <tr>
                     <td style="color:#1e3a5f;font-weight:600">@org.Name</td>
+                    <td>
+                        @if (isDeactivated)
+                        {
+                            var purgeAt = org.DeactivatedAt?.AddDays(AIInsights.Models.Organization.SoftDeleteRetentionDays);
+                            <span class="badge-sm badge-amber">Deactivated</span>
+                            if (purgeAt.HasValue)
+                            {
+                                <div style="font-size:.72rem;color:var(--text-muted)">Delete after @purgeAt.Value.ToString("MMM d, yyyy")</div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="badge-sm badge-emerald">Active</span>
+                        }
+                    </td>
                     <td>
                         @{
                             var guidStr = org.OrganizationGuid.ToString();
@@ -84,13 +103,13 @@
                     </td>
                     <td>
                         <div class="d-flex gap-1 align-items-center">
-                            <select class="form-select form-select-sm" id="orgPlan_@org.Id" style="min-width:140px">
+                            <select class="form-select form-select-sm" id="orgPlan_@org.Id" style="min-width:140px" @(isDeactivated ? "disabled" : null)>
                                 <option value="Free" selected="@(org.Plan == AIInsights.Models.PlanType.Free)">Free</option>
                                 <option value="FreeTrial" selected="@(org.Plan == AIInsights.Models.PlanType.FreeTrial)">FreeTrial</option>
                                 <option value="Professional" selected="@(org.Plan == AIInsights.Models.PlanType.Professional)">Professional</option>
                                 <option value="Enterprise" selected="@(org.Plan == AIInsights.Models.PlanType.Enterprise)">Enterprise</option>
                             </select>
-                            <button class="btn btn-sm btn-outline-primary" onclick="saveOrgPlan(@org.Id)">Save</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="saveOrgPlan(@org.Id)" @(isDeactivated ? "disabled" : null)>Save</button>
                         </div>
                     </td>
                     <td>
@@ -102,7 +121,7 @@
                         }
                         <div class="d-flex gap-1 align-items-center" title="Assigned / Purchased">
                             <input type="number" min="0" class="form-control form-control-sm"
-                                   id="orgLic_@org.Id" value="@org.PurchasedLicenses" style="width:80px" />
+                                   id="orgLic_@org.Id" value="@org.PurchasedLicenses" style="width:80px" @(isDeactivated ? "disabled" : null) />
                             <span style="color:var(--text-muted);font-size:12px">@assignedLicenses&nbsp;used</span>
                         </div>
                     </td>
@@ -112,15 +131,38 @@
                             <a href="/superadmin/organizations/@org.Id/invoices" class="btn-ghost-sm" style="font-size:.75rem;padding:.3rem .65rem">
                                 <i class="bi bi-receipt"></i> Invoices
                             </a>
-                            <button type="button" class="btn-ghost-sm sa-org-delete-btn"
-                                    data-org-id="@org.Id"
-                                    data-org-name="@org.Name"
-                                    data-user-count="@(org.Users?.Count ?? 0)"
-                                    data-ws-count="@(org.Workspaces?.Count ?? 0)"
-                                    title="Delete organization and all related data"
-                                    style="font-size:.75rem;padding:.3rem .65rem;color:#b91c1c;border-color:#fecaca">
-                                <i class="bi bi-trash3"></i> Delete
-                            </button>
+                            @if (isDeactivated)
+                            {
+                                <button type="button" class="btn-ghost-sm sa-org-restore-btn"
+                                        data-org-id="@org.Id"
+                                        data-org-name="@org.Name"
+                                        style="font-size:.75rem;padding:.3rem .65rem;color:#166534;border-color:#bbf7d0">
+                                    <i class="bi bi-arrow-counterclockwise"></i> Restore
+                                </button>
+                                <button type="button" class="btn-ghost-sm sa-org-delete-btn"
+                                        data-mode="permanent"
+                                        data-org-id="@org.Id"
+                                        data-org-name="@org.Name"
+                                        data-user-count="@(org.Users?.Count ?? 0)"
+                                        data-ws-count="@(org.Workspaces?.Count ?? 0)"
+                                        title="Delete organization and all related data"
+                                        style="font-size:.75rem;padding:.3rem .65rem;color:#b91c1c;border-color:#fecaca">
+                                    <i class="bi bi-trash3"></i> Delete permanently
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn-ghost-sm sa-org-delete-btn"
+                                        data-mode="soft"
+                                        data-org-id="@org.Id"
+                                        data-org-name="@org.Name"
+                                        data-user-count="@(org.Users?.Count ?? 0)"
+                                        data-ws-count="@(org.Workspaces?.Count ?? 0)"
+                                        title="Deactivate organization (restorable for 90 days)"
+                                        style="font-size:.75rem;padding:.3rem .65rem;color:#b45309;border-color:#fed7aa">
+                                    <i class="bi bi-pause-circle"></i> Deactivate
+                                </button>
+                            }
                         </div>
                     </td>
                 </tr>
@@ -132,7 +174,7 @@
 <div id="toastHost" aria-live="polite" aria-atomic="true"
      style="position:fixed;top:1.25rem;right:1.25rem;z-index:1080;display:flex;flex-direction:column;gap:.5rem;pointer-events:none"></div>
 
-<!-- Delete-organization confirmation modal -->
+<!-- Organization action confirmation modal -->
 <div id="saDeleteOrgBackdrop"
      style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1090;align-items:center;justify-content:center;padding:1rem">
     <div style="background:#fff;border-radius:12px;max-width:520px;width:100%;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);overflow:hidden">
@@ -141,19 +183,19 @@
                 <i class="bi bi-exclamation-triangle-fill"></i>
             </div>
             <div>
-                <div style="font-weight:600;color:#1e3a5f">Delete organization</div>
-                <div style="font-size:.78rem;color:var(--text-muted)">This action cannot be undone.</div>
+                <div id="saDelTitle" style="font-weight:600;color:#1e3a5f">Deactivate organization</div>
+                <div id="saDelSubtitle" style="font-size:.78rem;color:var(--text-muted)">Organization data will be retained for 90 days.</div>
             </div>
         </div>
         <div style="padding:1.1rem 1.25rem;font-size:.85rem;color:var(--text)">
             <p style="margin:0 0 .65rem">
-                You are about to permanently delete
+                You are about to apply this action to
                 <strong id="saDelOrgName" style="color:#1e3a5f"></strong>.
             </p>
-            <p style="margin:0 0 .65rem;color:var(--text-dim)">
+            <p id="saDelListTitle" style="margin:0 0 .65rem;color:var(--text-dim)">
                 The following will be removed:
             </p>
-            <ul style="margin:0 0 .9rem 1.1rem;color:var(--text-dim);font-size:.8rem;line-height:1.55">
+            <ul id="saDelImpactList" style="margin:0 0 .9rem 1.1rem;color:var(--text-dim);font-size:.8rem;line-height:1.55">
                 <li><span id="saDelUserCount">0</span> users (and their subscriptions)</li>
                 <li><span id="saDelWsCount">0</span> workspaces (with all reports, dashboards &amp; chat history)</li>
                 <li>All agents, datasources &amp; connection strings</li>
@@ -171,7 +213,7 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" id="saDelCancelBtn">Cancel</button>
             <button type="button" class="btn btn-sm" id="saDelConfirmBtn"
                     style="background:#dc2626;border-color:#dc2626;color:#fff" disabled>
-                <i class="bi bi-trash3 me-1"></i>Delete permanently
+                Confirm
             </button>
         </div>
     </div>
@@ -207,6 +249,18 @@
 </style>
 
 <script>
+function getCookie(name) {
+    const value = '; ' + document.cookie;
+    const parts = value.split('; ' + name + '=');
+    if (parts.length !== 2) return null;
+    return decodeURIComponent(parts.pop().split(';').shift());
+}
+
+function xsrfHeaders(extra = {}) {
+    const token = getCookie('XSRF-TOKEN');
+    return token ? Object.assign({ 'RequestVerificationToken': token }, extra) : extra;
+}
+
 function showToast(message, type = 'success', title = null) {
     const host = document.getElementById('toastHost');
     if (!host) return;
@@ -243,7 +297,7 @@ async function saveOrgPlan(id) {
     }
     const r = await fetch('/api/admin/super/orgs/' + id + '/plan', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: xsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
     });
     const data = await r.json().catch(() => ({}));
@@ -267,9 +321,13 @@ document.addEventListener('click', function (e) {
     });
 });
 
-// ── Delete-organization flow ─────────────────────────────────────────
+// ── Organization lifecycle actions ───────────────────────────────────
 (function () {
     var backdrop      = document.getElementById('saDeleteOrgBackdrop');
+    var titleEl       = document.getElementById('saDelTitle');
+    var subtitleEl    = document.getElementById('saDelSubtitle');
+    var listTitleEl   = document.getElementById('saDelListTitle');
+    var impactListEl  = document.getElementById('saDelImpactList');
     var nameEl        = document.getElementById('saDelOrgName');
     var userCountEl   = document.getElementById('saDelUserCount');
     var wsCountEl     = document.getElementById('saDelWsCount');
@@ -279,17 +337,31 @@ document.addEventListener('click', function (e) {
     var errEl         = document.getElementById('saDelError');
     var pendingOrgId  = null;
     var pendingName   = '';
+    var pendingMode   = 'soft';
 
-    function open(orgId, orgName, userCount, wsCount) {
+    function open(orgId, orgName, userCount, wsCount, mode) {
         pendingOrgId = orgId;
         pendingName  = orgName || '';
+        pendingMode  = mode || 'soft';
         nameEl.textContent      = pendingName;
         userCountEl.textContent = userCount;
         wsCountEl.textContent   = wsCount;
         confirmInput.value      = '';
         confirmInput.placeholder = pendingName;
         confirmBtn.disabled     = true;
-        confirmBtn.innerHTML    = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+        if (pendingMode === 'permanent') {
+            titleEl.textContent = 'Delete organization permanently';
+            subtitleEl.textContent = 'This action cannot be undone.';
+            listTitleEl.textContent = 'The following will be removed:';
+            impactListEl.style.display = '';
+            confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+        } else {
+            titleEl.textContent = 'Deactivate organization';
+            subtitleEl.textContent = 'Organization can be restored within @AIInsights.Models.Organization.SoftDeleteRetentionDays days.';
+            listTitleEl.textContent = 'The following access will be disabled:';
+            impactListEl.style.display = 'none';
+            confirmBtn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Deactivate';
+        }
         errEl.style.display     = 'none';
         errEl.textContent       = '';
         backdrop.style.display  = 'flex';
@@ -300,6 +372,7 @@ document.addEventListener('click', function (e) {
         backdrop.style.display = 'none';
         pendingOrgId = null;
         pendingName  = '';
+        pendingMode  = 'soft';
     }
 
     confirmInput.addEventListener('input', function () {
@@ -317,32 +390,73 @@ document.addEventListener('click', function (e) {
     confirmBtn.addEventListener('click', async function () {
         if (!pendingOrgId || confirmInput.value !== pendingName) return;
         confirmBtn.disabled  = true;
-        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting…';
+        confirmBtn.innerHTML = pendingMode === 'permanent'
+            ? '<span class="spinner-border spinner-border-sm me-1"></span>Deleting…'
+            : '<span class="spinner-border spinner-border-sm me-1"></span>Deactivating…';
         errEl.style.display  = 'none';
         try {
-            var url = '/api/admin/super/orgs/' + pendingOrgId
-                    + '?confirm=' + encodeURIComponent(pendingName);
-            var r = await fetch(url, { method: 'DELETE', credentials: 'same-origin' });
+            var url = (pendingMode === 'permanent'
+                    ? '/api/admin/super/orgs/' + pendingOrgId + '/permanent'
+                    : '/api/admin/super/orgs/' + pendingOrgId)
+                + '?confirm=' + encodeURIComponent(pendingName);
+            var r = await fetch(url, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+                headers: xsrfHeaders()
+            });
             var data = await r.json().catch(function () { return {}; });
             if (!r.ok) {
                 errEl.textContent = data.error || ('Delete failed (HTTP ' + r.status + ').');
                 if (data.detail) errEl.textContent += ' ' + data.detail;
                 errEl.style.display = '';
                 confirmBtn.disabled  = false;
-                confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+                confirmBtn.innerHTML = pendingMode === 'permanent'
+                    ? '<i class="bi bi-trash3 me-1"></i>Delete permanently'
+                    : '<i class="bi bi-pause-circle me-1"></i>Deactivate';
                 return;
             }
-            // Remove the row from the table without a full reload.
-            var btn = document.querySelector('.sa-org-delete-btn[data-org-id="' + pendingOrgId + '"]');
-            var row = btn ? btn.closest('tr') : null;
-            if (row) row.remove();
             close();
-            showToast('Organization "' + pendingName + '" and all related data were deleted.', 'success', 'Deleted');
+            showToast(
+                pendingMode === 'permanent'
+                    ? ('Organization "' + pendingName + '" and all related data were permanently deleted.')
+                    : ('Organization "' + pendingName + '" was deactivated.'),
+                'success',
+                pendingMode === 'permanent' ? 'Deleted' : 'Deactivated'
+            );
+            location.reload();
         } catch (ex) {
             errEl.textContent   = 'Network error: ' + (ex && ex.message ? ex.message : 'unknown');
             errEl.style.display = '';
             confirmBtn.disabled  = false;
-            confirmBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete permanently';
+            confirmBtn.innerHTML = pendingMode === 'permanent'
+                ? '<i class="bi bi-trash3 me-1"></i>Delete permanently'
+                : '<i class="bi bi-pause-circle me-1"></i>Deactivate';
+        }
+    });
+
+    document.addEventListener('click', async function (e) {
+        var restoreBtn = e.target.closest('.sa-org-restore-btn');
+        if (!restoreBtn) return;
+        e.preventDefault();
+        var orgId = restoreBtn.dataset.orgId;
+        var orgName = restoreBtn.dataset.orgName || '';
+        if (!orgId) return;
+        if (!confirm('Restore organization "' + orgName + '"?')) return;
+        try {
+            var r = await fetch('/api/admin/super/orgs/' + orgId + '/restore', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: xsrfHeaders()
+            });
+            var data = await r.json().catch(function () { return {}; });
+            if (!r.ok) {
+                showToast(data.error || 'Restore failed.', 'error');
+                return;
+            }
+            showToast('Organization "' + orgName + '" restored successfully.', 'success', 'Restored');
+            location.reload();
+        } catch (ex) {
+            showToast('Network error: ' + (ex && ex.message ? ex.message : 'unknown'), 'error');
         }
     });
 
@@ -354,7 +468,8 @@ document.addEventListener('click', function (e) {
             btn.dataset.orgId,
             btn.dataset.orgName || '',
             btn.dataset.userCount || '0',
-            btn.dataset.wsCount   || '0'
+            btn.dataset.wsCount   || '0',
+            btn.dataset.mode || 'soft'
         );
     });
 })();
