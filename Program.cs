@@ -2,6 +2,7 @@ using System.Text;
 using AIInsights.Data;
 using AIInsights.Models;
 using AIInsights.Services;
+using AIInsights.Services.Transforms;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -108,6 +109,7 @@ builder.Services.AddScoped<ISeoService, SeoService>();
 builder.Services.AddSingleton<IChartService, ChartService>();
 builder.Services.AddSingleton<IDataService, DataService>();
 builder.Services.AddSingleton<IPowerBiService, PowerBiService>();
+builder.Services.AddSingleton<IAiInsightTransformService, AiInsightTransformService>();
 // Query execution with caching decorator — reduces redundant hits to live datasources.
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<QueryExecutionService>();

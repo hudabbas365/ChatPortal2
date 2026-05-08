@@ -22,6 +22,39 @@ dotnet restore
 dotnet run
 ```
 
+## AI Insight ETL Transform Layer (TOML)
+
+AI Insights now supports a datasource-bound **Transform** step in the flow:
+
+`Datasource -> Transform -> Dashboard -> Report`
+
+- Transform rules are stored per datasource (`TransformEnabled`, `TransformToml`).
+- Rules are authored in TOML and applied automatically to query results before dashboards/reports consume them.
+- Supported categories include:
+  - data cleansing (`remove_duplicates`, `handle_nulls`, `standardize_format`)
+  - normalization (`convert_units`, `apply_naming_convention`, `map_codes`)
+  - business logic (`kpi_classification`, `sentiment_score`, `derived_field` with DAX-like `IF(...)` / `DATEDIFF(...)`)
+  - aggregation/restructuring (`aggregate`, `flatten_json`)
+  - validation/audit (`validate_schema`, `referential_integrity`, transform audit trail)
+
+Example:
+
+```toml
+[transform]
+name = "Support ETL"
+enabled = true
+dax_like_expressions = true
+
+[[rules]]
+type = "remove_duplicates"
+keys = ["TicketId"]
+
+[[rules]]
+type = "derived_field"
+target_field = "ResolutionMinutes"
+expression = "DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])"
+```
+
 ## Subscription Gate (Read-Only Mode)
 
 When an organization's subscription ends (after the `SubscriptionNextBillingDate` passes following a cancellation), the `SubscriptionExpiryJob` sets `Plan = Free` and `SubscriptionStatus = EXPIRED`. At that point a server-side subscription gate activates for regular users (`Role = "User"`):

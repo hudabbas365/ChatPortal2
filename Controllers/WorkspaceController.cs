@@ -157,6 +157,8 @@ public class WorkspaceController : Controller
                 ApiUrl           = (isRest || isFile) ? SafeDecrypt(d.ApiUrl) : "",
                 ApiKey           = isRest && !string.IsNullOrEmpty(d.ApiKey) ? "••••••" : "",
                 ApiMethod        = d.ApiMethod ?? "",
+                TransformEnabled = d.TransformEnabled,
+                TransformToml    = d.TransformToml ?? "",
                 // Power BI fields — surface non-secret values so the popup can show them.
                 XmlaEndpoint            = isPbi ? SafeDecrypt(d.XmlaEndpoint) : "",
                 MicrosoftAccountTenantId = isPbi && !string.IsNullOrEmpty(d.MicrosoftAccountTenantId) ? "••••••" : "",

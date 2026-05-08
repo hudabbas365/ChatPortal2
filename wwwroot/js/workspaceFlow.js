@@ -714,6 +714,8 @@
             const ctx = { esc };
             const bodyHtml   = (window.WfDatasources && window.WfDatasources.detailFormHtml(ds.type, ds, ctx))   || '';
             const footerHtml = (window.WfDatasources && window.WfDatasources.detailFooterHtml(ds.type, ds, ctx)) || '';
+            const transformToml = ds.transformToml || '';
+            const transformEnabled = !!ds.transformEnabled;
             modal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content" style="background:white;color:var(--cp-text)">
@@ -727,12 +729,35 @@
                                 <input type="text" class="form-control form-control-sm" readonly value="${esc(ds.type || 'Unknown')}" />
                             </div>
                             ${bodyHtml}
+                            <hr />
+                            <div class="mb-2 d-flex justify-content-between align-items-center">
+                                <label class="form-label fw-bold mb-0" style="font-size:0.8rem">AI Insight Transform (TOML)</label>
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="dsTransformEnabled" ${transformEnabled ? 'checked' : ''}>
+                                    <label class="form-check-label small" for="dsTransformEnabled">Enabled</label>
+                                </div>
+                            </div>
+                            <textarea class="form-control form-control-sm" id="dsTransformToml" rows="8" style="font-family:monospace;font-size:0.75rem" placeholder="[transform]
+name = &quot;Support ETL&quot;
+enabled = true
+dax_like_expressions = true
+
+[[rules]]
+type = &quot;remove_duplicates&quot;
+keys = [&quot;TicketId&quot;]
+
+[[rules]]
+type = &quot;derived_field&quot;
+target_field = &quot;ResolutionMinutes&quot;
+expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">${esc(transformToml)}</textarea>
+                            <div id="dsTransformStatus" class="small mt-2" style="min-height:1rem"></div>
                         </div>
                         <div class="modal-footer border-top d-flex justify-content-between" style="border-color:var(--cp-border)!important">
                             <button type="button" class="btn btn-sm btn-outline-primary" id="dsRefreshCacheBtn" title="Flush cached query results for this datasource so the next request hits the live database.">
                                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh Cache
                             </button>
                             <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-primary" id="dsTransformSaveBtn"><i class="bi bi-save me-1"></i>Save Transform</button>
                                 ${footerHtml}
                                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
@@ -822,6 +847,40 @@
                     } finally {
                         pbiSaveBtn.disabled = false;
                         pbiSaveBtn.innerHTML = original;
+                    }
+                });
+            }
+            const transformSaveBtn = modal.querySelector('#dsTransformSaveBtn');
+            if (transformSaveBtn) {
+                transformSaveBtn.addEventListener('click', async () => {
+                    const status = modal.querySelector('#dsTransformStatus');
+                    const enabled = !!modal.querySelector('#dsTransformEnabled')?.checked;
+                    const toml = (modal.querySelector('#dsTransformToml')?.value || '').trim();
+                    const original = transformSaveBtn.innerHTML;
+                    transformSaveBtn.disabled = true;
+                    transformSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                    if (status) status.innerHTML = '';
+                    try {
+                        const resp = await fetch('/api/datasources/' + encodeURIComponent(dsGuid), {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ transformEnabled: enabled, transformToml: toml })
+                        });
+                        if (resp.ok) {
+                            if (status) status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Transform saved.</span>';
+                            ds.transformEnabled = enabled;
+                            ds.transformToml = toml;
+                        } else {
+                            let msg = 'Failed to save transform.';
+                            try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+                            if (status) status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + this._esc(msg) + '</span>';
+                        }
+                    } catch (e) {
+                        if (status) status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + this._esc(e?.message || 'Failed to save transform.') + '</span>';
+                    } finally {
+                        transformSaveBtn.disabled = false;
+                        transformSaveBtn.innerHTML = original;
                     }
                 });
             }
