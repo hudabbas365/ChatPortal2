@@ -4,6 +4,7 @@ using AIInsights.Models;
 using AIInsights.Services;
 using AIInsights.Services.Datasources;
 using AIInsights.Services.Transforms;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -53,8 +54,9 @@ public class DatasourceController : ControllerBase
     private readonly IQueryCacheInvalidator _cacheInvalidator;
     private readonly IEnumerable<IDatasourceTypeService> _datasourceServices;
     private readonly IAiInsightTransformService _transformService;
+    private readonly IAntiforgery _antiforgery;
 
-    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices, IAiInsightTransformService transformService)
+    public DatasourceController(AppDbContext db, IQueryExecutionService queryService, IWorkspacePermissionService permissions, IEncryptionService encryption, IRelationshipService relationships, IQueryCacheInvalidator cacheInvalidator, IEnumerable<IDatasourceTypeService> datasourceServices, IAiInsightTransformService transformService, IAntiforgery antiforgery)
     {
         _db = db;
         _queryService = queryService;
@@ -64,6 +66,7 @@ public class DatasourceController : ControllerBase
         _cacheInvalidator = cacheInvalidator;
         _datasourceServices = datasourceServices;
         _transformService = transformService;
+        _antiforgery = antiforgery;
     }
 
     private IDatasourceTypeService? ResolveTypeService(string? type) =>
@@ -513,6 +516,9 @@ public class DatasourceController : ControllerBase
     [HttpPost("{guid}/transform/preview")]
     public async Task<IActionResult> PreviewTransform(string guid, [FromBody] TransformPreviewRequest? req)
     {
+        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
+        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
+
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);

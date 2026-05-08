@@ -243,7 +243,7 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
         if (fields.Count == 0) fields = rows.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var strategy = ReadString(raw, "strategy", "replace").ToLowerInvariant();
         var replacement = ReadString(raw, "value", "");
-        foreach (var row in rows.ToList())
+        foreach (var row in rows.ToArray())
         {
             var drop = false;
             foreach (var f in fields)
@@ -382,7 +382,11 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
         var groups = ReadStringList(raw, "group_by");
         var metricSpecs = ReadStringList(raw, "metrics");
         if (groups.Count == 0 || metricSpecs.Count == 0) return rows;
-        var grouped = rows.GroupBy(r => string.Join("|", groups.Select(g => r.TryGetValue(g, out var v) ? v?.ToString() ?? "" : "")));
+        var grouped = rows.GroupBy(r => string.Join("\u001f", groups.Select(g =>
+        {
+            var val = r.TryGetValue(g, out var v) ? v?.ToString() ?? "" : "";
+            return val.Replace("\u001f", "\\u001f", StringComparison.Ordinal);
+        })));
         var output = new List<Dictionary<string, object>>();
         foreach (var g in grouped)
         {
@@ -630,12 +634,17 @@ public sealed class AiInsightTransformService : IAiInsightTransformService
 
     private static string ToPascalCase(string s) =>
         string.Concat((s ?? "").Split(new[] { '_', ' ', '-' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(w => char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
+            .Select(w => w.Length > 1
+                ? char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()
+                : w.ToUpperInvariant()));
 
     private static string ToCamelCase(string s)
     {
         var pascal = ToPascalCase(s);
-        return string.IsNullOrEmpty(pascal) ? pascal : char.ToLowerInvariant(pascal[0]) + pascal[1..];
+        if (string.IsNullOrEmpty(pascal)) return pascal;
+        return pascal.Length == 1
+            ? pascal.ToLowerInvariant()
+            : char.ToLowerInvariant(pascal[0]) + pascal[1..];
     }
 
     private static string ReadString(IDictionary<string, object> map, string key, string fallback)
