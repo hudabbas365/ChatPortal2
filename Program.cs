@@ -110,6 +110,12 @@ builder.Services.AddSingleton<IChartService, ChartService>();
 builder.Services.AddSingleton<IDataService, DataService>();
 builder.Services.AddSingleton<IPowerBiService, PowerBiService>();
 builder.Services.AddSingleton<IAiInsightTransformService, AiInsightTransformService>();
+builder.Services.AddScoped<ITransformDefinitionParser, TransformDefinitionParser>();
+builder.Services.AddScoped<ITransformSuggestionService, TransformSuggestionService>();
+builder.Services.AddScoped<ITransformValidationService, TransformValidationService>();
+builder.Services.AddScoped<ITransformDraftService, TransformDraftService>();
+builder.Services.AddScoped<ITransformPreviewService, TransformPreviewService>();
+builder.Services.AddScoped<ITransformPublishService, TransformPublishService>();
 // Query execution with caching decorator — reduces redundant hits to live datasources.
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<QueryExecutionService>();
