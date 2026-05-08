@@ -144,6 +144,37 @@ builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeServic
 builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.PowerBiDatasourceService>();
 builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.RestApiDatasourceService>();
 builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.FileUrlDatasourceService>();
+
+// Per-rule-type handlers for the AI Insights 365 ETL workbench. Registered as
+// singletons because each handler is a stateless pure-function class.
+// Adding a new rule type requires only a new ITransformRuleHandler implementation
+// and a registration here — no changes to the core switch or any allowlist.
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.RemoveDuplicatesHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.HandleNullsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.ReplaceValuesHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.SplitColumnHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.StandardizeFormatHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.FilterRowsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.SortRowsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.SelectColumnsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.RenameColumnsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.CastTypesHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.PivotTableHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.UnpivotTableHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.TransposeTableHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.AppendRowsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.MergeTablesHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.AggregateHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.ValidateSchemaHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.ReferentialIntegrityHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.DerivedFieldHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.ConvertUnitsHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.ApplyNamingConventionHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.MapCodesHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.KpiClassificationHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.SentimentScoreHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.FlattenJsonHandler>();
+builder.Services.AddSingleton<AIInsights.Services.Transforms.ITransformRuleHandler, AIInsights.Services.Transforms.LogTransformationsHandler>();
 builder.Services.AddSingleton<IEncryptionService, AesEncryptionService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<IWorkspacePermissionService, WorkspacePermissionService>();

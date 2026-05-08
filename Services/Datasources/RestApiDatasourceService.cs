@@ -19,6 +19,8 @@ public class RestApiDatasourceService : IDatasourceTypeService
     public bool CanHandle(string? type) =>
         !string.IsNullOrEmpty(type) && QueryExecutionService.RestApiTypes.Contains(type);
 
+    public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "REST API" };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestRestApiAsync(info.ApiUrl, info.ApiKey, info.ApiMethod);
 
@@ -84,5 +86,13 @@ public class RestApiDatasourceService : IDatasourceTypeService
         {
             return (Array.Empty<TableSchemaDto>(), null);
         }
+    }
+
+    public async Task<(IReadOnlyList<Dictionary<string, object>> Rows, string? Error)> SamplePreviewRowsAsync(Datasource ds, int maxRows)
+    {
+        var result = await _queryService.ExecuteRestApiAsync(ds, maxRows);
+        return result.Success
+            ? (result.Data, null)
+            : (Array.Empty<Dictionary<string, object>>(), result.Error);
     }
 }

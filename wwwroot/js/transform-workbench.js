@@ -2,14 +2,6 @@
   'use strict';
 
   const PAGE_SIZE = 1000;
-  const RibbonGroups = {
-    Clean: ['remove_duplicates','handle_nulls','replace_values','split_column'],
-    Shape: ['filter_rows','sort_rows','select_columns','rename_columns','cast_types'],
-    Combine: ['append_rows','merge_tables'],
-    Aggregate: ['aggregate','pivot_table','unpivot_table','transpose_table'],
-    Validate: ['validate_schema','referential_integrity'],
-    'AI Assist': ['derived_field']
-  };
 
   function esc(v){ return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
   function token(){ const m = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/); return m ? decodeURIComponent(m[1]) : ''; }
@@ -126,7 +118,8 @@
         steps: [],
         toml: ds.transformToml || '',
         draftGuid: null,
-        preview: null
+        preview: null,
+        handlers: []
       };
 
       const bs = new bootstrap.Modal(modal);
@@ -137,11 +130,21 @@
     }
   };
 
+  function buildRibbonGroups(handlers){
+    const groups = {};
+    (handlers || []).forEach(h => {
+      if (!groups[h.group]) groups[h.group] = [];
+      groups[h.group].push(h.type);
+    });
+    return groups;
+  }
+
   function renderRibbon(modal, state){
     const root = modal.querySelector('#twbRibbon');
+    const ribbonGroups = buildRibbonGroups(state.handlers);
     const buttons = [];
-    Object.keys(RibbonGroups).forEach(group => {
-      RibbonGroups[group].forEach(fn => buttons.push(`<button class="btn btn-sm btn-outline-secondary" data-add-step="${fn}" title="${group}">${esc(fn)}</button>`));
+    Object.keys(ribbonGroups).forEach(group => {
+      ribbonGroups[group].forEach(fn => buttons.push(`<button class="btn btn-sm btn-outline-secondary" data-add-step="${esc(fn)}" title="${esc(group)}">${esc(fn)}</button>`));
     });
     root.innerHTML = buttons.join('');
     root.querySelectorAll('[data-add-step]').forEach(btn => {
@@ -222,7 +225,12 @@
   }
 
   async function loadWorkbenchState(modal, state){
-    const data = await fetchJson(`/api/datasources/${encodeURIComponent(state.dsGuid)}/transform`, { credentials:'same-origin' });
+    // Fetch handler metadata and datasource transform state in parallel
+    const [handlersData, data] = await Promise.all([
+      fetchJson('/api/transforms/handlers', { credentials:'same-origin' }).catch(()=> []),
+      fetchJson(`/api/datasources/${encodeURIComponent(state.dsGuid)}/transform`, { credentials:'same-origin' })
+    ]);
+    state.handlers = Array.isArray(handlersData) ? handlersData : [];
     state.toml = data.toml || '';
     modal.querySelector('#twbToml').value = state.toml;
     renderRibbon(modal, state);
