@@ -32,6 +32,8 @@ public class PowerBiDatasourceService : IDatasourceTypeService
     public bool CanHandle(string? type) =>
         !string.IsNullOrEmpty(type) && QueryExecutionService.PowerBiTypes.Contains(type);
 
+    public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "Power BI" };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestConnectionAsync(
             info.Type ?? "Power BI",
@@ -109,5 +111,28 @@ public class PowerBiDatasourceService : IDatasourceTypeService
         foreach (var k in keys)
             if (row.TryGetValue(k, out var v) && v != null) return v.ToString();
         return null;
+    }
+
+    public async Task<(IReadOnlyList<Dictionary<string, object>> Rows, string? Error)> SamplePreviewRowsAsync(Datasource ds, int maxRows)
+    {
+        var rawTable = ds.SelectedTables
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        var safeDaxTable = BuildSafeDaxTableName(rawTable ?? "");
+        if (string.IsNullOrWhiteSpace(safeDaxTable))
+            return (Array.Empty<Dictionary<string, object>>(), null);
+
+        var dax = $"EVALUATE TOPN({maxRows}, '{safeDaxTable}')";
+        var result = await _queryService.ExecuteReadOnlyAsync(ds, dax, maxRows);
+        return result.Success
+            ? (result.Data, null)
+            : (Array.Empty<Dictionary<string, object>>(), result.Error);
+    }
+
+    internal static string BuildSafeDaxTableName(string raw)
+    {
+        var safe = new string((raw ?? "").Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ' ').ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(safe)) return "";
+        return safe.Replace("'", "''", StringComparison.Ordinal);
     }
 }

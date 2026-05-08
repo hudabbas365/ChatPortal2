@@ -1,0 +1,171 @@
+/* ── ETL wizard styles ─────────────────────────────────
+   Loaded alongside workspace-flow.css. Scoped to the ETL flavour of the
+   workspace setup wizard (Type=Etl): Datasources → Transform → Dashboard → Report.
+*/
+.wf-etl-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #fff;
+    background: linear-gradient(135deg, #7c3aed, #3b82f6);
+    border-radius: 999px;
+    vertical-align: middle;
+}
+.wf-etl-empty {
+    padding: 14px 16px;
+    color: var(--cp-text-muted);
+    font-size: 0.85rem;
+    background: var(--cp-bg-soft, #f8f9fb);
+    border: 1px dashed var(--cp-border, #e3e7ee);
+    border-radius: 8px;
+}
+.wf-etl-ds-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 12px 0;
+}
+.wf-etl-ds-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid var(--cp-border, #e3e7ee);
+    border-radius: 8px;
+}
+.wf-etl-ds-icon {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--cp-primary-light, #eef2ff);
+    color: var(--cp-primary, #4f46e5);
+    border-radius: 6px;
+}
+.wf-etl-ds-meta { flex: 1; min-width: 0; }
+.wf-etl-ds-name { font-weight: 600; font-size: 0.9rem; }
+.wf-etl-ds-type { font-size: 0.75rem; color: var(--cp-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Step 2 inline transform panel ── */
+.wf-etl-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 12px 0 0;
+    padding-bottom: 0;
+    border-bottom: 1px solid var(--cp-border, #e3e7ee);
+}
+.wf-etl-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--cp-text-muted, #6b7280);
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+.wf-etl-tab:hover { color: var(--cp-text, #111827); background: var(--cp-bg-soft, #f8f9fb); }
+.wf-etl-tab.active {
+    color: #7c3aed;
+    background: #fff;
+    border-color: var(--cp-border, #e3e7ee);
+    border-bottom-color: #fff;
+    margin-bottom: -1px;
+    font-weight: 600;
+}
+.wf-etl-tab-type {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--cp-text-muted, #6b7280);
+    background: var(--cp-bg-soft, #f1f5f9);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 4px;
+}
+
+.wf-etl-ribbon {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: 14px 0 8px;
+    padding: 10px;
+    background: linear-gradient(135deg, #faf7ff, #f0f7ff);
+    border: 1px solid var(--cp-border, #e3e7ee);
+    border-radius: 8px;
+}
+.wf-etl-op {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #4338ca;
+    background: #fff;
+    border: 1px solid #c7d2fe;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+.wf-etl-op:hover { background: #eef2ff; border-color: #818cf8; }
+.wf-etl-op:active { transform: translateY(1px); }
+.wf-etl-op i { font-size: 0.95rem; }
+.wf-etl-op-secondary { color: var(--cp-text-muted, #6b7280); border-color: var(--cp-border, #e3e7ee); }
+.wf-etl-op-secondary:hover { background: var(--cp-bg-soft, #f8f9fb); border-color: var(--cp-border, #cbd5e1); }
+.wf-etl-ribbon-sep { flex: 1 1 0; min-width: 8px; }
+
+.wf-etl-toml-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 4px 0 6px;
+}
+.wf-etl-toml-status { min-height: 1.1rem; }
+.wf-etl-toml {
+    width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    padding: 10px 12px;
+    color: #111827;
+    background: #0f172a08;
+    border: 1px solid var(--cp-border, #e3e7ee);
+    border-radius: 8px;
+    resize: vertical;
+}
+.wf-etl-toml:focus {
+    outline: none;
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+    background: #fff;
+}
+
+/* -- Transform lineage node (ETL workspaces) -- */
+.wf-flow-col-transform { display:flex; align-items:center; }
+.wf-flow-node.wf-flow-transform {
+    background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(59,130,246,0.10));
+    border: 1px solid rgba(124,58,237,0.45);
+    color: #4c1d95;
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 130px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.wf-flow-node.wf-flow-transform:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(124,58,237,0.20);
+}
+.wf-flow-node.wf-flow-transform .wf-flow-label { font-weight: 600; }
+.wf-flow-node.wf-flow-transform .wf-flow-sublabel { color: #6d28d9; opacity: 0.85; }
+

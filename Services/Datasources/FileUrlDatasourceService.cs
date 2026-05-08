@@ -18,6 +18,8 @@ public class FileUrlDatasourceService : IDatasourceTypeService
     public bool CanHandle(string? type) =>
         !string.IsNullOrEmpty(type) && QueryExecutionService.FileUrlTypes.Contains(type);
 
+    public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "File URL" };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestFileUrlAsync(info.ApiUrl);
 
@@ -83,5 +85,13 @@ public class FileUrlDatasourceService : IDatasourceTypeService
         {
             return (Array.Empty<TableSchemaDto>(), null);
         }
+    }
+
+    public async Task<(IReadOnlyList<Dictionary<string, object>> Rows, string? Error)> SamplePreviewRowsAsync(Datasource ds, int maxRows)
+    {
+        var result = await _queryService.ExecuteFileUrlAsync(ds, maxRows);
+        return result.Success
+            ? (result.Data, null)
+            : (Array.Empty<Dictionary<string, object>>(), result.Error);
     }
 }

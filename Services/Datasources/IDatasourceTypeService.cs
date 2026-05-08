@@ -38,6 +38,14 @@ public interface IDatasourceTypeService
     /// <summary>True when this service is responsible for the given datasource type string.</summary>
     bool CanHandle(string? type);
 
+    /// <summary>
+    /// Canonical display names for datasource types handled by this service.
+    /// Used to build the allowed-type list returned by <c>GET /api/datasources/types</c>
+    /// dynamically from the registered service collection — adding a new service
+    /// automatically surfaces its type in the UI without touching the controller.
+    /// </summary>
+    IReadOnlyList<string> SupportedTypeStrings { get; }
+
     /// <summary>Tests connectivity given inbound connection details (no persisted Datasource yet).</summary>
     Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info);
 
@@ -49,6 +57,14 @@ public interface IDatasourceTypeService
 
     /// <summary>Returns full schema (tables + columns + data types) for the datasource.</summary>
     Task<(IReadOnlyList<TableSchemaDto> Tables, string? Error)> GetSchemaAsync(Datasource ds);
+
+    /// <summary>
+    /// Fetches a sample of up to <paramref name="maxRows"/> rows from the datasource
+    /// using the dialect/protocol appropriate for this datasource type.
+    /// Used by the ETL workbench preview and multi-datasource transform preview.
+    /// Returns an empty list (not an error) when no table is configured.
+    /// </summary>
+    Task<(IReadOnlyList<Dictionary<string, object>> Rows, string? Error)> SamplePreviewRowsAsync(Datasource ds, int maxRows);
 }
 
 internal static class DatasourceTypeJsonHelpers

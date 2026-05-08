@@ -302,4 +302,82 @@ public class CohereService
             return new List<string>();
         }
     }
+
+    /// <summary>
+    /// Translates a free-form user intent into a JSON object describing transform
+    /// workbench steps. Returns the raw JSON object string (e.g. <c>{"steps":[...]}</c>)
+    /// or <c>{"steps":[]}</c> when the API key is missing, the prompt is unsafe,
+    /// or the model response cannot be parsed.
+    /// </summary>
+    public async Task<string> SuggestTransformStepsAsync(
+        string prompt,
+        IEnumerable<string>? columns = null,
+        IEnumerable<string>? otherQueries = null,
+        string? op = null)
+    {
+        var apiKey = _config["Cohere:ApiKey"];
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "YOUR_COHERE_API_KEY_HERE")
+            return "{\"steps\":[]}";
+
+        string safe;
+        try { safe = SanitizeUserInput(prompt ?? ""); }
+        catch { return "{\"steps\":[]}"; }
+
+        var sys =
+            "You are an ETL transform planner for a Power-Query-style workbench. " +
+            "Translate the user's intent into a JSON object: {\"steps\":[{\"op\":\"<rule_type>\",\"params\":{...},\"enabled\":true}]}. " +
+            "Respond with ONLY the JSON object - no prose, no markdown, no fences. " +
+            "Valid op values: filter, select_rows, remove_columns, remove_duplicates, sort_asc, sort_desc, " +
+            "rename_column, duplicate_column, replace_values, fill_down, fill_up, change_type, group_by, pivot, unpivot, " +
+            "derived_field, conditional, add_column, index_column, merge, append, " +
+            "text_upper, text_lower, text_proper, text_trim, text_clean, text_replace, text_length, text_extract, text_contains, " +
+            "num_round, num_round_up, num_round_down, num_abs, num_power, num_log, num_mod, " +
+            "date_year, date_month, date_day, date_add_days, date_add_months, date_start_of_month, date_end_of_month, date_now, " +
+            "time_hour, time_minute, time_second, count_rows, transpose, reverse, reorder_columns, nested_join, combine_files. " +
+            "Use [Column] in expression strings. If the request is ambiguous, return {\"steps\":[]}.";
+
+        var ctx = new StringBuilder();
+        if (columns != null && columns.Any())
+            ctx.AppendLine($"Available columns in active query: {string.Join(", ", columns.Take(80))}");
+        if (otherQueries != null && otherQueries.Any())
+            ctx.AppendLine($"Other queries in workspace: {string.Join(", ", otherQueries.Take(40))}");
+        if (!string.IsNullOrWhiteSpace(op))
+            ctx.AppendLine($"User wants op: {op}");
+        ctx.AppendLine($"User intent: {safe}");
+
+        var model = _config["Cohere:Model"] ?? "command-r-plus";
+        var requestBody = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = sys },
+                new { role = "user",   content = ctx.ToString() }
+            },
+            response_format = new { type = "json_object" }
+        };
+
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(requestBody);
+        using var request = new HttpRequestMessage(HttpMethod.Post, CohereApiUrl);
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadAsStringAsync();
+            var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(body);
+            var text = (string?)parsed?.message?.content?[0]?.text ?? "";
+            var start = text.IndexOf('{');
+            var end = text.LastIndexOf('}');
+            if (start < 0 || end <= start) return "{\"steps\":[]}";
+            return text.Substring(start, end - start + 1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Transform AI suggest failed");
+            return "{\"steps\":[]}";
+        }
+    }
 }

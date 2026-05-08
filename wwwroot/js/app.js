@@ -140,10 +140,10 @@
         const prevActive = list.querySelector('.panel-list-item.active');
         const activeId = prevActive ? prevActive.getAttribute('data-workspace-id') : null;
         list.innerHTML = workspaces.map(w =>
-            `<div class="panel-list-item${activeId && activeId === w.guid ? ' active' : ''}" data-workspace-id="${w.guid}">
+            `<div class="panel-list-item${activeId && activeId === w.guid ? ' active' : ''}" data-workspace-id="${w.guid}"${(w.type === 'Etl' || w.type === 1) ? ' data-ws-type="Etl"' : ''}>
                 ${w.logoUrl
                     ? `<img src="${_escHtml(w.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
-                    : '<i class="bi bi-folder me-2"></i>'}${_escHtml(w.name)}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
+                    : '<i class="bi bi-folder me-2"></i>'}${_escHtml(w.name)}${(w.type === 'Etl' || w.type === 1) ? '<span class="wf-ws-etl-badge" title="ETL workspace"><i class="bi bi-diagram-3"></i></span>' : ''}<span class="wf-ws-status unconfigured" title="Needs setup"></span>
              </div>`
         ).join('');
         list.querySelectorAll('.panel-list-item').forEach(function (el, i) {
@@ -182,7 +182,8 @@
                         guid: w.guid,
                         name: w.name,
                         logoUrl: w.logoUrl,
-                        description: w.description
+                        description: w.description,
+                        type: w.type
                     }));
                     localStorage.setItem('cp_workspaces_' + user.organizationId, JSON.stringify(slim));
                 } catch {}

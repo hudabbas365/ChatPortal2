@@ -24,7 +24,27 @@
             </button>
         </div>
         <div class="wf-inline-create" id="wfInlineCreate">
-            <div class="wf-inline-create-row">
+            <!-- Step 1: pick the workspace flavour -->
+            <div class="wf-type-chooser" id="wfTypeChooser">
+                <div class="wf-type-chooser-label">Choose workspace type</div>
+                <button type="button" class="wf-type-card" data-ws-type="Standard">
+                    <i class="bi bi-stars"></i>
+                    <div class="wf-type-card-body">
+                        <div class="wf-type-card-title">AI Insights</div>
+                        <div class="wf-type-card-desc">Datasource → Agent / Dashboard → Report</div>
+                    </div>
+                </button>
+                <button type="button" class="wf-type-card" data-ws-type="Etl">
+                    <i class="bi bi-diagram-3"></i>
+                    <div class="wf-type-card-body">
+                        <div class="wf-type-card-title">AI Insights ETL</div>
+                        <div class="wf-type-card-desc">Datasource(s) → Transform (TOML) → Dashboard → Report</div>
+                    </div>
+                </button>
+            </div>
+            <!-- Step 2: name the workspace -->
+            <div class="wf-inline-create-row" id="wfNameRow" style="display:none">
+                <span class="wf-type-pill" id="wfTypePill" title="Selected type"></span>
                 <input type="text" id="wfNewWsName" placeholder="Workspace name..." />
                 <button class="wf-create-confirm" id="wfCreateConfirm" title="Create"><i class="bi bi-check-lg"></i></button>
                 <button class="wf-create-cancel" id="wfCreateCancel" title="Cancel"><i class="bi bi-x"></i></button>

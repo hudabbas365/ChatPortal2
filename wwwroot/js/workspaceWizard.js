@@ -36,6 +36,20 @@
             html += '</div>'; // wf-flow-col-source
             html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
 
+            // ── Transform node (ETL workspaces only) ──
+            var isEtlWs = (wsData.type === 'Etl' || wsData.type === 1);
+            if (isEtlWs) {
+                var tEnabled = ds.transformEnabled !== false && !!(ds.transformToml && String(ds.transformToml).trim());
+                var tSub = tEnabled ? 'Transform · enabled' : 'Transform · not configured';
+                html += '<div class="wf-flow-col wf-flow-col-transform">';
+                html += '<div class="wf-flow-node wf-flow-transform" data-action="transform-open" data-ws-id="' + self._esc(wsData.guid) + '" data-ds-id="' + self._esc(ds.guid) + '" title="Open Transform Workbench">';
+                html += '<div class="wf-flow-label"><i class="bi bi-magic me-1"></i>Transform</div>';
+                html += '<div class="wf-flow-sublabel">' + self._esc(tSub) + '</div>';
+                html += '</div>';
+                html += '</div>'; // wf-flow-col-transform
+                html += '<div class="wf-flow-h-line wf-flow-h-line-out"></div>';
+            }
+
             if (hasAgents) {
                 // ── Middle column: agent(s) + dashboard ───
                 var branchCount = boundAgents.length + 1; // agents + 1 dashboard

@@ -64,6 +64,7 @@ public class WorkspaceController : Controller
             w.Name,
             w.Description,
             w.OrganizationId,
+            type = w.Type,
             w.CreatedAt
         }));
     }
@@ -208,6 +209,7 @@ public class WorkspaceController : Controller
             ownerEmail = workspace.Owner?.Email,
             workspace.OrganizationId,
             workspace.CreatedAt,
+            type = workspace.Type.ToString(),
             agents,
             datasources,
             dashboards,
@@ -299,7 +301,8 @@ public class WorkspaceController : Controller
             Description = req.Description,
             LogoUrl = req.LogoUrl,
             OwnerId = req.UserId,
-            OrganizationId = orgId
+            OrganizationId = orgId,
+            Type = req.Type ?? WorkspaceType.Standard
         };
         _db.Workspaces.Add(workspace);
         await _db.SaveChangesAsync();
@@ -329,6 +332,7 @@ public class WorkspaceController : Controller
             workspace.Description,
             workspace.OrganizationId,
             workspace.CreatedAt,
+            type = workspace.Type.ToString(),
             dashboardGuid = dashboard.Guid
         });
     }
@@ -737,6 +741,8 @@ public class WorkspaceRequest
     public string? OwnerId { get; set; }
     public int OrganizationId { get; set; }
     public string? UserId { get; set; }
+    /// <summary>Standard or Etl. Null means Standard (back-compat with older clients).</summary>
+    public WorkspaceType? Type { get; set; }
 }
 
 public class AddWorkspaceUserRequest

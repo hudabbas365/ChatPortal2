@@ -1,0 +1,186 @@
+@{
+    ViewData["Title"] = "Transform Workbench";
+    Layout = null;
+    var wsGuid = ViewBag.WorkspaceGuid as string ?? "";
+    var wsName = ViewBag.WorkspaceName as string ?? "Workspace";
+    var wsType = ViewBag.WorkspaceType as string ?? "Standard";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — @wsName</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" />
+    <link rel="stylesheet" href="~/css/transform-workbench-page.css" asp-append-version="true" />
+</head>
+<body class="twp-body">
+    <div class="twp-shell" id="twpShell"
+         data-ws-guid="@wsGuid"
+         data-ws-name="@wsName"
+         data-ws-type="@wsType">
+
+        <!-- Top bar -->
+        <header class="twp-topbar">
+            <a href="/?workspace=@wsGuid" class="twp-back" title="Back to workspace">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <div class="twp-title">
+                <i class="bi bi-magic me-2"></i>
+                <span class="fw-semibold">Transform Workbench</span>
+                <span class="twp-sep">/</span>
+                <span class="twp-ws-name">@wsName</span>
+                <span class="twp-tag">ETL</span>
+            </div>
+            <div class="twp-top-actions">
+                <span class="twp-status" id="twpGlobalStatus"></span>
+                <button class="btn btn-sm btn-outline-secondary" id="twpRefreshBtn" title="Reload datasources">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary" id="twpValidateBtn">
+                    <i class="bi bi-shield-check me-1"></i>Validate
+                </button>
+                <button class="btn btn-sm btn-success" id="twpPublishBtn">
+                    <i class="bi bi-cloud-upload me-1"></i>Publish to Dashboard
+                </button>
+            </div>
+        </header>
+
+        <!-- Ribbon -->
+        <nav class="twp-ribbon-tabs" id="twpRibbonTabs">
+            <button class="twp-ribbon-tab active" data-ribbon="home">Home</button>
+            <button class="twp-ribbon-tab" data-ribbon="transform">Transform</button>
+            <button class="twp-ribbon-tab" data-ribbon="addcol">Add Column</button>
+            <button class="twp-ribbon-tab" data-ribbon="text">Text</button>
+            <button class="twp-ribbon-tab" data-ribbon="number">Number</button>
+            <button class="twp-ribbon-tab" data-ribbon="datetime">Date/Time</button>
+            <button class="twp-ribbon-tab" data-ribbon="combine">Combine</button>
+            <button class="twp-ribbon-tab" data-ribbon="view">View</button>
+        </nav>
+        <div class="twp-ribbon-body" id="twpRibbonBody"></div>
+
+        <!-- Body: Queries | Center (preview/TOML) | Applied Steps + AI -->
+        <div class="twp-main">
+            <aside class="twp-queries">
+                <div class="twp-pane-head">
+                    <span><i class="bi bi-collection me-1"></i>Queries</span>
+                    <span class="twp-pane-count" id="twpQueryCount">0</span>
+                </div>
+                <div class="twp-queries-list" id="twpQueriesList">
+                    <div class="twp-empty-mini">Loading…</div>
+                </div>
+            </aside>
+
+            <section class="twp-center">
+                <div class="twp-center-toolbar">
+                    <div class="twp-center-tabs">
+                        <button class="twp-view-tab active" data-view="preview"><i class="bi bi-table me-1"></i>Data preview</button>
+                        <button class="twp-view-tab" data-view="toml"><i class="bi bi-code-square me-1"></i>TOML / DAX</button>
+                    </div>
+                    <div class="twp-center-meta" id="twpCenterMeta">
+                        <span class="twp-meta-pill" id="twpRowCountPill" style="display:none">0 rows</span>
+                        <button class="btn btn-sm btn-outline-primary" id="twpPreviewBtn" title="Run preview (top 1000)">
+                            <i class="bi bi-play-fill me-1"></i>Preview
+                        </button>
+                    </div>
+                </div>
+
+                <div class="twp-progress" id="twpProgress" style="display:none">
+                    <div class="twp-progress-bar"></div>
+                </div>
+
+                <div class="twp-view twp-view-preview active" id="twpViewPreview">
+                    <div class="twp-preview-empty" id="twpPreviewEmpty">
+                        <i class="bi bi-table"></i>
+                        <p>Pick a query on the left, then click <strong>Preview</strong> to load up to 1,000 rows.</p>
+                    </div>
+                    <div class="twp-preview-wrap" id="twpPreviewWrap" style="display:none">
+                        <table class="twp-preview-table" id="twpPreviewTable">
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="twp-view twp-view-toml" id="twpViewToml">
+                    <div class="twp-toml-toolbar">
+                        <span class="text-muted small">TOML pipeline (you can edit DAX-like expressions directly here)</span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary" id="twpTomlFromStepsBtn" title="Rebuild TOML from Applied Steps">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Rebuild from Steps
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" id="twpTomlApplyBtn" title="Parse TOML and replace Applied Steps">
+                                <i class="bi bi-check2 me-1"></i>Apply to Steps
+                            </button>
+                        </div>
+                    </div>
+                    <textarea class="twp-toml-editor" id="twpTomlEditor" spellcheck="false"></textarea>
+                </div>
+            </section>
+
+            <aside class="twp-rightcol">
+                <div class="twp-pane-head">
+                    <span><i class="bi bi-list-ol me-1"></i>Applied Steps</span>
+                    <span class="twp-pane-count" id="twpStepsCount">0</span>
+                </div>
+                <div class="twp-steps-list" id="twpStepsList">
+                    <div class="twp-empty-mini">No steps yet.</div>
+                </div>
+
+                <div class="twp-ai-panel">
+                    <div class="twp-pane-head">
+                        <span><i class="bi bi-stars me-1"></i>AI Assistant</span>
+                    </div>
+                    <div class="twp-ai-chat" id="twpAiChat">
+                        <div class="twp-ai-msg twp-ai-msg-bot">
+                            Tell me what to do with this query — e.g. <em>"remove duplicates by IncidentNumber and add a column ResolutionMinutes = DATEDIFF(minute,[Incident],[Close])"</em>.
+                        </div>
+                    </div>
+                    <div class="twp-ai-input-wrap">
+                        <textarea class="twp-ai-input" id="twpAiInput" rows="2" placeholder="Ask in natural language…"></textarea>
+                        <button class="btn btn-sm btn-primary" id="twpAiSendBtn">
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Status bar -->
+        <footer class="twp-statusbar" id="twpStatusBar">
+            <span class="twp-status-cell" title="Active query"><i class="bi bi-database me-1"></i><span id="twpStatusQuery">—</span></span>
+            <span class="twp-status-sep"></span>
+            <span class="twp-status-cell" title="Applied steps"><i class="bi bi-list-ol me-1"></i><span id="twpStatusSteps">0</span> steps</span>
+            <span class="twp-status-sep"></span>
+            <span class="twp-status-cell" title="Preview size"><i class="bi bi-table me-1"></i><span id="twpStatusRows">0</span> rows · <span id="twpStatusCols">0</span> cols</span>
+            <span class="twp-status-sep"></span>
+            <span class="twp-status-cell" title="Last preview duration"><i class="bi bi-stopwatch me-1"></i><span id="twpStatusDuration">—</span></span>
+            <span class="twp-status-cell twp-status-msg" id="twpStatusMessage"></span>
+            <span class="twp-status-cell ms-auto" title="Pipeline state"><i class="bi bi-check2-circle me-1"></i><span id="twpStatusValidity">Ready</span></span>
+        </footer>
+
+        <!-- Step editor modal placeholder -->
+        <div class="twp-step-editor" id="twpStepEditor" style="display:none">
+            <div class="twp-step-editor-card">
+                <div class="twp-step-editor-head">
+                    <span id="twpStepEditorTitle">Edit step</span>
+                    <button class="btn-close" id="twpStepEditorClose" aria-label="Close"></button>
+                </div>
+                <div class="twp-step-editor-body" id="twpStepEditorBody"></div>
+                <div class="twp-step-editor-foot">
+                    <button class="btn btn-sm btn-outline-secondary" id="twpStepEditorCancel">Cancel</button>
+                    <button class="btn btn-sm btn-primary" id="twpStepEditorSave">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/transform-workbench-page.js" asp-append-version="true"></script>
+    <script src="~/js/transform-workbench-enhancements.js" asp-append-version="true"></script>
+</body>
+</html>

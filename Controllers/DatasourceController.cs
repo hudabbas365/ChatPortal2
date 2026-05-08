@@ -4,7 +4,6 @@ using AIInsights.Models;
 using AIInsights.Services;
 using AIInsights.Services.Datasources;
 using AIInsights.Services.Transforms;
-using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -23,33 +22,7 @@ public class DatasourceController : ControllerBase
     private const int MaxPreviewLoadRows = 10000;
     private const int TransformPreviewPageSize = 1000;
 
-    private static readonly List<string> DatasourceTypes = new()
-    {
-        "SQL Server",
-        "Power BI",
-        "REST API",
-        "File URL",
-        // TODO: Additional datasource types are disabled pending SQL Server-first rollout
-        // "PostgreSQL", "MySQL", "MariaDB", "Oracle", "MongoDB",
-        // "Redis", "Cassandra", "CouchDB", "DynamoDB", "Firebase Realtime DB", "Firestore",
-        // "Elasticsearch", "OpenSearch", "Solr", "InfluxDB", "TimescaleDB", "QuestDB",
-        // "REST API", "GraphQL API", "SOAP / WSDL", "OData", "WebSocket",
-        // "CSV", "Excel (XLSX)", "Google Sheets", "JSON File", "XML File",
-        // "Parquet", "Avro", "ORC", "Feather", "HDF5",
-        // "Snowflake", "BigQuery", "Amazon Redshift", "Azure Synapse", "Databricks",
-        // "Teradata", "IBM Db2", "SAP HANA", "Vertica", "Greenplum",
-        // "Amazon S3", "Azure Blob Storage", "Google Cloud Storage", "HDFS",
-        // "Apache Kafka", "Apache Spark", "Apache Flink", "RabbitMQ", "Azure Event Hubs",
-        // "Salesforce", "HubSpot", "Zendesk", "Shopify", "Stripe",
-        // "Google Analytics", "Mixpanel", "Amplitude", "Segment", "Heap",
-        // "Looker", "Tableau", "Metabase", "Mode Analytics",
-        // "Airtable", "Notion", "Coda", "Smartsheet",
-        // "GitHub", "GitLab", "Jira", "Confluence", "Linear",
-        // "Slack", "Microsoft Teams", "Discord",
-        // "MySQL Cluster", "CockroachDB", "PlanetScale", "Neon", "Supabase",
-        // "FTP / SFTP", "Email (IMAP/SMTP)", "SMS API", "Push Notification Service",
-        // "Custom JDBC", "Custom ODBC", "In-Memory Cache"
-    };
+    private readonly List<string> _datasourceTypeNames;
 
     private readonly AppDbContext _db;
     private readonly IQueryExecutionService _queryService;
@@ -64,7 +37,6 @@ public class DatasourceController : ControllerBase
     private readonly ITransformPreviewService _transformPreview;
     private readonly ITransformPublishService _transformPublish;
     private readonly ITransformSuggestionService _transformSuggestion;
-    private readonly IAntiforgery _antiforgery;
 
     public DatasourceController(
         AppDbContext db,
@@ -79,8 +51,7 @@ public class DatasourceController : ControllerBase
         ITransformDraftService transformDrafts,
         ITransformPreviewService transformPreview,
         ITransformPublishService transformPublish,
-        ITransformSuggestionService transformSuggestion,
-        IAntiforgery antiforgery)
+        ITransformSuggestionService transformSuggestion)
     {
         _db = db;
         _queryService = queryService;
@@ -95,7 +66,13 @@ public class DatasourceController : ControllerBase
         _transformPreview = transformPreview;
         _transformPublish = transformPublish;
         _transformSuggestion = transformSuggestion;
-        _antiforgery = antiforgery;
+
+        // Build the allowed-type list from the registered IDatasourceTypeService instances so that
+        // adding a new service automatically surfaces its type in the UI without touching this file.
+        _datasourceTypeNames = datasourceServices
+            .SelectMany(s => s.SupportedTypeStrings)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private IDatasourceTypeService? ResolveTypeService(string? type) =>
@@ -157,7 +134,7 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpGet("types")]
-    public IActionResult GetTypes() => Ok(DatasourceTypes);
+    public IActionResult GetTypes() => Ok(_datasourceTypeNames);
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int organizationId)
@@ -574,15 +551,12 @@ public class DatasourceController : ControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveTransformDraft(string guid, [FromBody] TransformDraftUpsertRequest? req)
     {
-        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
-        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
-
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);
         if (ds == null) return NotFound();
 
-        var access = await EnsureViewAccessAsync(ds);
+        var access = await EnsureEditAccessAsync(ds);
         if (access != null) return access;
 
         req ??= new TransformDraftUpsertRequest();
@@ -627,9 +601,6 @@ public class DatasourceController : ControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateTransform(string guid, [FromBody] TransformValidateRequest? req)
     {
-        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
-        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
-
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);
@@ -653,9 +624,6 @@ public class DatasourceController : ControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewTransform(string guid, [FromBody] TransformPreviewRequest? req)
     {
-        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
-        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
-
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);
@@ -680,6 +648,23 @@ public class DatasourceController : ControllerBase
             foreach (var sds in sourceDatasources)
             {
                 if (sourceRows.ContainsKey(sds.Guid)) continue;
+
+                // Enforce isolation: every referenced datasource must belong to the
+                // same workspace as the primary datasource AND the caller must have
+                // view access on it. Without this, a user with rights to DS A could
+                // include DS B (from another workspace/org) in DatasourceGuids and
+                // the server would happily load and return its rows.
+                if (sds.Id != ds.Id)
+                {
+                    if (sds.OrganizationId != ds.OrganizationId ||
+                        sds.WorkspaceId != ds.WorkspaceId)
+                    {
+                        return StatusCode(403, new { error = $"Datasource '{sds.Name}' is not part of this workspace." });
+                    }
+                    var sAccess = await EnsureViewAccessAsync(sds);
+                    if (sAccess != null) return sAccess;
+                }
+
                 sourceRows[sds.Guid] = await LoadDatasourcePreviewRowsAsync(sds, req.AutoLoadMaxRows ?? DefaultPreviewLoadRows);
             }
         }
@@ -702,20 +687,26 @@ public class DatasourceController : ControllerBase
             req?.Page ?? 1,
             req?.PageSize ?? TransformPreviewPageSize);
 
-        var audit = new TransformRunAudit
+        if (req?.RecordAudit == true)
         {
-            DatasourceId = ds.Id,
-            Success = preview.Success,
-            InputRowCount = rows.Count,
-            OutputRowCount = preview.TotalRowCount,
-            DurationMs = preview.RenderDurationMs,
-            MessagesJson = JsonSerializer.Serialize(preview.Audit),
-            Error = preview.Error,
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
-            CreatedAt = DateTime.UtcNow
-        };
-        _db.TransformRunAudits.Add(audit);
-        await _db.SaveChangesAsync();
+            string messagesJson;
+            try { messagesJson = JsonSerializer.Serialize(preview.Audit); }
+            catch { messagesJson = "[]"; }
+
+            _db.TransformRunAudits.Add(new TransformRunAudit
+            {
+                DatasourceId = ds.Id,
+                Success = preview.Success,
+                InputRowCount = rows.Count,
+                OutputRowCount = preview.TotalRowCount,
+                DurationMs = preview.RenderDurationMs,
+                MessagesJson = messagesJson,
+                Error = preview.Error,
+                CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new
         {
@@ -738,20 +729,31 @@ public class DatasourceController : ControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PublishTransform(string guid, [FromBody] TransformPublishRequest? req)
     {
-        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
-        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
-
         var ds = await _db.Datasources.FirstOrDefaultAsync(d => d.Guid == guid);
         if (ds == null && int.TryParse(guid, out var intId))
             ds = await _db.Datasources.FindAsync(intId);
         if (ds == null) return NotFound();
 
-        var access = await EnsureViewAccessAsync(ds);
+        var access = await EnsureEditAccessAsync(ds);
         if (access != null) return access;
 
         var publish = await _transformPublish.PublishAsync(ds, req?.Toml ?? ds.TransformToml, User.FindFirstValue(ClaimTypes.NameIdentifier), req?.DraftGuid);
         if (!publish.Success)
             return BadRequest(new { success = false, error = publish.Error });
+
+        _db.TransformRunAudits.Add(new TransformRunAudit
+        {
+            DatasourceId = ds.Id,
+            Success = true,
+            InputRowCount = 0,
+            OutputRowCount = 0,
+            DurationMs = 0,
+            MessagesJson = "[]",
+            Error = null,
+            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
 
         return Ok(new
         {
@@ -766,14 +768,23 @@ public class DatasourceController : ControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> GetMultiDatasourceWorkbench([FromBody] TransformWorkbenchRequest? req)
     {
-        try { await _antiforgery.ValidateRequestAsync(HttpContext); }
-        catch { return BadRequest(new { error = "Invalid anti-forgery token." }); }
-
         var guids = req?.DatasourceGuids?.Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().ToList() ?? new();
         if (guids.Count == 0) return BadRequest(new { error = "At least one datasource guid is required." });
 
         var datasources = await _db.Datasources.Where(d => guids.Contains(d.Guid)).ToListAsync();
         if (datasources.Count == 0) return NotFound();
+
+        // Enforce that every referenced datasource lives in the same
+        // organization AND workspace. The workbench is workspace-scoped — it
+        // must not be possible to combine datasources from different
+        // workspaces (or orgs) into one transform context, even if the
+        // caller happens to have view access on both sides.
+        var orgIds = datasources.Select(d => d.OrganizationId).Distinct().ToList();
+        var wsIds = datasources.Select(d => d.WorkspaceId).Distinct().ToList();
+        if (orgIds.Count > 1 || wsIds.Count > 1)
+        {
+            return StatusCode(403, new { error = "All datasources must belong to the same workspace." });
+        }
 
         foreach (var ds in datasources)
         {
@@ -810,58 +821,10 @@ public class DatasourceController : ControllerBase
     private async Task<List<Dictionary<string, object>>> LoadDatasourcePreviewRowsAsync(Datasource ds, int maxRows)
     {
         maxRows = Math.Clamp(maxRows <= 0 ? DefaultPreviewLoadRows : maxRows, 1, MaxPreviewLoadRows);
-        var rows = new List<Dictionary<string, object>>();
-
-        if (QueryExecutionService.RestApiTypes.Contains(ds.Type))
-        {
-            var rest = await _queryService.ExecuteRestApiAsync(ds, maxRows);
-            return rest.Success ? rest.Data : rows;
-        }
-
-        if (QueryExecutionService.FileUrlTypes.Contains(ds.Type))
-        {
-            var file = await _queryService.ExecuteFileUrlAsync(ds, maxRows);
-            return file.Success ? file.Data : rows;
-        }
-
-        if (QueryExecutionService.PowerBiTypes.Contains(ds.Type))
-        {
-            var rawTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
-            var safeDaxTable = BuildSafeDaxTableName(rawTable ?? "");
-            if (string.IsNullOrWhiteSpace(safeDaxTable)) return rows;
-            var dax = $"EVALUATE TOPN({maxRows}, '{safeDaxTable}')";
-            var pbi = await _queryService.ExecuteReadOnlyAsync(ds, dax, maxRows);
-            return pbi.Success ? pbi.Data : rows;
-        }
-
-        var firstTable = ds.SelectedTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(firstTable)) return rows;
-        var safeTable = BuildSafeSqlTableIdentifier(firstTable);
-        if (string.IsNullOrWhiteSpace(safeTable)) return rows;
-        var sql = $"SELECT TOP {Math.Min(maxRows, MaxPreviewLoadRows)} * FROM {safeTable}";
-        var result = await _queryService.ExecuteReadOnlyAsync(ds, sql, maxRows);
-        return result.Success ? result.Data : rows;
-    }
-
-    private static string BuildSafeSqlTableIdentifier(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return "";
-        var cleaned = raw.Trim().Trim('[', ']', '"', '`');
-        var segments = cleaned.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var safeSegments = new List<string>();
-        foreach (var seg in segments)
-        {
-            var safe = new string(seg.Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
-            if (string.IsNullOrWhiteSpace(safe)) return "";
-            safeSegments.Add("[" + safe + "]");
-        }
-        return string.Join(".", safeSegments);
-    }
-
-    private static string BuildSafeDaxTableName(string raw)
-    {
-        var safe = new string((raw ?? "").Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ' ').ToArray()).Trim();
-        return safe.Replace("'", "''", StringComparison.Ordinal);
+        var svc = ResolveTypeService(ds.Type);
+        if (svc == null) return new List<Dictionary<string, object>>();
+        var (rows, _) = await svc.SamplePreviewRowsAsync(ds, maxRows);
+        return rows.Count > 0 ? rows.ToList() : new List<Dictionary<string, object>>();
     }
 
     /// <summary>
@@ -880,6 +843,26 @@ public class DatasourceController : ControllerBase
                 var appUser = await _db.Users.FindAsync(userId);
                 if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
                     return StatusCode(403, new { error = "You do not have access to this datasource." });
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Edit-access guard for mutating operations (save draft, publish transform).
+    /// Returns a 403 result when the caller does not have Editor or Admin role
+    /// on the workspace, or null when access is granted.
+    /// </summary>
+    private async Task<IActionResult?> EnsureEditAccessAsync(Datasource ds)
+    {
+        if (ds.WorkspaceId.HasValue && ds.WorkspaceId.Value > 0)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            if (!await _permissions.CanEditAsync(ds.WorkspaceId.Value, userId))
+            {
+                var appUser = await _db.Users.FindAsync(userId);
+                if (appUser?.Role != "OrgAdmin" && appUser?.Role != "SuperAdmin")
+                    return StatusCode(403, new { error = "You need Editor or Admin role to modify transforms on this datasource." });
             }
         }
         return null;
@@ -1039,6 +1022,11 @@ public class TransformPreviewRequest
     public int? AutoLoadMaxRows { get; set; }
     public List<string>? DatasourceGuids { get; set; }
     public Dictionary<string, List<Dictionary<string, object>>>? SourceRows { get; set; }
+    /// <summary>
+    /// When true, writes a <see cref="TransformRunAudit"/> row for this preview run.
+    /// Defaults to false to avoid unbounded audit table growth during iterative workbench use.
+    /// </summary>
+    public bool? RecordAudit { get; set; }
 }
 
 public class TransformValidateRequest

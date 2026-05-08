@@ -102,9 +102,20 @@
                     if (this._checkTrialLimit()) return;
                     if (inlineWrap) {
                         inlineWrap.classList.add('active');
-                        const inp = document.getElementById('wfNewWsName');
-                        if (inp) { inp.value = ''; inp.focus(); }
+                        // Always start at the type chooser. Name row is hidden until a card is picked.
+                        this._resetCreateForm();
                     }
+                });
+            }
+
+            // Wire the two type cards. Picking one reveals the name row pre-loaded
+            // with that workspace flavour; the actual create still happens on confirm.
+            const chooser = document.getElementById('wfTypeChooser');
+            if (chooser) {
+                chooser.addEventListener('click', (e) => {
+                    const card = e.target.closest('.wf-type-card');
+                    if (!card) return;
+                    this._pickWorkspaceType(card.dataset.wsType || 'Standard');
                 });
             }
 
@@ -122,11 +133,42 @@
             }
         },
 
+        _pickWorkspaceType(type) {
+            this._pendingWsType = (type === 'Etl') ? 'Etl' : 'Standard';
+            const chooser = document.getElementById('wfTypeChooser');
+            const nameRow = document.getElementById('wfNameRow');
+            const pill = document.getElementById('wfTypePill');
+            const inp = document.getElementById('wfNewWsName');
+            if (chooser) chooser.style.display = 'none';
+            if (nameRow) nameRow.style.display = '';
+            if (pill) {
+                if (this._pendingWsType === 'Etl') {
+                    pill.innerHTML = '<i class="bi bi-diagram-3"></i> ETL';
+                    pill.classList.add('wf-type-pill-etl');
+                } else {
+                    pill.innerHTML = '<i class="bi bi-stars"></i> AI';
+                    pill.classList.remove('wf-type-pill-etl');
+                }
+            }
+            if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 0); }
+        },
+
+        _resetCreateForm() {
+            this._pendingWsType = null;
+            const chooser = document.getElementById('wfTypeChooser');
+            const nameRow = document.getElementById('wfNameRow');
+            const alert = document.getElementById('wfInlineAlert');
+            if (chooser) chooser.style.display = '';
+            if (nameRow) nameRow.style.display = 'none';
+            if (alert) { alert.textContent = ''; alert.style.display = 'none'; }
+        },
+
         _hideInlineCreate() {
             const wrap = document.getElementById('wfInlineCreate');
             if (wrap) wrap.classList.remove('active');
             const alert = document.getElementById('wfInlineAlert');
             if (alert) alert.style.display = 'none';
+            this._resetCreateForm();
         },
 
         _checkTrialLimit() {
@@ -158,12 +200,14 @@
             const inp = document.getElementById('wfNewWsName');
             const alert = document.getElementById('wfInlineAlert');
             const name = (inp ? inp.value.trim() : '') || 'New Workspace';
+            const type = this._pendingWsType || 'Standard';
             try {
                 const r = await fetch('/api/workspaces', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name,
+                        type,
                         organizationId: user?.organizationId || 0,
                         userId: user?.id || ''
                     })
@@ -210,10 +254,15 @@
             const item = document.createElement('div');
             item.className = 'panel-list-item';
             item.dataset.workspaceId = ws.guid;
+            const wsType = (ws.type || 'Standard');
+            if (wsType === 'Etl' || wsType === 1) item.dataset.wsType = 'Etl';
             const iconHtml = ws.logoUrl
                 ? `<img src="${this._esc(ws.logoUrl)}" alt="" style="width:18px;height:18px;border-radius:3px;object-fit:cover;margin-right:8px;">`
                 : `<i class="bi bi-folder me-2"></i>`;
-            item.innerHTML = `${iconHtml}${this._esc(ws.name)}<span class="wf-ws-status unconfigured"></span>`;
+            const etlBadge = (item.dataset.wsType === 'Etl')
+                ? `<span class="wf-ws-etl-badge" title="ETL workspace"><i class="bi bi-diagram-3"></i></span>`
+                : '';
+            item.innerHTML = `${iconHtml}${this._esc(ws.name)}${etlBadge}<span class="wf-ws-status unconfigured"></span>`;
             item.title = ws.description || '';
             list.appendChild(item);
         },
@@ -415,13 +464,22 @@
                 reportsHtml += '</div>';
             }
 
+            const isEtl = (data.type === 'Etl' || data.type === 1);
+            const transformBtnHtml = isEtl
+                ? `<a href="/transform/${encodeURIComponent(data.guid)}" class="btn btn-sm btn-outline-primary" style="flex-shrink:0;margin-right:6px" title="Open Transform Workbench">
+                        <i class="bi bi-magic me-1"></i>Transform Workbench
+                   </a>`
+                : '';
+            const etlTagHtml = isEtl ? ' <span class="wf-etl-tag">ETL</span>' : '';
+
             panel.innerHTML = `
                 <div class="wf-home-header">
-                    <div class="wf-home-icon"><i class="bi bi-folder-fill"></i></div>
+                    <div class="wf-home-icon"${isEtl ? ' style="background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff"' : ''}><i class="bi bi-${isEtl ? 'diagram-3' : 'folder-fill'}"></i></div>
                     <div class="wf-home-meta">
-                        <h2 class="wf-home-title">${this._esc(data.name)}</h2>
+                        <h2 class="wf-home-title">${this._esc(data.name)}${etlTagHtml}</h2>
                         <p class="wf-home-desc">${this._esc(data.description || 'Your workspace artifacts')}</p>
                     </div>
+                    ${transformBtnHtml}
                     <button class="btn btn-sm cp-btn-gradient" id="newArtifactInsightsBtn" style="flex-shrink:0">
                         <i class="bi bi-plus-lg me-1"></i>New AI Insights
                     </button>
@@ -635,6 +693,13 @@
                 el.addEventListener('click', () => {
                     const dsGuid = el.dataset.dsId;
                     if (dsGuid) this._showDatasourceDetailPopup(dsGuid);
+                });
+            });
+            document.querySelectorAll('[data-action="transform-open"]').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const wsId = el.dataset.wsId || this._selectedWsId;
+                    if (wsId) window.location.href = '/transform/' + encodeURIComponent(wsId);
                 });
             });
         },
@@ -911,6 +976,9 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
 
         // ── Setup wizard (new workspace, no datasource yet) ─
         _renderSetupWizard(panel, wsData) {
+            if (wsData && (wsData.type === 'Etl' || wsData.type === 1)) {
+                return this._renderEtlSetupWizard(panel, wsData);
+            }
             this._setupStep = 1;
             panel.innerHTML = `
                 <div class="wf-home-header">
@@ -1162,7 +1230,14 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                 testBtn.addEventListener('click', () => this._testDatasource(agent));
             }
             if (saveBtn) {
-                saveBtn.addEventListener('click', () => this._finishSetup(wsData));
+                saveBtn.addEventListener('click', () => {
+                    if (typeof this._onDsSaved === 'function') {
+                        const cb = this._onDsSaved;
+                        this._onDsSaved = null;
+                        return cb(this._lastSavedDs);
+                    }
+                    this._finishSetup(wsData);
+                });
             }
         },
 
@@ -1174,12 +1249,17 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
             const alertEl = document.getElementById('wfDsAlert');
             const testBtn = document.getElementById('wfDsTestBtn');
 
-            // Build payload based on datasource type
+            // Build payload based on datasource type.
+            // workspaceId binds the DS to the workspace so the home/lineage
+            // view recognizes it as an artifact. ETL flow supplies it via
+            // _etlState; standard flow falls back to _pendingAgent (whose
+            // agent record will also carry workspaceId).
             const payload = {
                 name,
                 type: this._selectedDsType,
                 organizationId: user?.organizationId || 0,
-                userId: user?.id || ''
+                userId: user?.id || '',
+                workspaceId: this._etlState?.wsData?.id || this._pendingAgent?.workspaceId || undefined
             };
 
             // Per-type modules contribute their own fields — see
@@ -1214,6 +1294,7 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                 if (!r.ok) throw new Error();
                 const ds = await r.json();
                 this._createdDsId = ds.id;
+                this._lastSavedDs = ds;
 
                 const fr = await fetch(`/api/datasources/${ds.id}/fields`);
                 const fields = await fr.json();

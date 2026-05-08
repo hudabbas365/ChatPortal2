@@ -33,6 +33,8 @@ public class SqlDatasourceService : IDatasourceTypeService
     public bool CanHandle(string? type) =>
         !string.IsNullOrEmpty(type) && QueryExecutionService.SqlTypes.Contains(type);
 
+    public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "SQL Server" };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestConnectionAsync(
             info.Type ?? "SQL Server",
@@ -114,5 +116,39 @@ public class SqlDatasourceService : IDatasourceTypeService
         foreach (var k in keys)
             if (row.TryGetValue(k, out var v) && v != null) return v.ToString();
         return null;
+    }
+
+    public async Task<(IReadOnlyList<Dictionary<string, object>> Rows, string? Error)> SamplePreviewRowsAsync(Datasource ds, int maxRows)
+    {
+        var firstTable = ds.SelectedTables
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(firstTable))
+            return (Array.Empty<Dictionary<string, object>>(), null);
+
+        var safeTable = BuildSafeSqlTableIdentifier(firstTable);
+        if (string.IsNullOrWhiteSpace(safeTable))
+            return (Array.Empty<Dictionary<string, object>>(), null);
+
+        var sql = $"SELECT TOP {maxRows} * FROM {safeTable}";
+        var result = await _queryService.ExecuteReadOnlyAsync(ds, sql, maxRows);
+        return result.Success
+            ? (result.Data, null)
+            : (Array.Empty<Dictionary<string, object>>(), result.Error);
+    }
+
+    internal static string BuildSafeSqlTableIdentifier(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var cleaned = raw.Trim().Trim('[', ']', '"', '`');
+        var segments = cleaned.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var safeSegments = new List<string>();
+        foreach (var seg in segments)
+        {
+            var safe = new string(seg.Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
+            if (string.IsNullOrWhiteSpace(safe)) return "";
+            safeSegments.Add("[" + safe + "]");
+        }
+        return string.Join(".", safeSegments);
     }
 }
