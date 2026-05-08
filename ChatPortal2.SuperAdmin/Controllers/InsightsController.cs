@@ -482,6 +482,8 @@ public class InsightsController : Controller
 
         var paidOrgs = await _db.Organizations.AsNoTracking()
             .Where(o => !o.IsBlocked
+                     && !o.IsDeleted
+                     && o.IsActive
                      && (o.Plan == PlanType.Professional || o.Plan == PlanType.Enterprise))
             .ToListAsync();
 
@@ -647,7 +649,7 @@ public class InsightsController : Controller
         var sevenDaysAgo = now.AddDays(-7);
 
         var orgs = await _db.Organizations.AsNoTracking()
-            .Where(o => !o.IsBlocked)
+            .Where(o => !o.IsBlocked && !o.IsDeleted && o.IsActive)
             .Select(o => new { o.Id, o.Name, o.Plan })
             .ToListAsync();
 

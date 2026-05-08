@@ -1214,8 +1214,23 @@ IF NOT EXISTS (
 )
 BEGIN
     ALTER TABLE [Organizations] ADD [OrganizationGuid] uniqueidentifier NOT NULL DEFAULT (NEWID());
-    -- Backfill: ensure every existing row has a distinct GUID
-    UPDATE [Organizations] SET [OrganizationGuid] = NEWID();
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260428075601_AddOrganizationGuid'
+)
+BEGIN
+    UPDATE Organizations SET OrganizationGuid = NEWID();
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260428075601_AddOrganizationGuid'
+)
+BEGIN
     CREATE UNIQUE INDEX [IX_Organizations_OrganizationGuid] ON [Organizations] ([OrganizationGuid]);
 END;
 GO
@@ -1227,6 +1242,361 @@ IF NOT EXISTS (
 BEGIN
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
     VALUES (N'20260428075601_AddOrganizationGuid', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260429122927_AddLicenseSubscriptionFields'
+)
+BEGIN
+    ALTER TABLE [Organizations] ADD [PayPalEntSubscriptionId] nvarchar(max) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260429122927_AddLicenseSubscriptionFields'
+)
+BEGIN
+    ALTER TABLE [Organizations] ADD [PayPalProSubscriptionId] nvarchar(max) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260429122927_AddLicenseSubscriptionFields'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260429122927_AddLicenseSubscriptionFields', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260501132027_AddReportEmbedTokenVersion'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [EmbedTokenVersion] int NOT NULL DEFAULT 0;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260501132027_AddReportEmbedTokenVersion'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260501132027_AddReportEmbedTokenVersion', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260504202344_AddPayPalEventIdIdempotency'
+)
+BEGIN
+    ALTER TABLE [PaymentRecords] ADD [PayPalEventId] nvarchar(450) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260504202344_AddPayPalEventIdIdempotency'
+)
+BEGIN
+    EXEC(N'CREATE UNIQUE INDEX [IX_PaymentRecords_PayPalEventId] ON [PaymentRecords] ([PayPalEventId]) WHERE [PayPalEventId] IS NOT NULL');
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260504202344_AddPayPalEventIdIdempotency'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260504202344_AddPayPalEventIdIdempotency', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260507215818_AddUniqueOrganizationName'
+)
+BEGIN
+    DECLARE @var0 sysname;
+    SELECT @var0 = [d].[name]
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[Organizations]') AND [c].[name] = N'Name');
+    IF @var0 IS NOT NULL EXEC(N'ALTER TABLE [Organizations] DROP CONSTRAINT [' + @var0 + '];');
+    ALTER TABLE [Organizations] ALTER COLUMN [Name] nvarchar(450) NOT NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260507215818_AddUniqueOrganizationName'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Organizations_Name_Unique] ON [Organizations] ([Name]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260507215818_AddUniqueOrganizationName'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260507215818_AddUniqueOrganizationName', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508094456_AddDatasourceTransformToml'
+)
+BEGIN
+    ALTER TABLE [Datasources] ADD [TransformEnabled] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508094456_AddDatasourceTransformToml'
+)
+BEGIN
+    ALTER TABLE [Datasources] ADD [TransformToml] nvarchar(max) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508094456_AddDatasourceTransformToml'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260508094456_AddDatasourceTransformToml', N'8.0.0');
+END;
+GO
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    ALTER TABLE [Workspaces] ADD [Type] int NOT NULL DEFAULT 0;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE TABLE [TransformDrafts] (
+        [Id] int NOT NULL IDENTITY,
+        [Guid] nvarchar(450) NOT NULL,
+        [DatasourceId] int NULL,
+        [DatasourceGuidsCsv] nvarchar(max) NULL,
+        [Name] nvarchar(max) NOT NULL,
+        [TomlDefinition] nvarchar(max) NOT NULL,
+        [StepsJson] nvarchar(max) NOT NULL,
+        [Status] nvarchar(max) NOT NULL,
+        [CreatedByUserId] nvarchar(max) NULL,
+        [UpdatedByUserId] nvarchar(max) NULL,
+        [CreatedAt] datetime2 NOT NULL,
+        [UpdatedAt] datetime2 NOT NULL,
+        [PublishedAt] datetime2 NULL,
+        [AuditMetadataJson] nvarchar(max) NULL,
+        CONSTRAINT [PK_TransformDrafts] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TransformDrafts_Datasources_DatasourceId] FOREIGN KEY ([DatasourceId]) REFERENCES [Datasources] ([Id]) ON DELETE SET NULL
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE TABLE [TransformRunAudits] (
+        [Id] int NOT NULL IDENTITY,
+        [RunGuid] nvarchar(450) NOT NULL,
+        [DatasourceId] int NULL,
+        [TransformDraftId] int NULL,
+        [Success] bit NOT NULL,
+        [InputRowCount] int NOT NULL,
+        [OutputRowCount] int NOT NULL,
+        [DurationMs] bigint NOT NULL,
+        [MessagesJson] nvarchar(max) NULL,
+        [Error] nvarchar(max) NULL,
+        [CreatedByUserId] nvarchar(max) NULL,
+        [CreatedAt] datetime2 NOT NULL,
+        CONSTRAINT [PK_TransformRunAudits] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TransformRunAudits_Datasources_DatasourceId] FOREIGN KEY ([DatasourceId]) REFERENCES [Datasources] ([Id]) ON DELETE SET NULL,
+        CONSTRAINT [FK_TransformRunAudits_TransformDrafts_TransformDraftId] FOREIGN KEY ([TransformDraftId]) REFERENCES [TransformDrafts] ([Id]) ON DELETE SET NULL
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE TABLE [TransformSources] (
+        [Id] int NOT NULL IDENTITY,
+        [TransformDraftId] int NOT NULL,
+        [DatasourceId] int NOT NULL,
+        [Alias] nvarchar(450) NOT NULL,
+        [SortOrder] int NOT NULL,
+        CONSTRAINT [PK_TransformSources] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TransformSources_Datasources_DatasourceId] FOREIGN KEY ([DatasourceId]) REFERENCES [Datasources] ([Id]),
+        CONSTRAINT [FK_TransformSources_TransformDrafts_TransformDraftId] FOREIGN KEY ([TransformDraftId]) REFERENCES [TransformDrafts] ([Id]) ON DELETE CASCADE
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE TABLE [TransformSteps] (
+        [Id] int NOT NULL IDENTITY,
+        [TransformDraftId] int NOT NULL,
+        [StepGuid] nvarchar(max) NOT NULL,
+        [StepType] nvarchar(max) NOT NULL,
+        [Title] nvarchar(max) NULL,
+        [ParametersJson] nvarchar(max) NULL,
+        [Enabled] bit NOT NULL,
+        [SortOrder] int NOT NULL,
+        [CreatedAt] datetime2 NOT NULL,
+        [UpdatedAt] datetime2 NOT NULL,
+        CONSTRAINT [PK_TransformSteps] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TransformSteps_TransformDrafts_TransformDraftId] FOREIGN KEY ([TransformDraftId]) REFERENCES [TransformDrafts] ([Id]) ON DELETE CASCADE
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE INDEX [IX_TransformDrafts_DatasourceId] ON [TransformDrafts] ([DatasourceId]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TransformDrafts_Guid] ON [TransformDrafts] ([Guid]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE INDEX [IX_TransformRunAudits_DatasourceId] ON [TransformRunAudits] ([DatasourceId]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TransformRunAudits_RunGuid] ON [TransformRunAudits] ([RunGuid]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE INDEX [IX_TransformRunAudits_TransformDraftId] ON [TransformRunAudits] ([TransformDraftId]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE INDEX [IX_TransformSources_DatasourceId] ON [TransformSources] ([DatasourceId]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TransformSources_TransformDraftId_DatasourceId_Alias] ON [TransformSources] ([TransformDraftId], [DatasourceId], [Alias]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    CREATE INDEX [IX_TransformSteps_TransformDraftId_SortOrder] ON [TransformSteps] ([TransformDraftId], [SortOrder]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260508114102_AddWorkspaceType'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260508114102_AddWorkspaceType', N'8.0.0');
 END;
 GO
 

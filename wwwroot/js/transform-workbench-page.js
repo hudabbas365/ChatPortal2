@@ -1330,6 +1330,45 @@
         }
     }
 
+    // Sniff the column data type from up to ~25 sampled non-null values.
+    // Returns one of: text | integer | decimal | boolean | date | datetime.
+    // Used to render an inline type pill in the preview header so users can
+    // see (and click to change) each column's type at a glance.
+    function inferColType(rows, col) {
+        const sample = [];
+        for (let i = 0; i < rows.length && sample.length < 25; i++) {
+            const v = rows[i]?.[col];
+            if (v !== null && v !== undefined && String(v).trim() !== '') sample.push(v);
+        }
+        if (sample.length === 0) return 'text';
+        let allBool = true, allInt = true, allDec = true, allDate = true, allDateTime = true;
+        const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+        const isoDateTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
+        for (const v of sample) {
+            const s = String(v).trim();
+            if (allBool && !/^(true|false|yes|no|0|1)$/i.test(s)) allBool = false;
+            if (allInt && !/^-?\d+$/.test(s)) allInt = false;
+            if (allDec && !/^-?\d+(\.\d+)?$/.test(s)) allDec = false;
+            if (allDate && !isoDate.test(s)) allDate = false;
+            if (allDateTime && !isoDateTime.test(s)) allDateTime = false;
+        }
+        if (allBool && sample.every(v => /^(true|false)$/i.test(String(v).trim()))) return 'boolean';
+        if (allInt) return 'integer';
+        if (allDec) return 'decimal';
+        if (allDateTime) return 'datetime';
+        if (allDate) return 'date';
+        return 'text';
+    }
+    const TYPE_META = {
+        text:     { icon: 'bi-type',          label: 'Text' },
+        integer:  { icon: 'bi-123',           label: 'Whole Number' },
+        decimal:  { icon: 'bi-percent',       label: 'Decimal' },
+        boolean:  { icon: 'bi-toggle-on',     label: 'Boolean' },
+        date:     { icon: 'bi-calendar',      label: 'Date' },
+        datetime: { icon: 'bi-clock',         label: 'Date/Time' },
+        time:     { icon: 'bi-clock-history', label: 'Time' }
+    };
+
     function renderPreview(payload) {
         const empty = $('twpPreviewEmpty');
         const wrap = $('twpPreviewWrap');
@@ -1351,23 +1390,56 @@
         pill.style.display = '';
         pill.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
 
-        const thead = '<tr>' + cols.map(c => {
+        // Build a per-column type map once and stash it for the enhancements
+        // module (column menu's "Change type" submenu reads it).
+        const typeMap = {};
+        cols.forEach(c => { typeMap[c] = inferColType(rows, c); });
+        tbl.dataset.colTypes = JSON.stringify(typeMap);
+
+        // Header row: name (click-to-sort), up/down arrow buttons (active one
+        // highlighted), three-dot menu, hover-only × delete-column. Below the
+        // name, a clickable type pill so the user can see and change the
+        // detected datatype without diving into the menu.
+        const headCells = cols.map(c => {
             const st = (window.TWP && window.TWP.getSortState) ? window.TWP.getSortState(c) : null;
-            const sortIcon = st
-                ? `<i class="bi ${st.dir === 'asc' ? 'bi-sort-down-alt' : 'bi-sort-up'}"></i>`
-                : '';
+            const ascActive  = st && st.dir === 'asc'  ? ' is-active' : '';
+            const descActive = st && st.dir === 'desc' ? ' is-active' : '';
             const sortCls = st ? ' twp-col-sort-active' : '';
-            return `<th data-col="${esc(c)}" class="twp-col-head${sortCls}">`
-                + `<span class="twp-col-name" title="Click to sort">${esc(c)}</span>`
-                + `<span class="twp-col-sort" title="Sort">${sortIcon}</span>`
-                + `<button type="button" class="twp-col-chevron" title="Column actions" aria-label="Column actions"><i class="bi bi-caret-down-fill"></i></button>`
+            const t = typeMap[c] || 'text';
+            const tm = TYPE_META[t] || TYPE_META.text;
+            return `<th data-col="${esc(c)}" data-coltype="${esc(t)}" class="twp-col-head${sortCls}">`
+                + `<div class="twp-col-h-row">`
+                +   `<span class="twp-col-name" title="Click to sort">${esc(c)}</span>`
+                +   `<span class="twp-col-tools">`
+                +     `<button type="button" class="twp-col-tool twp-col-sort-btn${ascActive}"  data-act="col-sort-asc"  title="Sort ascending"><i class="bi bi-caret-up-fill"></i></button>`
+                +     `<button type="button" class="twp-col-tool twp-col-sort-btn${descActive}" data-act="col-sort-desc" title="Sort descending"><i class="bi bi-caret-down-fill"></i></button>`
+                +     `<button type="button" class="twp-col-tool twp-col-chevron" data-act="col-menu" title="Column actions"><i class="bi bi-three-dots-vertical"></i></button>`
+                +     `<button type="button" class="twp-col-tool twp-col-del" data-act="col-delete" title="Remove column"><i class="bi bi-x-lg"></i></button>`
+                +   `</span>`
+                + `</div>`
+                + `<button type="button" class="twp-col-type-pill" data-act="col-type" title="Click to change type"><i class="bi ${tm.icon}"></i><span>${tm.label}</span></button>`
                 + `</th>`;
-        }).join('') + '</tr>';
-        const tbody = rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('');
+        }).join('');
+        // Leading row-action column with no header label (just a separator).
+        const thead = `<tr><th class="twp-row-actions-h" aria-hidden="true"></th>${headCells}</tr>`;
+
+        // Body rows: leading row-number + delete-row × button. Stash the row
+        // payload as JSON so the click handler can build a precise filter
+        // expression keyed on the row's most-likely-unique column.
+        const tbody = rows.map((r, i) => {
+            const sig = esc(JSON.stringify(r));
+            const cells = cols.map(c => `<td>${esc(r[c])}</td>`).join('');
+            return `<tr data-rowidx="${i}" data-rowsig="${sig}">`
+                + `<td class="twp-row-actions">`
+                +   `<span class="twp-row-num">${i + 1}</span>`
+                +   `<button type="button" class="twp-row-del" data-act="row-delete" title="Remove this row">\u00d7</button>`
+                + `</td>${cells}</tr>`;
+        }).join('');
+
         tbl.querySelector('thead').innerHTML = thead;
         tbl.querySelector('tbody').innerHTML = tbody;
         setView('preview');
-        document.dispatchEvent(new CustomEvent('twp:preview-rendered', { detail: { columns: cols, rowCount: rows.length } }));
+        document.dispatchEvent(new CustomEvent('twp:preview-rendered', { detail: { columns: cols, rowCount: rows.length, types: typeMap } }));
     }
 
     function clearPreview() {

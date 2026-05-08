@@ -118,6 +118,8 @@ builder.Services.AddScoped<InvoicePdfService>();
 builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddHostedService<IntegrationHealthService>();
 builder.Services.AddHostedService<WeeklyDigestService>();
+builder.Services.AddScoped<OrganizationRetentionService>();
+builder.Services.AddHostedService<OrganizationRetentionCleanupJob>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DigestSenderService>();
@@ -141,6 +143,7 @@ builder.Services.AddControllersWithViews()
     });
 
 var app = builder.Build();
+// After app.Build(), before app.Run()
 
 // Show detailed errors in Development; in Production use a lambda-based handler
 // so we don't depend on a "/superadmin/error" endpoint actually existing — if

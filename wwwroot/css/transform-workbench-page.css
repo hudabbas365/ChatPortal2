@@ -608,3 +608,60 @@ html, body { height: 100%; margin: 0; }
 .twp-form-fields .form-label::after {
     /* nothing — placeholder for future "live" badge */
 }
+
+/* P20.8 — preview header redesign + row actions */
+.twp-col-h-row { display: flex; align-items: center; gap: 4px; width: 100%; }
+.twp-col-h-row .twp-col-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.twp-col-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.twp-col-tool {
+    width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 1px solid transparent; border-radius: 4px;
+    color: #9ca0b3; cursor: pointer; opacity: 0.55; transition: all .12s ease; padding: 0;
+}
+.twp-col-head:hover .twp-col-tool { opacity: 1; }
+.twp-col-tool i { font-size: 10px; line-height: 1; }
+.twp-col-tool:hover:not(.is-active) { color: #4338ca; background: #fff; border-color: #c7cbe0; }
+.twp-col-sort-btn.is-active { color: #4338ca; background: #eef2ff; border-color: #c7d2fe; opacity: 1; }
+.twp-col-tool.twp-col-del:hover { color: #fff; background: #dc2626; border-color: #dc2626; opacity: 1; }
+
+.twp-col-type-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 3px; padding: 1px 7px;
+    font-size: 10.5px; font-weight: 500; color: #4338ca;
+    background: #f5f6ff; border: 1px solid #e0e3f2; border-radius: 10px;
+    cursor: pointer; transition: all .12s ease; line-height: 1.4;
+}
+.twp-col-type-pill:hover { background: #eef2ff; border-color: #a5b4fc; }
+.twp-col-type-pill i { font-size: 11px; }
+
+.twp-row-actions-h, .twp-row-actions {
+    width: 38px; min-width: 38px; padding: 2px 4px !important;
+    background: #fafbff; border-right: 1px solid #e2e4ee;
+    text-align: center; vertical-align: middle;
+}
+.twp-row-num { font-size: 10px; color: #9ca0b3; font-family: ui-monospace, Menlo, Consolas, monospace; }
+tr:hover .twp-row-actions { background: #f1f3ff; }
+tr:hover .twp-row-num { display: none; }
+.twp-row-del {
+    display: none; width: 18px; height: 18px; line-height: 14px;
+    background: transparent; border: 1px solid transparent; border-radius: 4px;
+    color: #9ca0b3; cursor: pointer; font-size: 14px; padding: 0;
+}
+tr:hover .twp-row-del { display: inline-block; }
+.twp-row-del:hover { color: #fff; background: #dc2626; border-color: #dc2626; }
+
+/* Floating type-choice popup */
+.twp-type-popup {
+    position: fixed; z-index: 1080;
+    background: #fff; border: 1px solid #d6d9e6; border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(20,22,40,.15);
+    padding: 4px; min-width: 180px;
+}
+.twp-type-popup-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 8px; border: 0; background: transparent; border-radius: 4px;
+    font-size: 12px; color: #333; cursor: pointer; text-align: left;
+}
+.twp-type-popup-item:hover { background: #eef2ff; color: #4338ca; }
+.twp-type-popup-item.is-current { background: #f5f6ff; font-weight: 600; color: #4338ca; }
+.twp-type-popup-item i { font-size: 13px; width: 16px; text-align: center; }
