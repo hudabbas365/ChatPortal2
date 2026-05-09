@@ -599,7 +599,11 @@ async function readFileAsDataUrl(file) {
 
 async function copyGalleryUrl(url) {
     if (!url) return;
-    await navigator.clipboard.writeText(url);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        return;
+    }
+    window.prompt('Copy image URL:', url);
 }
 
 document.getElementById('keywordInput').addEventListener('keydown', event => {

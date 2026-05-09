@@ -38,6 +38,7 @@
     @if (keywords.Count > 0)
     {
         <meta name="twitter:label1" content="Keywords" />
+        @* Keep the Twitter keyword preview compact so the card metadata stays readable. *@
         <meta name="twitter:data1" content="@string.Join(", ", keywords.Take(8))" />
     }
 }

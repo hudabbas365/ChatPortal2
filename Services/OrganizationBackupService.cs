@@ -48,7 +48,7 @@ public class OrganizationBackupService : IOrganizationBackupService
         }
         else
         {
-            var attachments = includeAttachments ? CollectAttachmentBytes(package) : new Dictionary<string, byte[]>();
+            var attachments = includeAttachments ? await CollectAttachmentBytesAsync(package, cancellationToken) : new Dictionary<string, byte[]>();
             foreach (var attachment in attachments)
             {
                 manifestFiles.Add(new BackupManifestFile { Path = attachment.Key, Sha256 = ComputeSha256(attachment.Value) });
@@ -226,7 +226,13 @@ public class OrganizationBackupService : IOrganizationBackupService
 
     public async Task<bool> DeleteBackupAsync(int organizationId, string fileName, CancellationToken cancellationToken = default)
     {
-        var path = GetBackupFilePath(organizationId, fileName);
+        var safeFileName = Path.GetFileName(fileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeFileName))
+        {
+            return false;
+        }
+
+        var path = GetBackupFilePath(organizationId, safeFileName);
         if (!File.Exists(path))
         {
             return false;
@@ -234,7 +240,7 @@ public class OrganizationBackupService : IOrganizationBackupService
 
         File.Delete(path);
         var audits = await _db.OrganizationBackupAudits
-            .Where(a => a.OrganizationId == organizationId && a.FileName == fileName)
+            .Where(a => a.OrganizationId == organizationId && a.FileName == safeFileName)
             .ToListAsync(cancellationToken);
         if (audits.Count > 0)
         {
@@ -248,7 +254,8 @@ public class OrganizationBackupService : IOrganizationBackupService
     public string GetBackupFilePath(int organizationId, string fileName)
     {
         var root = Path.Combine(_environment.ContentRootPath, "App_Data", "backups", "org", organizationId.ToString());
-        return Path.Combine(root, Path.GetFileName(fileName));
+        var safeFileName = Path.GetFileName(fileName ?? string.Empty);
+        return Path.Combine(root, safeFileName);
     }
 
     private async Task<OrganizationBackupPackage> BuildPackageAsync(int organizationId, CancellationToken cancellationToken)
@@ -329,7 +336,7 @@ public class OrganizationBackupService : IOrganizationBackupService
         };
     }
 
-    private Dictionary<string, byte[]> CollectAttachmentBytes(OrganizationBackupPackage package)
+    private async Task<Dictionary<string, byte[]>> CollectAttachmentBytesAsync(OrganizationBackupPackage package, CancellationToken cancellationToken)
     {
         var allPaths = package.BlogPosts
             .SelectMany(post => post.BlogImages.Select(i => i.ImagePath).Concat(new[] { post.FeaturedImagePath, post.ImageUrl }))
@@ -349,7 +356,8 @@ public class OrganizationBackupService : IOrganizationBackupService
                 continue;
             }
 
-            result[$"uploads/{relative.Substring("uploads/".Length)}"] = File.ReadAllBytes(absolute);
+            var relativeUploadPath = relative.AsSpan("uploads/".Length).ToString();
+            result[$"uploads/{relativeUploadPath}"] = await File.ReadAllBytesAsync(absolute, cancellationToken);
         }
 
         return result;

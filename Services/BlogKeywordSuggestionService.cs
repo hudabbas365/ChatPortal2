@@ -84,6 +84,8 @@ public class BlogKeywordSuggestionService : IBlogKeywordSuggestionService
             }
         }
 
+        // Super Admin SEO requires at least 15 keyword suggestions, so the helper
+        // keeps that floor even when a smaller minimumCount is requested.
         return ranked.Take(Math.Max(minimumCount, 15)).ToList();
     }
 

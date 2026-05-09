@@ -43,6 +43,7 @@ public partial class SuperAdminController
     }
 
     [HttpPost("/api/superadmin/blog/suggest-keywords")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> SuggestBlogKeywords([FromBody] SuggestKeywordsRequest request)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -51,6 +52,7 @@ public partial class SuperAdminController
     }
 
     [HttpPost("/api/superadmin/blog/preview-announcement")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewAnnouncementRecipients([FromBody] PreviewAnnouncementRequest request)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -59,6 +61,7 @@ public partial class SuperAdminController
     }
 
     [HttpPost("/api/superadmin/blog/{id}/announcement/resend-failed")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ResendFailedAnnouncementEmails(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -89,6 +92,7 @@ public partial class SuperAdminController
     }
 
     [HttpPost("/api/superadmin/backups/export")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExportOrganizationBackup([FromBody] ExportBackupRequest request)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -118,26 +122,39 @@ public partial class SuperAdminController
     public async Task<IActionResult> DownloadBackup([FromQuery] int organizationId, [FromQuery] string fileName)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var path = _organizationBackupService.GetBackupFilePath(organizationId, fileName);
+        var safeFileName = Path.GetFileName(fileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeFileName) || !string.Equals(safeFileName, fileName, StringComparison.Ordinal))
+        {
+            return BadRequest(new { error = "Invalid backup file name." });
+        }
+
+        var path = _organizationBackupService.GetBackupFilePath(organizationId, safeFileName);
         if (!System.IO.File.Exists(path))
         {
             return NotFound();
         }
 
         var bytes = await System.IO.File.ReadAllBytesAsync(path);
-        var contentType = fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "application/json" : "application/zip";
-        return File(bytes, contentType, Path.GetFileName(fileName));
+        var contentType = safeFileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "application/json" : "application/zip";
+        return File(bytes, contentType, safeFileName);
     }
 
     [HttpDelete("/api/superadmin/backups")]
     public async Task<IActionResult> DeleteBackup([FromQuery] int organizationId, [FromQuery] string fileName)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var deleted = await _organizationBackupService.DeleteBackupAsync(organizationId, fileName);
+        var safeFileName = Path.GetFileName(fileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeFileName) || !string.Equals(safeFileName, fileName, StringComparison.Ordinal))
+        {
+            return BadRequest(new { error = "Invalid backup file name." });
+        }
+
+        var deleted = await _organizationBackupService.DeleteBackupAsync(organizationId, safeFileName);
         return Ok(new { success = deleted });
     }
 
     [HttpPost("/api/superadmin/backups/import")]
+    [ValidateAntiForgeryToken]
     [RequestFormLimits(MultipartBodyLengthLimit = 104857600)]
     public async Task<IActionResult> ImportBackup([FromForm] int organizationId, [FromForm] string mode, [FromForm] string? confirmationText, [FromForm] string? confirmationOrganizationName, [FromForm] IFormFile file)
     {
