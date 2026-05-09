@@ -1,0 +1,104 @@
+@model List<AIInsights.Models.DatasourceTypeDefinition>
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+@Html.AntiForgeryToken()
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title"><i class="bi bi-database-gear"></i> Datasource Types</h1>
+        <div class="page-sub">Connection field definitions used by the workspace wizard and Transform Workbench. Edits are live on the next request.</div>
+    </div>
+    <div class="page-actions">
+        <a href="/superadmin/datasource-types/new" class="btn-primary-sm"><i class="bi bi-plus-lg"></i> New type</a>
+    </div>
+</div>
+
+<div class="card-panel">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th style="width:40px"></th>
+                <th>Type</th>
+                <th>Display name</th>
+                <th>Params</th>
+                <th>Gateway</th>
+                <th>Status</th>
+                <th>Origin</th>
+                <th style="width:200px">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="8" class="text-center text-muted">No datasource types yet. Built-ins seed automatically on app start.</td></tr>
+            }
+            @foreach (var d in Model)
+            {
+                <tr data-id="@d.Id">
+                    <td><i class="bi @(string.IsNullOrEmpty(d.Icon) ? "bi-database" : d.Icon)"></i></td>
+                    <td><code>@d.Type</code></td>
+                    <td>
+                        <div>@d.DisplayName</div>
+                        @if (!string.IsNullOrWhiteSpace(d.Description))
+                        {
+                            <div class="text-muted small">@d.Description</div>
+                        }
+                    </td>
+                    <td><span class="badge-sm badge-sky">@d.Parameters.Count</span></td>
+                    <td>
+                        @if (d.RequiresGateway)
+                        { <span class="badge-sm badge-amber">Required</span> }
+                        else
+                        { <span class="badge-sm badge-gray">No</span> }
+                    </td>
+                    <td>
+                        @if (d.Enabled)
+                        { <span class="badge-sm badge-emerald">Enabled</span> }
+                        else
+                        { <span class="badge-sm badge-rose">Disabled</span> }
+                    </td>
+                    <td>
+                        @if (d.IsBuiltIn)
+                        { <span class="badge-sm badge-indigo">Built-in</span> }
+                        else
+                        { <span class="badge-sm badge-gray">Custom</span> }
+                    </td>
+                    <td>
+                        <a href="/superadmin/datasource-types/@d.Id/edit" class="btn-ghost-sm" title="Edit"><i class="bi bi-pencil"></i></a>
+                        <button type="button" class="btn-ghost-sm" data-act="toggle" title="@(d.Enabled ? "Disable" : "Enable")">
+                            <i class="bi @(d.Enabled ? "bi-toggle-on" : "bi-toggle-off")"></i>
+                        </button>
+                        @if (!d.IsBuiltIn)
+                        {
+                            <button type="button" class="btn-ghost-sm" data-act="delete" title="Delete"><i class="bi bi-trash text-danger"></i></button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+    <script>
+    document.querySelectorAll('tr[data-id]').forEach(tr => {
+        const id = tr.dataset.id;
+        tr.querySelector('[data-act="toggle"]')?.addEventListener('click', async () => {
+            const r = await fetch(`/api/superadmin/datasource-types/${id}/toggle`, { method: 'POST' });
+            if (r.ok) location.reload();
+            else alert('Toggle failed.');
+        });
+        tr.querySelector('[data-act="delete"]')?.addEventListener('click', async () => {
+            if (!confirm('Delete this datasource type? This cannot be undone.')) return;
+            const r = await fetch(`/api/superadmin/datasource-types/${id}`, { method: 'DELETE' });
+            if (r.ok) location.reload();
+            else {
+                const data = await r.json().catch(() => ({}));
+                alert(data.error || 'Delete failed.');
+            }
+        });
+    });
+    </script>
+}

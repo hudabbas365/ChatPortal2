@@ -40,6 +40,9 @@
     <link rel="stylesheet" href="~/css/cp-toast.css" />
     <link rel="stylesheet" href="~/css/cp-pricing-home.css" />
     <link rel="stylesheet" href="~/css/cp-about.css" />
+    <!-- DB-backed UI theme overrides — emitted by UiThemeAssetController. Loaded
+         after site.css so admin-authored --cp-* values win without file edits. -->
+    <link rel="stylesheet" href="/css/theme.css" />
     @RenderSection("Head", required: false)
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.ico" />

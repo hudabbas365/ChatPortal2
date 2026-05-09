@@ -34,6 +34,33 @@ public class PowerBiDatasourceService : IDatasourceTypeService
 
     public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "Power BI" };
 
+    public IReadOnlyList<DatasourceParamDescriptor> Parameters { get; } = new[]
+    {
+        new DatasourceParamDescriptor(
+            Key: "xmlaEndpoint",
+            Label: "XMLA endpoint",
+            Type: "text",
+            Placeholder: "powerbi://api.powerbi.com/v1.0/myorg/Workspace",
+            Required: true),
+        new DatasourceParamDescriptor(
+            Key: "microsoftAccountTenantId",
+            Label: "Microsoft tenant ID",
+            Type: "text",
+            Placeholder: "00000000-0000-0000-0000-000000000000",
+            Required: false,
+            Help: "Required only when using a service principal."),
+        new DatasourceParamDescriptor(
+            Key: "dbUser",
+            Label: "User / App ID (optional)",
+            Type: "text",
+            Required: false),
+        new DatasourceParamDescriptor(
+            Key: "dbPassword",
+            Label: "Password / Secret (optional)",
+            Type: "password",
+            Required: false),
+    };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestConnectionAsync(
             info.Type ?? "Power BI",

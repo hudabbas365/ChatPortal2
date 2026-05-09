@@ -28,6 +28,7 @@
     const RIBBON = {
         home: [
             { group: 'Manage', items: [
+                { op: 'add_datasource',   label: 'Add datasource',   icon: 'bi-database-add',    kind: 'action' },
                 { op: 'refresh',          label: 'Refresh preview',  icon: 'bi-arrow-clockwise', kind: 'action' },
                 { op: 'remove_columns',   label: 'Choose columns',   icon: 'bi-funnel' }
             ]},
@@ -52,7 +53,7 @@
             { group: 'Table', items: [
                 { op: 'group_by',         label: 'Group by',     icon: 'bi-collection' },
                 { op: 'pivot',            label: 'Pivot column', icon: 'bi-arrow-down-up' },
-                { op: 'unpivot',          label: 'Unpivot',      icon: 'bi-arrow-up-down' },
+                { op: 'unpivot',          label: 'Unpivot',      icon: 'bi-arrows-collapse-vertical' },
                 { op: 'transpose',        label: 'Transpose',    icon: 'bi-arrows-angle-expand' },
                 { op: 'reverse',          label: 'Reverse rows', icon: 'bi-arrow-counterclockwise' },
                 { op: 'count_rows',       label: 'Count rows',   icon: 'bi-123' },
@@ -137,78 +138,84 @@
     };
 
     // ── Default templates per op so a click yields a usable rule. ───────
+    // NOTE: Most ops are now built data-aware via smartDefaults() reading the
+    // live preview. defaultParamsFor() is the fallback for ops that don't need
+    // any column reference (transpose, reverse, etc.) and a last-resort for
+    // brand-new queries with no preview yet — values here are deliberately
+    // empty/blank so the step editor (which auto-opens) requires the user to
+    // fill them in rather than inheriting bogus example column names.
     function defaultParamsFor(op, ctx) {
-        const otherDs = (ctx?.otherQueries || [])[0]?.name || 'OtherQuery';
+        const otherDs = (ctx?.otherQueries || [])[0]?.name || '';
         switch (op) {
             // home / reduce
-            case 'remove_duplicates':  return { keys: ['Id'] };
-            case 'filter':             return { expression: '[Status] <> "Closed"' };
+            case 'remove_duplicates':  return { keys: [] };
+            case 'filter':             return { expression: '' };
             case 'remove_rows':        return { count: 1, position: 'top' };
             case 'remove_bottom_rows': return { count: 1, position: 'bottom' };
             case 'remove_blank_rows':  return {};
-            case 'select_rows':        return { expression: '[Active] = true' };
-            case 'remove_columns':    return { columns: ['UnusedColumn'] };
-            case 'sort_asc':          return { column: 'Id', direction: 'asc' };
-            case 'sort_desc':         return { column: 'Id', direction: 'desc' };
+            case 'select_rows':        return { expression: '' };
+            case 'remove_columns':    return { columns: [] };
+            case 'sort_asc':          return { column: '', direction: 'asc' };
+            case 'sort_desc':         return { column: '', direction: 'desc' };
             // table
-            case 'group_by':       return { keys: ['Category'], aggregations: [{ name: 'Count', op: 'count' }] };
-            case 'pivot':          return { column: 'Category', values_column: 'Amount', agg: 'sum' };
-            case 'unpivot':        return { columns: ['Q1','Q2','Q3','Q4'], attribute_name: 'Quarter', value_name: 'Value' };
+            case 'group_by':       return { keys: [], aggregations: [{ name: 'Count', op: 'count' }] };
+            case 'pivot':          return { column: '', values_column: '', agg: 'sum' };
+            case 'unpivot':        return { columns: [], attribute_name: 'Attribute', value_name: 'Value' };
             case 'transpose':      return {};
             case 'reverse':        return {};
             case 'count_rows':     return { target_field: 'RowCount' };
             // any column
-            case 'rename_column':    return { from: 'OldName', to: 'NewName' };
-            case 'duplicate_column': return { source: 'Source', target_field: 'SourceCopy' };
-            case 'replace_values':   return { column: 'Status', from: 'Open', to: 'Active' };
-            case 'fill_down':        return { column: 'Region' };
-            case 'fill_up':          return { column: 'Region' };
-            case 'reorder_columns':  return { order: ['Id','Name','Date'] };
-            case 'change_type':      return { column: 'Amount', type: 'decimal' };
-            case 'split_column':     return { column: 'FullName', delimiter: ' ', into: ['First','Last'] };
-            case 'merge_columns':    return { columns: ['First','Last'], separator: ' ', target_field: 'FullName' };
+            case 'rename_column':    return { from: '', to: '' };
+            case 'duplicate_column': return { source: '', target_field: '' };
+            case 'replace_values':   return { column: '', from: '', to: '' };
+            case 'fill_down':        return { column: '' };
+            case 'fill_up':          return { column: '' };
+            case 'reorder_columns':  return { order: [] };
+            case 'change_type':      return { column: '', type: 'text' };
+            case 'split_column':     return { column: '', delimiter: ' ', into: [] };
+            case 'merge_columns':    return { columns: [], separator: ' ', target_field: '' };
             case 'promote_headers':  return {};
             case 'demote_headers':   return {};
-            // add column
-            case 'add_column':    return { target_field: 'NewColumn', value: 'literal-or-expression' };
-            case 'derived_field': return { target_field: 'ResolutionMinutes', expression: 'DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])' };
+            // add column — empty target/expression so the editor demands input
+            case 'add_column':    return { target_field: '', value: '' };
+            case 'derived_field': return { target_field: '', expression: '' };
             case 'index_column':  return { target_field: 'Index', start: 1, step: 1 };
-            case 'conditional':   return { target_field: 'Tier', expression: 'IF([Amount] > 1000, "High", "Low")' };
+            case 'conditional':   return { target_field: '', expression: '' };
             // text
-            case 'text_upper':    return { column: 'Name' };
-            case 'text_lower':    return { column: 'Name' };
-            case 'text_proper':   return { column: 'Name' };
-            case 'text_trim':     return { column: 'Name' };
-            case 'text_clean':    return { column: 'Name' };
-            case 'text_replace':  return { column: 'Name', from: 'old', to: 'new' };
-            case 'text_extract':  return { column: 'Name', start: 0, length: 5, target_field: 'NamePrefix' };
-            case 'text_length':   return { column: 'Name', target_field: 'NameLen' };
-            case 'text_contains': return { column: 'Name', value: 'foo', target_field: 'HasFoo' };
+            case 'text_upper':    return { column: '' };
+            case 'text_lower':    return { column: '' };
+            case 'text_proper':   return { column: '' };
+            case 'text_trim':     return { column: '' };
+            case 'text_clean':    return { column: '' };
+            case 'text_replace':  return { column: '', from: '', to: '' };
+            case 'text_extract':  return { column: '', start: 0, length: 5, target_field: '' };
+            case 'text_length':   return { column: '', target_field: '' };
+            case 'text_contains': return { column: '', value: '', target_field: '' };
             // number
-            case 'num_round':       return { column: 'Amount', digits: 2 };
-            case 'num_round_up':    return { column: 'Amount' };
-            case 'num_round_down':  return { column: 'Amount' };
-            case 'num_abs':         return { column: 'Amount' };
-            case 'num_power':       return { column: 'Amount', exponent: 2 };
-            case 'num_log':         return { column: 'Amount', base: 10 };
-            case 'num_mod':         return { column: 'Amount', divisor: 12 };
+            case 'num_round':       return { column: '', digits: 2 };
+            case 'num_round_up':    return { column: '' };
+            case 'num_round_down':  return { column: '' };
+            case 'num_abs':         return { column: '' };
+            case 'num_power':       return { column: '', exponent: 2 };
+            case 'num_log':         return { column: '', base: 10 };
+            case 'num_mod':         return { column: '', divisor: 1 };
             // date / time
-            case 'date_year':           return { column: 'Date', target_field: 'Year' };
-            case 'date_month':          return { column: 'Date', target_field: 'Month' };
-            case 'date_day':            return { column: 'Date', target_field: 'Day' };
-            case 'date_add_days':       return { column: 'Date', days: 30 };
-            case 'date_add_months':     return { column: 'Date', months: 1 };
-            case 'date_start_of_month': return { column: 'Date', target_field: 'MonthStart' };
-            case 'date_end_of_month':   return { column: 'Date', target_field: 'MonthEnd' };
+            case 'date_year':           return { column: '', target_field: 'Year' };
+            case 'date_month':          return { column: '', target_field: 'Month' };
+            case 'date_day':            return { column: '', target_field: 'Day' };
+            case 'date_add_days':       return { column: '', days: 30 };
+            case 'date_add_months':     return { column: '', months: 1 };
+            case 'date_start_of_month': return { column: '', target_field: 'MonthStart' };
+            case 'date_end_of_month':   return { column: '', target_field: 'MonthEnd' };
             case 'date_now':            return { target_field: 'Now' };
-            case 'time_hour':           return { column: 'Time', target_field: 'Hour' };
-            case 'time_minute':         return { column: 'Time', target_field: 'Minute' };
-            case 'time_second':         return { column: 'Time', target_field: 'Second' };
+            case 'time_hour':           return { column: '', target_field: 'Hour' };
+            case 'time_minute':         return { column: '', target_field: 'Minute' };
+            case 'time_second':         return { column: '', target_field: 'Second' };
             // combine
-            case 'merge':         return { right: otherDs, left_key: 'Id', right_key: 'Id', how: 'inner' };
+            case 'merge':         return { right: otherDs, left_key: '', right_key: '', how: 'inner' };
             case 'append':        return { source: otherDs, align_columns: true };
-            case 'nested_join':   return { right: otherDs, left_key: 'Id', right_key: 'Id', target_field: 'Joined' };
-            case 'combine_files': return { sources: [otherDs] };
+            case 'nested_join':   return { right: otherDs, left_key: '', right_key: '', target_field: 'Joined' };
+            case 'combine_files': return { sources: otherDs ? [otherDs] : [] };
             default: return {};
         }
     }
@@ -329,6 +336,11 @@
         document.addEventListener('twp:add-step', (e) => {
             if (e && e.detail) window.TWP.addStep(e.detail);
         });
+        // Delegated click handler for column / row action buttons rendered
+        // by renderPreview(). Attached once on the table; the inner HTML is
+        // recycled on each preview but the listener stays put.
+        const previewTbl = $('twpPreviewTable');
+        if (previewTbl) previewTbl.addEventListener('click', onPreviewTableClick);
         // Keyboard shortcuts:
         //   F5            \u2192 run preview
         //   Ctrl/Cmd + S  \u2192 publish
@@ -397,6 +409,10 @@
         const r = await fetch('/api/workspaces/' + encodeURIComponent(state.wsGuid));
         if (!r.ok) throw new Error('Workspace fetch failed (' + r.status + ')');
         const ws = await r.json();
+        // Cache numeric workspace id so the "Add datasource" easy-step
+        // can pass `WorkspaceId` (int) to POST /api/datasources without a
+        // second round-trip.
+        state.wsId = ws.id || ws.Id || null;
         const dsList = ws.datasources || [];
 
         // Hydrate steps from each DS's published transform (best-effort).
@@ -504,22 +520,219 @@
 
     function onRibbonClick(op, kind) {
         if (kind === 'action') {
-            if (op === 'refresh')    return runPreview();
-            if (op === 'show_toml')  return setView('toml');
-            if (op === 'show_steps') return setView('preview');
+            if (op === 'refresh')        return runPreview();
+            if (op === 'show_toml')      return setView('toml');
+            if (op === 'show_steps')     return setView('preview');
+            if (op === 'add_datasource') return openAddDatasourceDialog();
             return;
         }
         // Rule op — append a step to the active query.
         const q = activeQuery();
         if (!q) { setStatus('Pick a query first.', 'warn'); return; }
-        const ctx = { otherQueries: state.queries.filter(x => x.guid !== q.guid) };
-        const step = { op, enabled: true, params: defaultParamsFor(op, ctx) };
+        const cols  = getColumnsForActive();
+        const types = getColumnTypes();
+        const ctx = {
+            otherQueries: state.queries.filter(x => x.guid !== q.guid),
+            cols, types
+        };
+        const sd = smartDefaults(op, ctx);
+        if (sd.error) { setStatus(sd.error, 'warn'); return; }
+        const step = { op, enabled: true, params: sd.params || {} };
         q.steps.push(step);
         renderQueriesList();
         renderStepsList();
         renderTomlFromSteps();
+        // Special UX hint for promote_headers — the rename happens server-
+        // side, but the original first row remains in the data; tell the
+        // user how to drop it.
+        if (op === 'promote_headers') {
+            setStatus('First row is now the header. Click the × on row 1 to drop the duplicate row.', 'success');
+        }
         // Open the editor immediately so the user can refine the new step.
         openStepEditor(q.steps.length - 1);
+    }
+
+    // ── Add Datasource (easy step) ─────────────────────────────────────
+    // Lightweight modal launched from the Home ribbon. The list of
+    // datasource families AND their connection-parameter fields are
+    // fetched from GET /api/datasources/type-schemas, which aggregates the
+    // schema declared by each registered IDatasourceTypeService on the
+    // server. Adding a new service implementation in DI automatically
+    // surfaces it here — no client edits required.
+    let _dsTypeSchemas = null; // cached on first open
+
+    async function loadDsTypeSchemas() {
+        if (_dsTypeSchemas) return _dsTypeSchemas;
+        try {
+            const r = await fetch('/api/datasources/type-schemas', { credentials: 'same-origin' });
+            if (r.ok) {
+                const data = await r.json();
+                if (Array.isArray(data) && data.length > 0) { _dsTypeSchemas = data; return data; }
+            }
+        } catch { /* fall through to legacy fallback */ }
+        // Legacy fallback: derive a minimal schema from /api/datasources/types
+        // (older deployments where type-schemas isn't deployed yet).
+        try {
+            const r = await fetch('/api/datasources/types', { credentials: 'same-origin' });
+            if (r.ok) {
+                const names = await r.json();
+                _dsTypeSchemas = (names || []).map(t => ({
+                    type: t,
+                    parameters: [{ key: 'connectionString', label: 'Connection details', type: 'multiline', required: true }]
+                }));
+                return _dsTypeSchemas;
+            }
+        } catch { /* offline */ }
+        _dsTypeSchemas = [];
+        return _dsTypeSchemas;
+    }
+
+    function fieldHtmlForParam(p, value) {
+        const id = 'twpAddDs_' + p.key;
+        const ph = p.placeholder ? esc(p.placeholder) : '';
+        const reqMark = p.required ? ' <span class="text-danger">*</span>' : '';
+        const lbl = `<label class="form-label small fw-semibold" for="${id}">${esc(p.label || p.key)}${reqMark}</label>`;
+        const help = p.help ? `<div class="form-text small text-muted">${esc(p.help)}</div>` : '';
+        const v = value ?? '';
+        let input;
+        switch ((p.type || 'text').toLowerCase()) {
+            case 'multiline':
+                input = `<textarea id="${id}" class="form-control form-control-sm" rows="3" spellcheck="false" data-param="${esc(p.key)}" placeholder="${ph}">${esc(v)}</textarea>`;
+                break;
+            case 'password':
+                input = `<input id="${id}" type="password" class="form-control form-control-sm" data-param="${esc(p.key)}" placeholder="${ph}" value="${esc(v)}" autocomplete="new-password">`;
+                break;
+            case 'url':
+                input = `<input id="${id}" type="url" class="form-control form-control-sm" data-param="${esc(p.key)}" placeholder="${ph}" value="${esc(v)}">`;
+                break;
+            case 'select': {
+                const opts = (p.options || []).map(o => `<option value="${esc(o)}" ${String(v) === String(o) ? 'selected' : ''}>${esc(o)}</option>`).join('');
+                input = `<select id="${id}" class="form-select form-select-sm" data-param="${esc(p.key)}">${opts}</select>`;
+                break;
+            }
+            case 'text':
+            default:
+                input = `<input id="${id}" type="text" class="form-control form-control-sm" data-param="${esc(p.key)}" placeholder="${ph}" value="${esc(v)}">`;
+                break;
+        }
+        return `<div class="twp-field">${lbl}${input}${help}</div>`;
+    }
+
+    async function openAddDatasourceDialog() {
+        const schemas = await loadDsTypeSchemas();
+        if (!schemas || schemas.length === 0) {
+            setStatus('No datasource types are registered on the server.', 'error');
+            return;
+        }
+
+        let modal = document.getElementById('twpAddDsModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'twpAddDsModal';
+            modal.className = 'twp-add-ds-modal';
+            modal.innerHTML = `
+                <div class="twp-add-ds-card" role="dialog" aria-modal="true" aria-labelledby="twpAddDsTitle">
+                    <div class="twp-add-ds-head">
+                        <span id="twpAddDsTitle"><i class="bi bi-database-add me-2"></i>Add datasource</span>
+                        <button type="button" class="twp-add-ds-close" aria-label="Close">&times;</button>
+                    </div>
+                    <div class="twp-add-ds-body">
+                        <div class="twp-field">
+                            <label class="form-label small fw-semibold" for="twpAddDsName">Name <span class="text-danger">*</span></label>
+                            <input id="twpAddDsName" type="text" class="form-control form-control-sm" placeholder="My data">
+                        </div>
+                        <div class="twp-field">
+                            <label class="form-label small fw-semibold" for="twpAddDsType">Type <span class="text-danger">*</span></label>
+                            <select id="twpAddDsType" class="form-select form-select-sm"></select>
+                        </div>
+                        <div id="twpAddDsParams"></div>
+                        <div class="twp-add-ds-error small text-danger" id="twpAddDsError" style="display:none;"></div>
+                    </div>
+                    <div class="twp-add-ds-foot">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="twpAddDsCancel">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="twpAddDsSave">
+                            <i class="bi bi-check2 me-1"></i>Add
+                        </button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            const close = () => { modal.style.display = 'none'; };
+            modal.querySelector('.twp-add-ds-close').addEventListener('click', close);
+            modal.querySelector('#twpAddDsCancel').addEventListener('click', close);
+            modal.addEventListener('click', e => { if (e.target === modal) close(); });
+            modal.querySelector('#twpAddDsSave').addEventListener('click', () => submitAddDatasource(modal));
+        }
+
+        // (Re)populate type dropdown from the live schema list.
+        const typeSel = modal.querySelector('#twpAddDsType');
+        typeSel.innerHTML = schemas.map(s => `<option value="${esc(s.type)}">${esc(s.type)}</option>`).join('');
+
+        const paramsHost = modal.querySelector('#twpAddDsParams');
+        const renderParams = () => {
+            const sel = schemas.find(s => s.type === typeSel.value) || schemas[0];
+            const params = (sel && sel.parameters) || [];
+            paramsHost.innerHTML = params.map(p => fieldHtmlForParam(p)).join('') ||
+                '<div class="text-muted small">This datasource type has no extra parameters.</div>';
+        };
+        // Avoid stacking listeners across reopens.
+        const fresh = typeSel.cloneNode(true);
+        typeSel.replaceWith(fresh);
+        fresh.addEventListener('change', renderParams);
+        renderParams();
+
+        // Reset & show.
+        modal.querySelector('#twpAddDsName').value = '';
+        const err = modal.querySelector('#twpAddDsError'); err.style.display = 'none'; err.textContent = '';
+        modal.style.display = '';
+        setTimeout(() => modal.querySelector('#twpAddDsName').focus(), 50);
+    }
+
+    async function submitAddDatasource(modal) {
+        const name = (modal.querySelector('#twpAddDsName').value || '').trim();
+        const type = modal.querySelector('#twpAddDsType').value;
+        const err  = modal.querySelector('#twpAddDsError');
+        const save = modal.querySelector('#twpAddDsSave');
+
+        const schema = (_dsTypeSchemas || []).find(s => s.type === type);
+        const params = (schema && schema.parameters) || [];
+
+        if (!name) { err.textContent = 'Please enter a name.'; err.style.display = ''; return; }
+
+        const payload = { name, type, workspaceId: state.wsId || null };
+        for (const p of params) {
+            const el = modal.querySelector(`[data-param="${(window.CSS && CSS.escape) ? CSS.escape(p.key) : p.key}"]`);
+            const v = el ? (el.value || '').trim() : '';
+            if (p.required && !v) {
+                err.textContent = `Please fill in "${p.label || p.key}".`;
+                err.style.display = '';
+                return;
+            }
+            if (v) payload[p.key] = v;
+        }
+
+        save.disabled = true; save.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Adding…';
+        err.style.display = 'none';
+        try {
+            const r = await fetch('/api/datasources', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken() },
+                body: JSON.stringify(payload)
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || ('Add failed (' + r.status + ')'));
+            modal.style.display = 'none';
+            setStatus(`Datasource "${data.name || name}" added.`, 'success');
+            if (data.guid) state.activeQueryGuid = data.guid;
+            await loadQueries();
+        } catch (e) {
+            err.textContent = e.message || 'Add failed.';
+            err.style.display = '';
+        } finally {
+            save.disabled = false;
+            save.innerHTML = '<i class="bi bi-check2 me-1"></i>Add';
+        }
     }
 
     // ── Applied Steps ──────────────────────────────────────────────────
@@ -766,6 +979,441 @@
         return heads;
     }
 
+    // ── Preview-data introspection helpers ─────────────────────────────
+    // Read the per-column type map stashed on the preview table by
+    // renderPreview(). Returns {} when no preview has been rendered yet.
+    function getColumnTypes() {
+        const tbl = $('twpPreviewTable');
+        if (!tbl) return {};
+        try { return JSON.parse(tbl.dataset.colTypes || '{}'); } catch { return {}; }
+    }
+    // Find the first column whose inferred type matches one of `kinds`,
+    // searching kinds in priority order.
+    function firstColOf(types, kinds) {
+        for (const k of kinds) {
+            for (const c of Object.keys(types || {})) {
+                if (types[c] === k) return c;
+            }
+        }
+        return null;
+    }
+    function colsOfKinds(types, kinds) {
+        return Object.keys(types || {}).filter(c => kinds.includes(types[c]));
+    }
+    // Return {col:value} for the first body row, or null if no data. Prefers
+    // the cached preview payload (typed values) and falls back to DOM text.
+    function firstPreviewRow() {
+        const cached = state.lastPreview;
+        if (cached && Array.isArray(cached.rows) && cached.rows.length > 0) {
+            return { ...cached.rows[0] };
+        }
+        const tbl = $('twpPreviewTable'); if (!tbl) return null;
+        const heads = Array.from(tbl.querySelectorAll('thead th[data-col]')).map(th => th.dataset.col);
+        const tr = tbl.querySelector('tbody tr'); if (!tr) return null;
+        // Skip leading row-actions <td>; remaining cells align with `heads`.
+        const cells = Array.from(tr.querySelectorAll('td')).slice(1);
+        const out = {};
+        heads.forEach((h, i) => { out[h] = cells[i] ? cells[i].textContent : ''; });
+        return out;
+    }
+
+    // Build sensible default params for an op based on the actual preview
+    // data. Returns {params} on success, or {error} when the op needs a
+    // column type the current preview doesn't have. Falls back to
+    // defaultParamsFor() for ops with no specific data requirement.
+    function smartDefaults(op, ctx) {
+        const types = ctx.types || {};
+        const cols  = ctx.cols  || [];
+        const otherDs = (ctx.otherQueries || [])[0]?.name || null;
+        const need = (msg) => ({ error: msg });
+        const pickText  = () => firstColOf(types, ['text']) || cols[0] || null;
+        const pickNum   = () => firstColOf(types, ['integer','decimal']);
+        const pickDate  = () => firstColOf(types, ['datetime','date']);
+        const pickAny   = () => cols[0] || null;
+        // Combine ops require another query.
+        if (['merge','append','nested_join','combine_files'].indexOf(op) !== -1 && !otherDs) {
+            return need('This step needs a second query in the workspace. Add another datasource first.');
+        }
+        // Pivot / unpivot need richer schema.
+        if (op === 'pivot') {
+            const cat = pickText(); const val = pickNum();
+            if (cols.length && (!cat || !val)) return need('Pivot needs at least one text column (to pivot) and one numeric column (the values). Your preview is missing one.');
+            return { params: { column: cat, values_column: val, agg: 'sum' } };
+        }
+        if (op === 'unpivot') {
+            const nums = colsOfKinds(types, ['integer','decimal']);
+            if (cols.length && nums.length < 2) return need('Unpivot needs two or more numeric columns to combine. Your preview has fewer than that.');
+            return { params: { columns: nums, attribute_name: 'Attribute', value_name: 'Value' } };
+        }
+        if (op === 'merge_columns') {
+            const texts = colsOfKinds(types, ['text']);
+            if (cols.length && texts.length < 2) return need('Merge columns needs at least two text columns.');
+            const pair = texts.slice(0, 2);
+            return { params: { columns: pair, separator: ' ', target_field: pair.join('_') || 'Merged' } };
+        }
+        if (op === 'split_column') {
+            const c = pickText();
+            if (cols.length && !c) return need('Split column needs a text column.');
+            return { params: { column: c || 'Column', delimiter: ' ', into: [(c||'Col')+'_1', (c||'Col')+'_2'] } };
+        }
+        // Single-column text ops.
+        if (/^text_/.test(op)) {
+            const c = pickText();
+            if (cols.length && !c) return need('This text step needs a text column.');
+            const base = { column: c || 'Column' };
+            if (op === 'text_replace')  return { params: { ...base, from: '', to: '' } };
+            if (op === 'text_extract')  return { params: { ...base, start: 0, length: 5, target_field: (c||'Col')+'_Extract' } };
+            if (op === 'text_length')   return { params: { ...base, target_field: (c||'Col')+'Length' } };
+            if (op === 'text_contains') return { params: { ...base, value: '', target_field: 'Has'+(c||'Value') } };
+            return { params: base };
+        }
+        // Number ops.
+        if (/^num_/.test(op)) {
+            const c = pickNum();
+            if (cols.length && !c) return need('This step needs a numeric column.');
+            const base = { column: c };
+            if (op === 'num_round')  return { params: { ...base, digits: 2 } };
+            if (op === 'num_power')  return { params: { ...base, exponent: 2 } };
+            if (op === 'num_log')    return { params: { ...base, base: 10 } };
+            if (op === 'num_mod')    return { params: { ...base, divisor: 1 } };
+            return { params: base };
+        }
+        // Date ops (excluding date_now).
+        if (op.indexOf('date_') === 0 && op !== 'date_now') {
+            const c = pickDate();
+            if (cols.length && !c) return need('This step needs a date or date/time column, but the current preview has none.');
+            const base = { column: c };
+            if (op === 'date_add_days')   return { params: { ...base, days: 30 } };
+            if (op === 'date_add_months') return { params: { ...base, months: 1 } };
+            const targetMap = { date_year:'Year', date_month:'Month', date_day:'Day', date_start_of_month:'MonthStart', date_end_of_month:'MonthEnd' };
+            return { params: { ...base, target_field: targetMap[op] || 'Value' } };
+        }
+        if (op === 'date_now') return { params: { target_field: 'Now' } };
+        // Time ops.
+        if (op.indexOf('time_') === 0) {
+            const c = firstColOf(types, ['datetime','time','date']);
+            if (cols.length && !c) return need('This step needs a time / date-time column, but the current preview has none.');
+            const targetMap = { time_hour:'Hour', time_minute:'Minute', time_second:'Second' };
+            return { params: { column: c, target_field: targetMap[op] || 'Value' } };
+        }
+        // Single-column-keyed ops.
+        if (op === 'sort_asc' || op === 'sort_desc') {
+            const c = pickAny();
+            if (cols.length && !c) return need('Pick a query with at least one column first.');
+            return { params: { column: c, direction: op === 'sort_desc' ? 'desc' : 'asc' } };
+        }
+        if (op === 'remove_columns')   return { params: { columns: cols.length ? [cols[0]] : [] } };
+        if (op === 'reorder_columns')  return { params: { order: cols.slice() } };
+        if (op === 'remove_duplicates')return { params: { keys: cols.length ? [cols[0]] : [] } };
+        if (op === 'fill_down' || op === 'fill_up') {
+            const c = pickAny();
+            if (cols.length && !c) return need('This step needs a column.');
+            return { params: { column: c } };
+        }
+        if (op === 'rename_column')    return { params: { from: pickAny() || '', to: '' } };
+        if (op === 'duplicate_column') { const c = pickAny(); return { params: { source: c || '', target_field: c ? c + 'Copy' : 'Copy' } }; }
+        if (op === 'replace_values')   return { params: { column: pickAny() || '', from: '', to: '' } };
+        if (op === 'change_type')      { const c = pickAny(); return { params: { column: c || '', type: types[c] || 'text' } }; }
+        if (op === 'group_by')         return { params: { keys: cols.length ? [pickText() || cols[0]] : [], aggregations: [{ name: 'Count', op: 'count' }] } };
+        if (op === 'promote_headers') {
+            if (!firstPreviewRow()) return need('Promote headers needs preview data. Run preview first, then click again — the first row will become the header.');
+            return { params: {} };
+        }
+        // Filter / select_rows: leave the expression empty so the editor
+        // demands user input. Pre-filling with arbitrary column references
+        // would silently change the dataset on Save.
+        if (op === 'filter' || op === 'select_rows') return { params: { expression: '' } };
+        // Custom-column / derived / conditional: open with empty expression
+        // and a sensible target_field name; the editor and DAX validator
+        // require a real expression before Save.
+        if (op === 'add_column')    return { params: { target_field: '', value: '' } };
+        if (op === 'derived_field') return { params: { target_field: '', expression: '' } };
+        if (op === 'conditional')   return { params: { target_field: '', expression: '' } };
+        if (op === 'index_column')  return { params: { target_field: 'Index', start: 1, step: 1 } };
+        if (op === 'count_rows')    return { params: { target_field: 'RowCount' } };
+        // Combine ops with another query.
+        if (op === 'merge')         return { params: { right: otherDs, left_key: pickAny() || 'Id', right_key: 'Id', how: 'inner' } };
+        if (op === 'append')        return { params: { source: otherDs, align_columns: true } };
+        if (op === 'nested_join')   return { params: { right: otherDs, left_key: pickAny() || 'Id', right_key: 'Id', target_field: 'Joined' } };
+        if (op === 'combine_files') return { params: { sources: [otherDs] } };
+        // Anything else: fall back to the static templates.
+        return { params: defaultParamsFor(op, ctx) };
+    }
+
+    // ── Floating popup menu / input helpers ────────────────────────────
+    // Used by the column header type pill and 3-dot menu so the workbench
+    // never has to fall back to the unstyled native window.prompt/confirm.
+    let _twpOpenMenu = null;
+    function _twpMenuOutside(e) {
+        if (_twpOpenMenu && !_twpOpenMenu.contains(e.target)) closeFloatingMenu();
+    }
+    function _twpMenuKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeFloatingMenu(); }
+    }
+    function closeFloatingMenu() {
+        if (_twpOpenMenu) {
+            try { _twpOpenMenu.remove(); } catch { /* noop */ }
+            _twpOpenMenu = null;
+            document.removeEventListener('mousedown', _twpMenuOutside, true);
+            document.removeEventListener('keydown',   _twpMenuKey,     true);
+        }
+    }
+    function _positionPopup(menu, anchor) {
+        const r = menu.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        let left = anchor.left, top = anchor.bottom + 4;
+        if (left + r.width  > vw - 6) left = Math.max(6, vw - r.width - 6);
+        if (top  + r.height > vh - 6) top  = Math.max(6, anchor.top - r.height - 4);
+        menu.style.left = left + 'px';
+        menu.style.top  = top  + 'px';
+    }
+    // items: [{ icon, label, value, current?, kind?: 'danger'|'separator'|'header' }]
+    function showFloatingMenu(items, anchor, onPick) {
+        closeFloatingMenu();
+        const menu = document.createElement('div');
+        menu.className = 'twp-type-popup';
+        menu.setAttribute('role', 'menu');
+        menu.innerHTML = (items || []).map((it, i) => {
+            if (it.kind === 'separator') return '<div class="twp-type-popup-sep"></div>';
+            if (it.kind === 'header')    return `<div class="twp-type-popup-header">${esc(it.label)}</div>`;
+            const cur = it.current ? ' is-current' : '';
+            const dng = it.kind === 'danger' ? ' is-danger' : '';
+            const ico = it.icon ? `<i class="bi ${esc(it.icon)}"></i>` : '<i></i>';
+            const chk = it.current ? '<i class="bi bi-check2 twp-type-popup-check"></i>' : '';
+            return `<button type="button" class="twp-type-popup-item${cur}${dng}" data-i="${i}" role="menuitem">${ico}<span>${esc(it.label)}</span>${chk}</button>`;
+        }).join('');
+        document.body.appendChild(menu);
+        _positionPopup(menu, anchor);
+        menu.addEventListener('click', e => {
+            const b = e.target.closest('[data-i]'); if (!b) return;
+            const it = items[+b.dataset.i];
+            closeFloatingMenu();
+            if (it && typeof onPick === 'function') onPick(it);
+        });
+        setTimeout(() => {
+            document.addEventListener('mousedown', _twpMenuOutside, true);
+            document.addEventListener('keydown',   _twpMenuKey,     true);
+        }, 0);
+        _twpOpenMenu = menu;
+        return menu;
+    }
+    // Branded input popup — small floating card with a label, input and
+    // OK/Cancel actions. Replaces window.prompt for inline rename flows.
+    function showInputPopup(opts, anchor, onSave) {
+        closeFloatingMenu();
+        const o = opts || {};
+        const menu = document.createElement('div');
+        menu.className = 'twp-type-popup twp-input-popup';
+        menu.setAttribute('role', 'dialog');
+        menu.innerHTML = `
+            ${o.title ? `<div class="twp-type-popup-header">${esc(o.title)}</div>` : ''}
+            ${o.label ? `<label class="twp-input-popup-label">${esc(o.label)}</label>` : ''}
+            <input type="text" class="form-control form-control-sm twp-input-popup-input" value="${esc(o.value ?? '')}" placeholder="${esc(o.placeholder ?? '')}">
+            <div class="twp-input-popup-actions">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-act="cancel">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary" data-act="ok">${esc(o.okLabel || 'OK')}</button>
+            </div>`;
+        document.body.appendChild(menu);
+        _positionPopup(menu, anchor);
+        const input = menu.querySelector('.twp-input-popup-input');
+        const commit = () => {
+            const v = (input.value || '').trim();
+            closeFloatingMenu();
+            if (typeof onSave === 'function') onSave(v);
+        };
+        menu.addEventListener('click', e => {
+            const a = e.target.closest('[data-act]'); if (!a) return;
+            if (a.dataset.act === 'ok') commit();
+            else closeFloatingMenu();
+        });
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeFloatingMenu(); }
+        });
+        setTimeout(() => {
+            document.addEventListener('mousedown', _twpMenuOutside, true);
+            document.addEventListener('keydown',   _twpMenuKey,     true);
+            input.focus(); input.select();
+        }, 0);
+        _twpOpenMenu = menu;
+        return menu;
+    }
+
+    // ── Preview table delegated click handling ─────────────────────────
+    // Buttons are rendered with [data-act] attributes by renderPreview().
+    // Routing them through one delegated listener keeps the click logic in
+    // one place and survives table re-renders.
+    function onPreviewTableClick(e) {
+        const btn = e.target.closest('[data-act]');
+        const nameSpan = e.target.closest('.twp-col-name');
+        if (!btn && !nameSpan) return;
+        const q = activeQuery();
+        if (!q) { setStatus('Pick a query first.', 'warn'); return; }
+
+        // Sort cycle when the user clicks the column name itself.
+        if (nameSpan && !btn) {
+            const th = nameSpan.closest('th[data-col]');
+            if (th && window.TWP && window.TWP.toggleSort) {
+                e.stopPropagation();
+                window.TWP.toggleSort(th.dataset.col);
+            }
+            return;
+        }
+
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        const th = btn.closest('th[data-col]');
+        const tr = btn.closest('tr[data-rowsig]');
+        const col = th ? th.dataset.col : null;
+
+        const removeExistingSort = (c) => {
+            for (let i = q.steps.length - 1; i >= 0; i--) {
+                const s = q.steps[i];
+                if (s && (s.op === 'sort_asc' || s.op === 'sort_desc') && s.params && s.params.column === c) {
+                    q.steps.splice(i, 1);
+                }
+            }
+        };
+
+        switch (act) {
+            case 'col-sort-asc':
+            case 'col-sort-desc': {
+                if (!col) return;
+                const wantDesc = act === 'col-sort-desc';
+                // Tri-state cycle: asc → desc → none → asc. If a sort already
+                // exists in the requested direction, clicking it again removes
+                // the sort so the user can return to natural order.
+                const existing = (window.TWP && window.TWP.getSortState) ? window.TWP.getSortState(col) : null;
+                removeExistingSort(col);
+                if (existing && ((existing.dir === 'desc') === wantDesc)) {
+                    onStepsChanged();
+                    return;
+                }
+                const dir = wantDesc ? 'desc' : 'asc';
+                q.steps.push({ op: wantDesc ? 'sort_desc' : 'sort_asc', enabled: true, params: { column: col, direction: dir } });
+                onStepsChanged();
+                return;
+            }
+            case 'col-delete': {
+                if (!col) return;
+                q.steps.push({ op: 'remove_columns', enabled: true, params: { columns: [col] } });
+                onStepsChanged();
+                return;
+            }
+            case 'col-type': {
+                if (!col) return;
+                openTypePopup(col, th, btn);
+                return;
+            }
+            case 'col-menu': {
+                if (!col || !th) return;
+                // Let an external enhancements module take over if it wants to.
+                const ev = new CustomEvent('twp:col-menu', { detail: { column: col, anchor: btn.getBoundingClientRect() } , cancelable: true });
+                document.dispatchEvent(ev);
+                if (ev.defaultPrevented) return;
+                openColumnMenu(col, th, btn, q, removeExistingSort);
+                return;
+            }
+            case 'row-delete': {
+                if (!tr) return;
+                let row = null;
+                try { row = JSON.parse(tr.dataset.rowsig || 'null'); } catch { row = null; }
+                if (!row) return;
+                // Build a precise filter that excludes this exact row by
+                // AND-ing up to 3 non-empty columns. Filter semantics keep
+                // rows where the expression is TRUE, so we negate the
+                // "matches all anchors" condition with NOT(...).
+                const anchors = Object.keys(row)
+                    .filter(k => row[k] !== null && row[k] !== undefined && String(row[k]).trim() !== '')
+                    .slice(0, 3);
+                if (anchors.length === 0) {
+                    setStatus('Cannot remove a fully-blank row from the preview \u2014 add a Remove blank rows step instead.', 'warn');
+                    return;
+                }
+                const escVal = (v) => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                const conds = anchors.map(k => `[${k}] = "${escVal(row[k])}"`).join(' AND ');
+                const expr = `NOT(${conds})`;
+                q.steps.push({ op: 'filter', enabled: true, params: { expression: expr } });
+                onStepsChanged();
+                return;
+            }
+        }
+    }
+
+    // Renders the column type popup, used by both the type-pill click and
+    // the "Change type" entry of the column 3-dot menu.
+    function openTypePopup(col, th, btn) {
+        const q = activeQuery(); if (!q) return;
+        const current = (th && th.dataset.coltype) || 'text';
+        const order = ['text','integer','decimal','boolean','date','datetime','time'];
+        const items = order.map(t => ({
+            icon: (TYPE_META[t] || TYPE_META.text).icon,
+            label: (TYPE_META[t] || TYPE_META.text).label,
+            value: t,
+            current: t === current
+        }));
+        const rect = (btn || th).getBoundingClientRect();
+        showFloatingMenu(items, rect, (it) => {
+            if (!it || it.value === current) return;
+            q.steps.push({ op: 'change_type', enabled: true, params: { column: col, type: it.value } });
+            onStepsChanged();
+        });
+    }
+
+    // Rich column action menu — replaces the legacy info-text fallback.
+    function openColumnMenu(col, th, btn, q, removeExistingSort) {
+        const sort = (window.TWP && window.TWP.getSortState) ? window.TWP.getSortState(col) : null;
+        const curType = (th && th.dataset.coltype) || 'text';
+        const tm = TYPE_META[curType] || TYPE_META.text;
+        const items = [
+            { kind:'header', label: col },
+            { icon:'bi-caret-up-fill',   label:'Sort ascending',  value:'sort-asc',  current: sort && sort.dir === 'asc'  },
+            { icon:'bi-caret-down-fill', label:'Sort descending', value:'sort-desc', current: sort && sort.dir === 'desc' },
+            ...(sort ? [{ icon:'bi-x-circle', label:'Remove sort', value:'sort-clear' }] : []),
+            { kind:'separator' },
+            { icon: tm.icon,               label: 'Change type — ' + tm.label, value:'change-type' },
+            { icon:'bi-input-cursor-text', label: 'Rename column…',            value:'rename' },
+            { icon:'bi-copy',              label: 'Duplicate column',          value:'duplicate' },
+            { kind:'separator' },
+            { icon:'bi-x-lg', label:'Remove column', value:'remove', kind:'danger' }
+        ];
+        const rect = (btn || th).getBoundingClientRect();
+        showFloatingMenu(items, rect, (it) => {
+            if (!it) return;
+            switch (it.value) {
+                case 'sort-asc':
+                case 'sort-desc': {
+                    const wantDesc = it.value === 'sort-desc';
+                    removeExistingSort(col);
+                    q.steps.push({ op: wantDesc ? 'sort_desc' : 'sort_asc', enabled: true, params: { column: col, direction: wantDesc ? 'desc' : 'asc' } });
+                    onStepsChanged();
+                    return;
+                }
+                case 'sort-clear':
+                    removeExistingSort(col); onStepsChanged(); return;
+                case 'change-type':
+                    // Re-open as the type popup anchored at the same button.
+                    setTimeout(() => openTypePopup(col, th, btn), 0);
+                    return;
+                case 'rename':
+                    showInputPopup({ title:'Rename column', label:`Rename "${col}" to:`, value: col, okLabel:'Rename' }, rect, (newName) => {
+                        if (!newName || newName === col) return;
+                        q.steps.push({ op: 'rename_column', enabled: true, params: { from: col, to: newName } });
+                        onStepsChanged();
+                    });
+                    return;
+                case 'duplicate':
+                    q.steps.push({ op: 'duplicate_column', enabled: true, params: { source: col, target_field: col + 'Copy' } });
+                    onStepsChanged();
+                    return;
+                case 'remove':
+                    q.steps.push({ op: 'remove_columns', enabled: true, params: { columns: [col] } });
+                    onStepsChanged();
+                    return;
+            }
+        });
+    }
+
     function wireStepEditor() {
         $('twpStepEditorClose').addEventListener('click', cancelStepEditor);
         $('twpStepEditorCancel').addEventListener('click', cancelStepEditor);
@@ -784,6 +1432,8 @@
         const friendly = labelFor(step.op, step.params) || step.op;
         $('twpStepEditorTitle').textContent = `Edit step — ${friendly}`;
         renderStepForm(step);
+        hideStepEditorError();
+        setStepEditorBusy(false);
         $('twpStepEditor').style.display = '';
     }
 
@@ -1092,8 +1742,60 @@
 
     function closeStepEditor() {
         $('twpStepEditor').style.display = 'none';
+        hideStepEditorError();
+        setStepEditorBusy(false);
         editingStepIdx = -1;
         editStartSnapshot = null;
+    }
+
+    // Inline error inside the step editor — shown when applying the step
+    // causes the engine to reject the resulting pipeline. Keeps the panel
+    // open (so the user keeps their in-progress edits) and explains both
+    // what failed and the most likely reason.
+    function showStepEditorError(message, reason) {
+        const box = $('twpStepEditorError');
+        if (!box) return;
+        const msg = $('twpStepEditorErrorMessage');
+        const why = $('twpStepEditorErrorReason');
+        if (msg) msg.textContent = message || 'Apply failed.';
+        if (why) {
+            if (reason) { why.textContent = 'Why: ' + reason; why.style.display = ''; }
+            else { why.textContent = ''; why.style.display = 'none'; }
+        }
+        box.style.display = '';
+        try { box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* noop */ }
+    }
+    function hideStepEditorError() {
+        const box = $('twpStepEditorError');
+        if (box) box.style.display = 'none';
+    }
+    function setStepEditorBusy(busy) {
+        const save = $('twpStepEditorSave');
+        const cancel = $('twpStepEditorCancel');
+        if (save) {
+            save.disabled = !!busy;
+            save.textContent = busy ? 'Applying…' : 'Save';
+        }
+        if (cancel) cancel.disabled = !!busy;
+    }
+
+    // Best-effort interpretation of a server preview error so the user
+    // understands *why* the apply was rejected, not just that it was.
+    function explainPreviewError(message) {
+        const m = (message || '').toLowerCase();
+        if (!m) return 'The transform engine rejected the configuration after applying this step.';
+        if (m.includes('column') && (m.includes('not found') || m.includes('unknown') || m.includes("doesn't exist") || m.includes('does not exist')))
+            return 'A column referenced by this step is missing from the current dataset. Re-pick the column or remove the reference.';
+        if (m.includes('parse') || m.includes('syntax') || m.includes('unexpected token'))
+            return 'The expression / formula could not be parsed. Check brackets, quotes and operators.';
+        if (m.includes('type') && (m.includes('mismatch') || m.includes('cannot convert') || m.includes('invalid cast')))
+            return 'A value or column type does not match what this operation expects (e.g. text used where a number is required).';
+        if (m.includes('divide by zero')) return 'A division in the expression evaluates to divide-by-zero on at least one row.';
+        if (m.includes('duplicate')) return 'The configuration produces duplicate column or key names that the engine will not accept.';
+        if (m.includes('required') || m.includes('missing'))
+            return 'A required parameter for this step is empty or missing.';
+        if (m.includes('timeout')) return 'The preview took too long to run. Reduce the data volume or simplify the step.';
+        return 'The transform engine rejected the configuration after applying this step. Adjust the fields above and try again.';
     }
 
     // Cancel = revert any live edits made since the editor opened.
@@ -1120,7 +1822,11 @@
         if (adv && adv.open) {
             const json = $('twpStepJson').value;
             try { nextParams = JSON.parse(json || '{}'); }
-            catch (e) { setStatus('Invalid JSON: ' + e.message, 'error'); return; }
+            catch (e) {
+                setStatus('Invalid JSON: ' + e.message, 'error');
+                showStepEditorError('Invalid JSON in the Advanced section.', e.message);
+                return;
+            }
         } else {
             nextParams = collectFormParams();
         }
@@ -1135,23 +1841,69 @@
             for (const k of exprKeys) {
                 const v = nextParams?.[k];
                 if (v == null || String(v).trim() === '') {
-                    setStatus(`The "${k}" formula is required.`, 'error');
+                    const msg = `The "${k}" formula is required.`;
+                    setStatus(msg, 'error');
+                    showStepEditorError(msg, 'A required formula field is empty.');
                     return;
                 }
                 const res = window.TWP_validateExpression(String(v), cols);
                 if (res && res.ok === false) {
                     const first = (res.issues || []).find(i => i.level === 'error') || res.issues?.[0];
-                    setStatus('Invalid formula' + (first ? ': ' + first.message : '.') + ' Step was not saved.', 'error');
+                    const detail = first ? first.message : '';
+                    setStatus('Invalid formula' + (detail ? ': ' + detail : '.') + ' Step was not saved.', 'error');
+                    showStepEditorError('Invalid formula in "' + k + '". Step was not saved.', detail || 'Check brackets, quotes and operators in the expression.');
                     return;
                 }
             }
         }
 
+        // Apply changes optimistically, then run a server preview. If the
+        // preview fails the panel is kept open with an inline error so the
+        // user can see (and fix) what went wrong without losing their edits.
+        const prevParams = JSON.parse(JSON.stringify(step.params || {}));
+        const prevEnabled = step.enabled !== false;
         step.params = nextParams;
         step.enabled = !!$('twpStepEnabled').checked;
-        editStartSnapshot = null; // commit
-        closeStepEditor();
-        onStepsChanged();
+
+        hideStepEditorError();
+        setStepEditorBusy(true);
+
+        // Reflect the change in the steps list / TOML / status bar even while
+        // we wait for preview — the user asked for the panel to *update* its
+        // changes immediately.
+        renderQueriesList();
+        renderStepsList();
+        renderTomlFromSteps();
+        updateStatusBar({});
+
+        // Cancel any pending debounced preview so we get a fresh, awaited one.
+        clearTimeout(_previewDebounce);
+
+        runPreview().then(result => {
+            setStepEditorBusy(false);
+            if (result && result.ok === false) {
+                // Roll back the in-memory step so the preview pane and TOML
+                // keep matching the last known-good pipeline state, but leave
+                // the editor form populated with the rejected values so the
+                // user can correct them.
+                step.params = prevParams;
+                step.enabled = prevEnabled;
+                renderStepsList();
+                renderTomlFromSteps();
+                showStepEditorError(result.error || 'Apply failed.', explainPreviewError(result.error));
+                return;
+            }
+            editStartSnapshot = null; // commit
+            closeStepEditor();
+        }).catch(err => {
+            setStepEditorBusy(false);
+            step.params = prevParams;
+            step.enabled = prevEnabled;
+            renderStepsList();
+            renderTomlFromSteps();
+            const msg = (err && err.message) ? err.message : 'Apply failed.';
+            showStepEditorError(msg, explainPreviewError(msg));
+        });
     }
 
     function collectFormParams() {
@@ -1202,12 +1954,17 @@
             'dax_like_expressions = true',
             ''
         ];
-        (steps || []).forEach(s => {
+        (steps || []).forEach(rawStep => {
+            const s = translateStepForServer(rawStep);
             lines.push('[[rules]]');
             lines.push(`type = "${s.op}"`);
             lines.push(`enabled = ${s.enabled === false ? 'false' : 'true'}`);
             const p = s.params || {};
             Object.keys(p).forEach(k => {
+                // `type` is reserved for the rule discriminator emitted above;
+                // a stray params.type (e.g. from an untranslated change_type
+                // step) would produce a duplicate-key TOML parse error.
+                if (k === 'type' || k === 'enabled') return;
                 const v = p[k];
                 if (Array.isArray(v)) {
                     lines.push(`${k} = [${v.map(x => typeof x === 'number' ? x : `"${String(x).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ')}]`);
@@ -1215,6 +1972,18 @@
                     lines.push(`${k} = ${v ? 'true' : 'false'}`);
                 } else if (typeof v === 'number') {
                     lines.push(`${k} = ${v}`);
+                } else if (v && typeof v === 'object') {
+                    // Inline TOML table — used by rules whose params are
+                    // dictionaries (e.g. rename_columns mapping, cast_types
+                    // types, map_codes ranges).
+                    const entries = Object.keys(v).map(kk => {
+                        const vv = v[kk];
+                        const ks = String(kk).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+                        if (typeof vv === 'number')  return `"${ks}" = ${vv}`;
+                        if (typeof vv === 'boolean') return `"${ks}" = ${vv ? 'true' : 'false'}`;
+                        return `"${ks}" = "${String(vv ?? '').replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`;
+                    });
+                    lines.push(`${k} = { ${entries.join(', ')} }`);
                 } else if (v != null) {
                     lines.push(`${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
                 }
@@ -1222,6 +1991,245 @@
             lines.push('');
         });
         return lines.join('\n');
+    }
+
+    // Some UI affordances emit friendly op names (e.g. sort_asc / sort_desc,
+    // text_*, num_*, date_*) that don't match a server-registered rule
+    // handler. Translate them here to canonical server ops and parameter
+    // shapes so the engine actually executes them — and the preview, validate
+    // and publish flows all stay in sync. Anything we can't map to a real
+    // handler is forwarded unchanged so server-side validation flags it as
+    // unsupported_rule (validate should *fail* in that case, per UX ask).
+    function translateStepForServer(s) {
+        if (!s || !s.op) return s;
+        const p = { ...(s.params || {}) };
+        const wrap = (op, params) => ({ op, enabled: s.enabled, params });
+        const escDax = (v) => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const derivedSelf = (exprFn) => {
+            const c = p.column || p.field || '';
+            return wrap('derived_field', {
+                target_field: c,
+                expression: c ? exprFn(c) : ''
+            });
+        };
+        const derivedNew = (exprFn, suffix) => {
+            const c = p.column || p.field || '';
+            return wrap('derived_field', {
+                target_field: p.target_field || (c ? c + suffix : suffix),
+                expression: c ? exprFn(c) : ''
+            });
+        };
+
+        switch (s.op) {
+            // ── direct aliases (UI op → registered rule handler) ───────
+            case 'sort_asc':
+            case 'sort_desc':
+                return wrap('sort_rows', {
+                    by: p.by || p.column || p.field || '',
+                    direction: s.op === 'sort_desc' ? 'desc' : 'asc'
+                });
+
+            case 'filter':
+            case 'select_rows':
+                return wrap('filter_rows', { condition: p.condition || p.expression || '' });
+
+            case 'remove_columns':
+                return wrap('select_columns', {
+                    exclude: Array.isArray(p.columns) ? p.columns : (p.columns ? [p.columns] : [])
+                });
+
+            case 'rename_column':
+                return wrap('rename_columns', {
+                    mapping: (p.from && p.to) ? { [p.from]: p.to } : {}
+                });
+
+            case 'change_type':
+                return wrap('cast_types', {
+                    types: (p.column && p.type) ? { [p.column]: p.type } : {}
+                });
+
+            case 'pivot':
+                return wrap('pivot_table', {
+                    index: p.index || '',
+                    columns: p.column || '',
+                    values: p.values_column || ''
+                });
+
+            case 'unpivot':
+                return wrap('unpivot_table', {
+                    columns: Array.isArray(p.columns) ? p.columns : [],
+                    name_field: p.attribute_name || 'attribute',
+                    value_field: p.value_name || 'value'
+                });
+
+            case 'transpose':
+                return wrap('transpose_table', {});
+
+            case 'append':
+                return wrap('append_rows', { sources: p.source ? [p.source] : [] });
+
+            case 'merge':
+                return wrap('merge_tables', {
+                    left_key: p.left_key || '',
+                    right_key: p.right_key || p.left_key || '',
+                    left_source: 'left',
+                    right_source: p.right || 'right',
+                    join_type: p.how || 'inner'
+                });
+
+            case 'group_by':
+                return wrap('aggregate', {
+                    group_by: Array.isArray(p.keys) ? p.keys : [],
+                    metrics: (Array.isArray(p.aggregations) ? p.aggregations : []).map(a => {
+                        const fn = String(a.op || 'count').toLowerCase();
+                        const field = a.column || (fn === 'count' ? '*' : '');
+                        const alias = a.name || (fn + '_' + (a.column || 'rows'));
+                        return `${fn}:${field}:${alias}`;
+                    })
+                });
+
+            case 'replace_values':
+                return wrap('replace_values', {
+                    field: p.column || p.field || '',
+                    find: p.from ?? p.find ?? '',
+                    replace: p.to ?? p.replace ?? ''
+                });
+
+            case 'split_column':
+                return wrap('split_column', {
+                    field: p.column || p.field || '',
+                    delimiter: p.delimiter || ',',
+                    targets: Array.isArray(p.into) ? p.into : (Array.isArray(p.targets) ? p.targets : [])
+                });
+
+            // ── add_column / conditional / duplicate → derived_field ──
+            case 'add_column':
+                return wrap('derived_field', {
+                    target_field: p.target_field || '',
+                    expression: p.value != null ? String(p.value) : (p.expression || '')
+                });
+
+            case 'conditional':
+                return wrap('derived_field', {
+                    target_field: p.target_field || '',
+                    expression: p.expression || ''
+                });
+
+            case 'duplicate_column':
+                return wrap('derived_field', {
+                    target_field: p.target_field || (p.source ? p.source + '_copy' : ''),
+                    expression: p.source ? `[${p.source}]` : ''
+                });
+
+            // ── text ops (DAX-style derived_field) ─────────────────────
+            case 'text_upper':   return derivedSelf(c => `UPPER([${c}])`);
+            case 'text_lower':   return derivedSelf(c => `LOWER([${c}])`);
+            case 'text_proper':  return derivedSelf(c => `PROPER([${c}])`);
+            case 'text_trim':    return derivedSelf(c => `TRIM([${c}])`);
+            case 'text_clean':   return derivedSelf(c => `CLEAN([${c}])`);
+            case 'text_replace':
+                return wrap('replace_values', {
+                    field: p.column || '',
+                    find: p.from || '',
+                    replace: p.to || ''
+                });
+            case 'text_extract':
+                return wrap('derived_field', {
+                    target_field: p.target_field || ((p.column || 'col') + '_extract'),
+                    expression: p.column ? `MID([${p.column}], ${(Number(p.start) || 0) + 1}, ${Number(p.length) || 1})` : ''
+                });
+            case 'text_length':
+                return wrap('derived_field', {
+                    target_field: p.target_field || ((p.column || 'col') + 'Length'),
+                    expression: p.column ? `LEN([${p.column}])` : ''
+                });
+            case 'text_contains':
+                return wrap('derived_field', {
+                    target_field: p.target_field || ((p.column || 'col') + '_has'),
+                    expression: (p.column && p.value != null)
+                        ? `IF(SEARCH("${escDax(p.value)}",[${p.column}],1,0) > 0, TRUE, FALSE)`
+                        : ''
+                });
+
+            // ── number ops ─────────────────────────────────────────────
+            case 'num_round':       return derivedSelf(c => `ROUND([${c}], ${Number(p.digits) || 0})`);
+            case 'num_round_up':    return derivedSelf(c => `ROUNDUP([${c}], 0)`);
+            case 'num_round_down':  return derivedSelf(c => `ROUNDDOWN([${c}], 0)`);
+            case 'num_abs':         return derivedSelf(c => `ABS([${c}])`);
+            case 'num_power':       return derivedSelf(c => `POWER([${c}], ${Number(p.exponent) || 2})`);
+            case 'num_log':         return derivedSelf(c => `LOG([${c}], ${Number(p.base) || 10})`);
+            case 'num_mod':         return derivedSelf(c => `MOD([${c}], ${Number(p.divisor) || 1})`);
+
+            // ── date / time ────────────────────────────────────────────
+            case 'date_year':           return derivedNew(c => `YEAR([${c}])`,         'Year');
+            case 'date_month':          return derivedNew(c => `MONTH([${c}])`,        'Month');
+            case 'date_day':            return derivedNew(c => `DAY([${c}])`,          'Day');
+            case 'date_add_days':       return derivedSelf(c => `DATEADD([${c}], ${Number(p.days) || 0}, "day")`);
+            case 'date_add_months':     return derivedSelf(c => `DATEADD([${c}], ${Number(p.months) || 0}, "month")`);
+            case 'date_start_of_month': return derivedNew(c => `STARTOFMONTH([${c}])`, 'MonthStart');
+            case 'date_end_of_month':   return derivedNew(c => `ENDOFMONTH([${c}])`,   'MonthEnd');
+            case 'date_now':
+                return wrap('derived_field', { target_field: p.target_field || 'Now', expression: 'NOW()' });
+
+            case 'time_hour':   return derivedNew(c => `HOUR([${c}])`,   'Hour');
+            case 'time_minute': return derivedNew(c => `MINUTE([${c}])`, 'Minute');
+            case 'time_second': return derivedNew(c => `SECOND([${c}])`, 'Second');
+
+            // ── misc shape ─────────────────────────────────────────────
+            case 'reorder_columns':
+                return wrap('select_columns', {
+                    include: Array.isArray(p.order) ? p.order : []
+                });
+            case 'merge_columns': {
+                const cols = Array.isArray(p.columns) ? p.columns : [];
+                const sep = String(p.separator ?? ' ');
+                return wrap('derived_field', {
+                    target_field: p.target_field || cols.join('_'),
+                    expression: cols.length
+                        ? cols.map(c => `[${c}]`).join(`&"${escDax(sep)}"&`)
+                        : ''
+                });
+            }
+            case 'index_column':
+                return wrap('derived_field', {
+                    target_field: p.target_field || 'Index',
+                    expression: String(Number(p.start) || 1)
+                });
+
+            // Promote headers: take the values of the first preview row and
+            // rename each column accordingly. The original first row is
+            // retained — the user removes it via the row-× action (status
+            // hint shown when the step is added from the ribbon).
+            case 'promote_headers': {
+                const row = firstPreviewRow();
+                if (!row) return s; // no preview yet → server flags unsupported
+                const mapping = {};
+                const seen = new Set();
+                Object.keys(row).forEach(k => {
+                    let v = String(row[k] ?? '').trim();
+                    if (!v) v = k; // keep original name for empty cells
+                    let candidate = v, n = 2;
+                    while (seen.has(candidate)) { candidate = v + '_' + n; n++; }
+                    seen.add(candidate);
+                    mapping[k] = candidate;
+                });
+                return wrap('rename_columns', { mapping });
+            }
+
+            // No registered handler → leave unchanged so server validation
+            // surfaces it as 'unsupported_rule' and the user sees a clear
+            // error. (fill_down, fill_up, remove_rows, remove_blank_rows,
+            // demote_headers, count_rows, reverse, etc.)
+            // Strip `type` from params here too so it can never collide with
+            // the reserved rule discriminator emitted by buildToml.
+            default: {
+                if (Object.prototype.hasOwnProperty.call(p, 'type')) {
+                    const safe = { ...p }; delete safe.type;
+                    return { op: s.op, enabled: s.enabled, params: safe };
+                }
+                return s;
+            }
+        }
     }
 
     function renderTomlFromSteps() {
@@ -1295,7 +2303,7 @@
     // ── Server interactions ────────────────────────────────────────────
     async function runPreview() {
         const q = activeQuery();
-        if (!q) { setStatus('Pick a query first.', 'warn'); return; }
+        if (!q) { setStatus('Pick a query first.', 'warn'); return { ok: false, error: 'Pick a query first.' }; }
         const toml = buildToml(q.steps);
         setProgress(true);
         setStatus('Running preview…');
@@ -1312,6 +2320,7 @@
             if (!r.ok) throw new Error(data.error || ('Preview failed (' + r.status + ')'));
             renderPreview(data);
             hidePreviewError();
+            clearErrorColumn();
             const rows = data.rows || data.data || [];
             const cols = data.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
             updateStatusBar({
@@ -1325,9 +2334,59 @@
             setStatus(e.message || 'Preview failed.', 'error');
             updateStatusBar({ validity: { text: 'Preview failed', kind: 'error' } });
             showPreviewError(e.message || 'Preview failed.');
+            // Highlight the offending column on the preview header so the
+            // user can see exactly which field broke the pipeline.
+            const col = extractErrorColumn(e.message || '') || guessErrorColumnFromEditingStep();
+            if (col) highlightErrorColumn(col);
+            return { ok: false, error: e.message || 'Preview failed.' };
         } finally {
             setProgress(false);
         }
+        return { ok: true };
+    }
+
+    // Best-effort: pull a column / field name out of a server error message.
+    // Server messages vary; we look for common shapes:
+    //   `Column "Foo" not found`, `field 'Foo'`, `[Foo]`, `column Foo is ...`.
+    function extractErrorColumn(message) {
+        if (!message) return null;
+        const patterns = [
+            /column\s+["'`]([^"'`]+)["'`]/i,
+            /field\s+["'`]([^"'`]+)["'`]/i,
+            /\[([A-Za-z0-9_ ]+)\]/,
+            /column\s+([A-Za-z0-9_]+)/i,
+            /field\s+([A-Za-z0-9_]+)/i
+        ];
+        for (const re of patterns) {
+            const m = message.match(re);
+            if (m && m[1]) return m[1].trim();
+        }
+        return null;
+    }
+
+    // If the error didn't name a column, fall back to the column the user
+    // is currently editing (rename_column.from, change_type.column, etc.).
+    function guessErrorColumnFromEditingStep() {
+        const q = activeQuery();
+        if (!q || editingStepIdx < 0) return null;
+        const s = q.steps[editingStepIdx]; if (!s) return null;
+        const p = s.params || {};
+        return p.column || p.field || p.from || p.source || p.by || null;
+    }
+
+    function highlightErrorColumn(col) {
+        clearErrorColumn();
+        if (!col) return;
+        const tbl = $('twpPreviewTable');
+        if (!tbl) return;
+        const th = tbl.querySelector(`thead th[data-col="${(window.CSS && CSS.escape) ? CSS.escape(col) : col.replace(/"/g,'\\"')}"]`);
+        if (th) th.classList.add('twp-col-error');
+    }
+
+    function clearErrorColumn() {
+        const tbl = $('twpPreviewTable');
+        if (!tbl) return;
+        tbl.querySelectorAll('thead th.twp-col-error').forEach(th => th.classList.remove('twp-col-error'));
     }
 
     // Sniff the column data type from up to ~25 sampled non-null values.
@@ -1395,6 +2454,10 @@
         const typeMap = {};
         cols.forEach(c => { typeMap[c] = inferColType(rows, c); });
         tbl.dataset.colTypes = JSON.stringify(typeMap);
+        // Cache the typed payload so smartDefaults / firstPreviewRow can
+        // read native values (numbers, booleans, dates) instead of stringly-
+        // typed DOM cell text.
+        state.lastPreview = { rows, columns: cols.slice(), types: typeMap };
 
         // Header row: name (click-to-sort), up/down arrow buttons (active one
         // highlighted), three-dot menu, hover-only × delete-column. Below the
@@ -1447,6 +2510,9 @@
         $('twpPreviewWrap').style.display = 'none';
         $('twpRowCountPill').style.display = 'none';
         hidePreviewError();
+        state.lastPreview = null;
+        const tbl = $('twpPreviewTable');
+        if (tbl) { delete tbl.dataset.colTypes; }
     }
 
     // Inline error overlay on the preview pane — keeps the last good rows
@@ -1489,10 +2555,24 @@
                 body: JSON.stringify({ toml })
             });
             const data = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(data.error || 'Validation failed');
-            const ok = data.ok !== false;
-            setStatus(ok ? 'Valid.' : (data.error || 'Validation failed.'), ok ? 'success' : 'error');
-            updateStatusBar({ validity: { text: ok ? 'Valid' : 'Invalid', kind: ok ? 'success' : 'error' } });
+            if (!r.ok) throw new Error(data.error || data.message || 'Validation failed');
+            // Server returns { success, syntaxErrors:[{code,message,reference}], stepCount, message, aiSuggestion }
+            const ok = (data.success !== false) && (data.ok !== false);
+            const errs = Array.isArray(data.syntaxErrors) ? data.syntaxErrors : [];
+            const detail = errs.length
+                ? errs.map(e => e.message || e.code).filter(Boolean).join('; ')
+                : (data.error || data.message || '');
+            if (ok) {
+                setStatus('Valid.', 'success');
+                updateStatusBar({ validity: { text: 'Valid', kind: 'success' } });
+            } else {
+                setStatus('Validation failed' + (detail ? ': ' + detail : '.'), 'error');
+                updateStatusBar({ validity: { text: 'Invalid', kind: 'error' } });
+                // Try to highlight the first column referenced by an error.
+                const colHit = errs.map(e => extractErrorColumn(e.message || ''))
+                                   .find(Boolean);
+                if (colHit) highlightErrorColumn(colHit);
+            }
         } catch (e) {
             setStatus(e.message || 'Validation failed.', 'error');
             updateStatusBar({ validity: { text: 'Invalid', kind: 'error' } });
@@ -1566,7 +2646,15 @@
             if (r.ok) suggested = await r.json();
         } catch { /* network/no-endpoint — fall through */ }
 
-        if (!suggested || !suggested.steps) suggested = localAiFallback(text, q);
+        // Fall back to the local intent parser when the server is missing,
+        // returns nothing, or returns an empty steps array. Without the
+        // empty-array check, a 200 OK with `{ steps: [] }` would suppress the
+        // local parser and the user would always see "didn't get enough
+        // detail" — even for unambiguous prompts like "remove duplicates by
+        // userId" that the local parser handles cleanly.
+        if (!suggested || !Array.isArray(suggested.steps) || suggested.steps.length === 0) {
+            suggested = localAiFallback(text, q);
+        }
 
         // Required-param keys per op. If the AI (or local fallback) returned a
         // step but didn't fill the essentials, we DROP it instead of merging
@@ -1634,8 +2722,10 @@
     function localAiFallback(text, q) {
         const t = text.toLowerCase();
         const steps = [];
-        const dedupe = t.match(/remove duplicates(?:\s+by\s+([a-z0-9_, ]+))?/i);
-        if (dedupe) steps.push({ op: 'remove_duplicates', enabled: true, params: { keys: (dedupe[1] || 'Id').split(/[, ]+/).filter(Boolean) } });
+        // Match against the original-cased `text` so column names like
+        // `userId` keep their casing — the engine is case-sensitive.
+        const dedupe = text.match(/remove\s+duplicates(?:\s+(?:by|on)\s+([A-Za-z0-9_, ]+?))?(?:[.;]|$)/i);
+        if (dedupe) steps.push({ op: 'remove_duplicates', enabled: true, params: { keys: (dedupe[1] || 'Id').split(/[, ]+/).map(s => s.trim()).filter(Boolean) } });
         const addCol = text.match(/add column\s+([A-Za-z0-9_]+)\s*=\s*(.+?)(?:[.;]|$)/i);
         if (addCol) steps.push({ op: 'derived_field', enabled: true, params: { target_field: addCol[1], expression: addCol[2].trim() } });
 

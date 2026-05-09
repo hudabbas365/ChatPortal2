@@ -1,0 +1,183 @@
+@model AIInsights.Models.DatasourceTypeDefinition
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var bindingKeys = (string[])(ViewBag.BindingKeys ?? Array.Empty<string>());
+    var rendererTypes = (string[])(ViewBag.RendererTypes ?? Array.Empty<string>());
+    var isNew = Model.Id == 0;
+}
+
+@Html.AntiForgeryToken()
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">
+            <i class="bi bi-database-gear"></i>
+            @(isNew ? "New datasource type" : $"Edit — {Model.DisplayName}")
+        </h1>
+        <div class="page-sub">Parameters are bound to the <code>Datasource</code> entity by their <strong>Key</strong>. Only the whitelisted keys are accepted.</div>
+    </div>
+    <div class="page-actions">
+        <a href="/superadmin/datasource-types" class="btn-ghost-sm"><i class="bi bi-arrow-left"></i> Back</a>
+        <button type="button" id="saveBtn" class="btn-primary-sm"><i class="bi bi-check2"></i> Save</button>
+    </div>
+</div>
+
+<div class="card-panel">
+    <div class="form-grid">
+        <div class="form-row">
+            <label>Type <span class="text-danger">*</span></label>
+            <input id="f_type" type="text" value="@Model.Type" @(Model.IsBuiltIn ? "readonly" : "") placeholder="e.g. Snowflake" />
+            @if (Model.IsBuiltIn)
+            { <div class="form-help text-muted small">Type is locked because this row is bound to a built-in connector.</div> }
+        </div>
+        <div class="form-row">
+            <label>Display name <span class="text-danger">*</span></label>
+            <input id="f_display" type="text" value="@Model.DisplayName" placeholder="Snowflake Cloud" />
+        </div>
+        <div class="form-row">
+            <label>Icon (Bootstrap class)</label>
+            <input id="f_icon" type="text" value="@Model.Icon" placeholder="bi-database" />
+        </div>
+        <div class="form-row">
+            <label>Sort order</label>
+            <input id="f_sort" type="number" value="@Model.SortOrder" />
+        </div>
+        <div class="form-row form-row-wide">
+            <label>Description</label>
+            <textarea id="f_desc" rows="2" placeholder="Short blurb for the type picker…">@Model.Description</textarea>
+        </div>
+        <div class="form-row">
+            <label class="form-check">
+                <input id="f_enabled" type="checkbox" @(Model.Enabled ? "checked" : "") />
+                Enabled
+            </label>
+        </div>
+        <div class="form-row">
+            <label class="form-check">
+                <input id="f_gw" type="checkbox" @(Model.RequiresGateway ? "checked" : "") />
+                Requires Gateway
+            </label>
+        </div>
+        <div class="form-row form-row-wide">
+            <label>Gateway help (shown when "Requires Gateway" is on)</label>
+            <textarea id="f_gwhelp" rows="2" placeholder="Connect via the on-prem AI Insights Gateway…">@Model.GatewayHelp</textarea>
+        </div>
+    </div>
+</div>
+
+<div class="card-panel" style="margin-top:16px">
+    <div class="card-head">
+        <h2 class="card-title"><i class="bi bi-list-ul"></i> Connection parameters</h2>
+        <button type="button" id="addParam" class="btn-ghost-sm"><i class="bi bi-plus-lg"></i> Add parameter</button>
+    </div>
+    <table class="tbl" id="paramsTbl">
+        <thead>
+            <tr>
+                <th style="width:170px">Key</th>
+                <th>Label</th>
+                <th style="width:130px">Type</th>
+                <th>Placeholder</th>
+                <th style="width:80px">Required</th>
+                <th>Options (one per line, for "select")</th>
+                <th>Help</th>
+                <th style="width:80px">Order</th>
+                <th style="width:40px"></th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div class="form-help text-muted small" style="padding:8px 12px">
+        Allowed keys: @string.Join(", ", bindingKeys). Renderer types: @string.Join(", ", rendererTypes).
+    </div>
+</div>
+
+<div id="saveError" class="text-danger small" style="margin-top:8px;display:none"></div>
+
+@section Scripts {
+    <script>
+    const BINDING_KEYS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(bindingKeys));
+    const RENDERER_TYPES = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(rendererTypes));
+    const SEED = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Parameters
+        .OrderBy(p => p.SortOrder)
+        .Select(p => new {
+            id = p.Id, key = p.Key, label = p.Label, type = p.Type,
+            placeholder = p.Placeholder, required = p.Required,
+            options = AIInsights.Services.Datasources.DatasourceTypeRegistry.ParseOptions(p.OptionsJson),
+            help = p.Help, sortOrder = p.SortOrder
+        })));
+    const ID = @Model.Id;
+
+    function rowHtml(p) {
+        p = p || {};
+        const optsLines = Array.isArray(p.options) ? p.options.join('\n') : '';
+        const keyOpts = BINDING_KEYS.map(k => `<option value="${k}" ${p.key === k ? 'selected' : ''}>${k}</option>`).join('');
+        const typeOpts = RENDERER_TYPES.map(t => `<option value="${t}" ${(p.type || 'text') === t ? 'selected' : ''}>${t}</option>`).join('');
+        return `
+            <tr data-pid="${p.id || ''}">
+                <td><select class="p-key">${keyOpts}</select></td>
+                <td><input type="text" class="p-label" value="${(p.label || '').replace(/"/g,'&quot;')}" placeholder="Connection string" /></td>
+                <td><select class="p-type">${typeOpts}</select></td>
+                <td><input type="text" class="p-ph" value="${(p.placeholder || '').replace(/"/g,'&quot;')}" /></td>
+                <td style="text-align:center"><input type="checkbox" class="p-req" ${p.required !== false ? 'checked' : ''} /></td>
+                <td><textarea rows="2" class="p-opts" placeholder="GET&#10;POST">${optsLines}</textarea></td>
+                <td><input type="text" class="p-help" value="${(p.help || '').replace(/"/g,'&quot;')}" /></td>
+                <td><input type="number" class="p-order" value="${p.sortOrder || 0}" /></td>
+                <td><button type="button" class="btn-ghost-sm p-del" title="Remove"><i class="bi bi-x-lg"></i></button></td>
+            </tr>`;
+    }
+
+    const tbody = document.querySelector('#paramsTbl tbody');
+    function addRow(p) {
+        tbody.insertAdjacentHTML('beforeend', rowHtml(p));
+        const tr = tbody.lastElementChild;
+        tr.querySelector('.p-del').addEventListener('click', () => tr.remove());
+    }
+    (SEED || []).forEach(addRow);
+    document.getElementById('addParam').addEventListener('click', () => addRow());
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+        const params = Array.from(tbody.querySelectorAll('tr')).map(tr => {
+            const opts = (tr.querySelector('.p-opts').value || '')
+                .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            const pid = tr.dataset.pid ? Number(tr.dataset.pid) : null;
+            return {
+                id: pid || null,
+                key: tr.querySelector('.p-key').value,
+                label: tr.querySelector('.p-label').value,
+                type: tr.querySelector('.p-type').value,
+                placeholder: tr.querySelector('.p-ph').value || null,
+                required: tr.querySelector('.p-req').checked,
+                options: opts.length ? opts : null,
+                help: tr.querySelector('.p-help').value || null,
+                sortOrder: Number(tr.querySelector('.p-order').value) || 0
+            };
+        });
+        const payload = {
+            id: ID || null,
+            type: document.getElementById('f_type').value.trim(),
+            displayName: document.getElementById('f_display').value.trim(),
+            description: document.getElementById('f_desc').value || null,
+            icon: document.getElementById('f_icon').value || null,
+            enabled: document.getElementById('f_enabled').checked,
+            sortOrder: Number(document.getElementById('f_sort').value) || 0,
+            requiresGateway: document.getElementById('f_gw').checked,
+            gatewayHelp: document.getElementById('f_gwhelp').value || null,
+            parameters: params
+        };
+        const err = document.getElementById('saveError');
+        err.style.display = 'none';
+        const r = await fetch('/api/superadmin/datasource-types', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            err.textContent = data.error || 'Save failed.';
+            err.style.display = '';
+            return;
+        }
+        location.href = '/superadmin/datasource-types';
+    });
+    </script>
+}

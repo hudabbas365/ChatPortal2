@@ -21,6 +21,28 @@ public class RestApiDatasourceService : IDatasourceTypeService
 
     public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "REST API" };
 
+    public IReadOnlyList<DatasourceParamDescriptor> Parameters { get; } = new[]
+    {
+        new DatasourceParamDescriptor(
+            Key: "apiUrl",
+            Label: "API URL",
+            Type: "url",
+            Placeholder: "https://api.example.com/data",
+            Required: true),
+        new DatasourceParamDescriptor(
+            Key: "apiMethod",
+            Label: "HTTP method",
+            Type: "select",
+            Required: false,
+            Options: new[] { "GET", "POST", "PUT", "PATCH", "DELETE" }),
+        new DatasourceParamDescriptor(
+            Key: "apiKey",
+            Label: "API key / token (optional)",
+            Type: "password",
+            Required: false,
+            Help: "Sent as a Bearer token. Leave blank for unauthenticated endpoints."),
+    };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestRestApiAsync(info.ApiUrl, info.ApiKey, info.ApiMethod);
 

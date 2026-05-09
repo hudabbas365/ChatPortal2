@@ -338,6 +338,7 @@
                         <button class="btn btn-sm btn-outline-secondary" id="wfDsBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
                         <span class="ms-2 fw-bold" id="wfDsSelectedType"></span>
                     </div>
+                    <div id="wfDsGatewayBanner" style="display:none"></div>
                     <div class="wf-setup-field">
                         <label>Datasource Name</label>
                         <input type="text" id="wfDsName" placeholder="e.g. Sales DB" />
@@ -448,6 +449,9 @@
                 // own block and hides the others.
                 if (window.WfDatasources) {
                     window.WfDatasources.toggleFields(document, self._selectedDsType);
+                }
+                if (typeof self._renderDsGatewayBanner === 'function') {
+                    self._renderDsGatewayBanner(self._selectedDsType);
                 }
             });
         }

@@ -24,6 +24,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
+    public DbSet<BlogImage> BlogImages => Set<BlogImage>();
+    public DbSet<DocumentImage> DocumentImages => Set<DocumentImage>();
+    public DbSet<BlogSubscription> BlogSubscriptions => Set<BlogSubscription>();
+    public DbSet<BlogAnnouncementEmailLog> BlogAnnouncementEmailLogs => Set<BlogAnnouncementEmailLog>();
     public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
     public DbSet<SharedReport> SharedReports => Set<SharedReport>();
     public DbSet<ReportRevision> ReportRevisions => Set<ReportRevision>();
@@ -38,6 +42,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TransformSource> TransformSources => Set<TransformSource>();
     public DbSet<TransformStep> TransformSteps => Set<TransformStep>();
     public DbSet<TransformRunAudit> TransformRunAudits => Set<TransformRunAudit>();
+    public DbSet<DatasourceTypeDefinition> DatasourceTypeDefinitions => Set<DatasourceTypeDefinition>();
+    public DbSet<DatasourceTypeParameter> DatasourceTypeParameters => Set<DatasourceTypeParameter>();
+    public DbSet<UiThemeVariable> UiThemeVariables => Set<UiThemeVariable>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -54,6 +61,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithOne(s => s.User)
             .HasForeignKey<SubscriptionPlan>(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.IsSubscribedToAnnouncements)
+            .HasDefaultValue(true);
 
         builder.Entity<Workspace>()
             .HasOne(w => w.Organization)
@@ -248,6 +259,57 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(p => p.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.Entity<BlogImage>()
+            .HasOne(i => i.Blog)
+            .WithMany(b => b.BlogImages)
+            .HasForeignKey(i => i.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogImage>()
+            .HasIndex(i => new { i.BlogId, i.SortOrder });
+
+        builder.Entity<DocumentImage>()
+            .HasOne(i => i.Document)
+            .WithMany(d => d.DocumentImages)
+            .HasForeignKey(i => i.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<DocumentImage>()
+            .HasIndex(i => new { i.DocumentId, i.SortOrder });
+
+        builder.Entity<BlogSubscription>()
+            .HasKey(bs => new { bs.BlogId, bs.SubscriptionId });
+
+        builder.Entity<BlogSubscription>()
+            .HasOne(bs => bs.Blog)
+            .WithMany(b => b.BlogSubscriptions)
+            .HasForeignKey(bs => bs.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogSubscription>()
+            .HasOne(bs => bs.Subscription)
+            .WithMany()
+            .HasForeignKey(bs => bs.SubscriptionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasOne(l => l.Blog)
+            .WithMany(b => b.AnnouncementEmailLogs)
+            .HasForeignKey(l => l.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasIndex(l => new { l.BlogId, l.SubscriberEmail })
+            .IsUnique();
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .Property(l => l.SubscriberEmail)
+            .HasMaxLength(320);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .Property(l => l.Status)
+            .HasMaxLength(20);
+
         builder.Entity<TransformDraft>()
             .HasIndex(d => d.Guid)
             .IsUnique();
@@ -298,5 +360,47 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(a => a.TransformDraftId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // ── Datasource type registry ──────────────────────────────────
+        builder.Entity<DatasourceTypeDefinition>(b =>
+        {
+            b.Property(x => x.Type).HasMaxLength(64).IsRequired();
+            b.Property(x => x.DisplayName).HasMaxLength(128).IsRequired();
+            b.Property(x => x.Description).HasMaxLength(1024);
+            b.Property(x => x.Icon).HasMaxLength(64);
+            b.Property(x => x.GatewayHelp).HasMaxLength(2048);
+            b.Property(x => x.UpdatedBy).HasMaxLength(450);
+            b.HasIndex(x => x.Type).IsUnique();
+        });
+
+        builder.Entity<DatasourceTypeParameter>(b =>
+        {
+            b.Property(x => x.Key).HasMaxLength(64).IsRequired();
+            b.Property(x => x.Label).HasMaxLength(128).IsRequired();
+            b.Property(x => x.Type).HasMaxLength(32).IsRequired();
+            b.Property(x => x.Placeholder).HasMaxLength(256);
+            b.Property(x => x.OptionsJson).HasMaxLength(2048);
+            b.Property(x => x.Help).HasMaxLength(1024);
+            b.HasOne(x => x.Definition)
+                .WithMany(d => d.Parameters)
+                .HasForeignKey(x => x.DatasourceTypeDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.DatasourceTypeDefinitionId, x.Key }).IsUnique();
+        });
+
+        // ── UI theme registry ─────────────────────────────────────────
+        // Drives /css/theme.css. Unique on Key so every CSS variable maps
+        // to exactly one row.
+        builder.Entity<UiThemeVariable>(b =>
+        {
+            b.Property(x => x.Key).HasMaxLength(64).IsRequired();
+            b.Property(x => x.Value).HasMaxLength(512).IsRequired();
+            b.Property(x => x.DefaultValue).HasMaxLength(512);
+            b.Property(x => x.Kind).HasMaxLength(24).IsRequired();
+            b.Property(x => x.Category).HasMaxLength(64);
+            b.Property(x => x.Description).HasMaxLength(256);
+            b.Property(x => x.UpdatedBy).HasMaxLength(450);
+            b.HasIndex(x => x.Key).IsUnique();
+        });
     }
 }

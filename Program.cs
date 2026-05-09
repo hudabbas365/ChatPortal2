@@ -145,6 +145,13 @@ builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeServic
 builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.RestApiDatasourceService>();
 builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeService, AIInsights.Services.Datasources.FileUrlDatasourceService>();
 
+// DB-backed central registry for the datasource type catalog. Drives
+// /api/datasources/types and /api/datasources/type-schemas, edited via the
+// SuperAdmin UI. Seeded once on startup from the IDatasourceTypeService
+// implementations above.
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeRegistry, AIInsights.Services.Datasources.DatasourceTypeRegistry>();
+builder.Services.AddScoped<AIInsights.Services.Datasources.IDatasourceTypeRegistrySeeder, AIInsights.Services.Datasources.DatasourceTypeRegistrySeeder>();
+
 // Per-rule-type handlers for the AI Insights 365 ETL workbench. Registered as
 // singletons because each handler is a stateless pure-function class.
 // Adding a new rule type requires only a new ITransformRuleHandler implementation
@@ -182,6 +189,7 @@ builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 builder.Services.AddScoped<IContentSeeder, ContentSeeder>();
+builder.Services.AddSingleton<ISeoKeywordSuggestionService, SeoKeywordSuggestionService>();
 builder.Services.AddScoped<ITrialEnforcementService, TrialEnforcementService>();
 builder.Services.AddHostedService<NotificationSeedingService>();
 builder.Services.AddHttpClient("PayPal");
@@ -252,6 +260,31 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         startupLogger.LogWarning(ex, "ContentSeeder failed to seed docs/blog posts.");
+    }
+
+    // Seed the central datasource type registry from the registered
+    // IDatasourceTypeService implementations. Idempotent — only inserts new
+    // types/parameters; admin edits to existing rows are preserved.
+    try
+    {
+        var dsRegSeeder = scope.ServiceProvider.GetRequiredService<AIInsights.Services.Datasources.IDatasourceTypeRegistrySeeder>();
+        await dsRegSeeder.SeedAsync();
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogWarning(ex, "DatasourceTypeRegistrySeeder failed.");
+    }
+
+    // Seed the DB-backed UI theme registry from the canonical site.css defaults.
+    // Idempotent — admin edits to existing rows are preserved.
+    try
+    {
+        var themeSeeder = scope.ServiceProvider.GetRequiredService<AIInsights.Services.IUiThemeSeeder>();
+        await themeSeeder.SeedAsync();
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogWarning(ex, "UiThemeSeeder failed.");
     }
 }
 

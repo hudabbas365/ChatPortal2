@@ -25,6 +25,28 @@ public record ColumnSchemaDto(string Name, string DataType, bool IsPrimaryKey);
 public record TableSchemaDto(string Name, string Type, IReadOnlyList<ColumnSchemaDto> Columns);
 
 /// <summary>
+/// Describes a single connection-parameter field that the Add-Datasource UI
+/// should render for a given datasource family. Centralizing this on
+/// <see cref="IDatasourceTypeService"/> means a new datasource implementation
+/// auto-surfaces the right fields in every client without UI edits.
+/// </summary>
+/// <param name="Key">camelCase property name on <c>DatasourceRequest</c> the value is bound to (e.g. "connectionString", "apiUrl").</param>
+/// <param name="Label">Friendly label rendered above the input.</param>
+/// <param name="Type">Renderer hint: "text" | "password" | "url" | "multiline" | "select".</param>
+/// <param name="Placeholder">Optional placeholder / example text.</param>
+/// <param name="Required">When true the client refuses to submit until a non-empty value is supplied.</param>
+/// <param name="Options">For <c>select</c> fields: allowed values shown in the dropdown.</param>
+/// <param name="Help">Optional small-print hint shown beneath the field.</param>
+public record DatasourceParamDescriptor(
+    string Key,
+    string Label,
+    string Type,
+    string? Placeholder = null,
+    bool Required = true,
+    IReadOnlyList<string>? Options = null,
+    string? Help = null);
+
+/// <summary>
 /// Per-datasource-type service. Each datasource family (SQL Server, Power BI,
 /// REST API, File URL) ships its own implementation so the introspection
 /// logic and connection-test logic stay isolated and easy to maintain.
@@ -45,6 +67,16 @@ public interface IDatasourceTypeService
     /// automatically surfaces its type in the UI without touching the controller.
     /// </summary>
     IReadOnlyList<string> SupportedTypeStrings { get; }
+
+    /// <summary>
+    /// Connection-parameter schema for this datasource family. Drives the
+    /// Add-Datasource UI: each entry becomes a labelled input whose value is
+    /// posted back to <c>POST /api/datasources</c> under the matching
+    /// <c>DatasourceRequest</c> property name. Adding a new
+    /// <see cref="IDatasourceTypeService"/> in DI automatically extends the UI
+    /// — no client-side changes required.
+    /// </summary>
+    IReadOnlyList<DatasourceParamDescriptor> Parameters { get; }
 
     /// <summary>Tests connectivity given inbound connection details (no persisted Datasource yet).</summary>
     Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info);

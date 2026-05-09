@@ -1,0 +1,180 @@
+@model List<AIInsights.Models.UiThemeVariable>
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var groups = Model.GroupBy(v => v.Category ?? "Other").OrderBy(g => g.Key).ToList();
+}
+
+@Html.AntiForgeryToken()
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title"><i class="bi bi-palette"></i> UI Theme</h1>
+        <div class="page-sub">Edit the global CSS custom properties (<code>--cp-*</code>) that drive the entire UI. Changes apply on the next page load.</div>
+    </div>
+    <div class="page-actions">
+        <button id="btnSaveAll" type="button" class="btn-primary-sm"><i class="bi bi-save"></i> Save changes</button>
+        <button id="btnResetAll" type="button" class="btn-secondary-sm"><i class="bi bi-arrow-counterclockwise"></i> Reset all</button>
+    </div>
+</div>
+
+<div id="themeAlert" class="alert" style="display:none;"></div>
+
+<style>
+    .ui-theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+    .ui-theme-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .ui-theme-row .swatch { width: 32px; height: 32px; border-radius: 6px; border: 1px solid #d1d5db; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.04); }
+    .ui-theme-row .meta { flex: 1; min-width: 0; }
+    .ui-theme-row .key { font-family: ui-monospace, Consolas, monospace; font-size: .82rem; color: #111827; font-weight: 600; }
+    .ui-theme-row .desc { font-size: .72rem; color: #6b7280; }
+    .ui-theme-row input[type=color] { width: 38px; height: 32px; padding: 0; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; }
+    .ui-theme-row input[type=text], .ui-theme-row textarea { width: 100%; padding: 5px 8px; font-size: .8rem; font-family: ui-monospace, Consolas, monospace; border: 1px solid #d1d5db; border-radius: 6px; }
+    .ui-theme-row textarea { min-height: 56px; resize: vertical; }
+    .ui-theme-row .reset-btn { border: none; background: transparent; color: #6b7280; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+    .ui-theme-row .reset-btn:hover { color: #dc2626; background: rgba(220,38,38,.08); }
+    .ui-theme-row .row-body { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .ui-theme-row.dirty { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.15); }
+    .ui-theme-section { margin-bottom: 20px; }
+    .ui-theme-section h3 { font-size: .9rem; text-transform: uppercase; letter-spacing: .04em; color: #374151; margin: 18px 0 8px; }
+</style>
+
+<div id="themeForm">
+    @foreach (var group in groups)
+    {
+        <div class="ui-theme-section">
+            <h3>@group.Key</h3>
+            <div class="ui-theme-grid">
+                @foreach (var v in group.OrderBy(x => x.SortOrder).ThenBy(x => x.Key))
+                {
+                    var isColor = string.Equals(v.Kind, "color", StringComparison.OrdinalIgnoreCase);
+                    var isMulti = string.Equals(v.Kind, "gradient", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(v.Kind, "shadow", StringComparison.OrdinalIgnoreCase);
+                    <div class="ui-theme-row" data-id="@v.Id" data-key="@v.Key" data-kind="@v.Kind" data-default="@v.DefaultValue">
+                        @if (isColor)
+                        {
+                            <span class="swatch" style="background:@v.Value"></span>
+                        }
+                        <div class="row-body">
+                            <div>
+                                <span class="key">--@v.Key</span>
+                                @if (!string.IsNullOrWhiteSpace(v.Description))
+                                {
+                                    <div class="desc">@v.Description</div>
+                                }
+                            </div>
+                            @if (isColor)
+                            {
+                                <div style="display:flex;gap:6px;align-items:center;">
+                                    <input type="color" class="theme-color" value="@v.Value" />
+                                    <input type="text" class="theme-value" value="@v.Value" />
+                                </div>
+                            }
+                            else if (isMulti)
+                            {
+                                <textarea class="theme-value">@v.Value</textarea>
+                            }
+                            else
+                            {
+                                <input type="text" class="theme-value" value="@v.Value" />
+                            }
+                        </div>
+                        <button type="button" class="reset-btn" title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<script>
+(function () {
+    var token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+    var alertBox = document.getElementById('themeAlert');
+
+    function showAlert(msg, type) {
+        alertBox.textContent = msg;
+        alertBox.className = 'alert alert-' + (type || 'info');
+        alertBox.style.display = 'block';
+        setTimeout(function () { alertBox.style.display = 'none'; }, 4000);
+    }
+
+    function applyLivePreview(key, value) {
+        document.documentElement.style.setProperty('--' + key, value);
+    }
+
+    function markDirty(row) { row.classList.add('dirty'); }
+
+    document.querySelectorAll('.ui-theme-row').forEach(function (row) {
+        var key = row.dataset.key;
+        var colorInput = row.querySelector('input[type=color]');
+        var valueInput = row.querySelector('.theme-value');
+        var swatch = row.querySelector('.swatch');
+
+        if (colorInput) {
+            colorInput.addEventListener('input', function () {
+                valueInput.value = colorInput.value;
+                if (swatch) swatch.style.background = colorInput.value;
+                applyLivePreview(key, colorInput.value);
+                markDirty(row);
+            });
+        }
+        if (valueInput) {
+            valueInput.addEventListener('input', function () {
+                if (colorInput && /^#[0-9a-f]{3,8}$/i.test(valueInput.value)) {
+                    colorInput.value = valueInput.value;
+                }
+                if (swatch) swatch.style.background = valueInput.value;
+                applyLivePreview(key, valueInput.value);
+                markDirty(row);
+            });
+        }
+
+        var resetBtn = row.querySelector('.reset-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function () {
+                var id = row.dataset.id;
+                fetch('/superadmin/ui-theme/' + id + '/reset', {
+                    method: 'POST',
+                    headers: { 'RequestVerificationToken': token }
+                }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+                  .then(function (data) {
+                      valueInput.value = data.value;
+                      if (colorInput && /^#[0-9a-f]{3,8}$/i.test(data.value)) colorInput.value = data.value;
+                      if (swatch) swatch.style.background = data.value;
+                      applyLivePreview(key, data.value);
+                      row.classList.remove('dirty');
+                      showAlert('Reset to default.', 'success');
+                  })
+                  .catch(function () { showAlert('Reset failed.', 'danger'); });
+            });
+        }
+    });
+
+    document.getElementById('btnSaveAll').addEventListener('click', function () {
+        var updates = [];
+        document.querySelectorAll('.ui-theme-row.dirty').forEach(function (row) {
+            updates.push({ key: row.dataset.key, value: row.querySelector('.theme-value').value });
+        });
+        if (updates.length === 0) { showAlert('No changes to save.', 'info'); return; }
+        fetch('/superadmin/ui-theme/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+            body: JSON.stringify(updates)
+        }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+          .then(function (data) {
+              document.querySelectorAll('.ui-theme-row.dirty').forEach(function (row) { row.classList.remove('dirty'); });
+              showAlert('Saved ' + data.saved + ' change(s).', 'success');
+          })
+          .catch(function () { showAlert('Save failed.', 'danger'); });
+    });
+
+    document.getElementById('btnResetAll').addEventListener('click', function () {
+        if (!confirm('Reset every variable to its seeded default?')) return;
+        fetch('/superadmin/ui-theme/reset-all', {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': token }
+        }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+          .then(function () { location.reload(); })
+          .catch(function () { showAlert('Reset all failed.', 'danger'); });
+    });
+})();
+</script>

@@ -20,6 +20,17 @@ public class FileUrlDatasourceService : IDatasourceTypeService
 
     public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "File URL" };
 
+    public IReadOnlyList<DatasourceParamDescriptor> Parameters { get; } = new[]
+    {
+        new DatasourceParamDescriptor(
+            Key: "apiUrl",
+            Label: "File URL",
+            Type: "url",
+            Placeholder: "https://example.com/data.csv",
+            Required: true,
+            Help: "Public link to a CSV or XLSX file. The file is downloaded and parsed on each refresh."),
+    };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestFileUrlAsync(info.ApiUrl);
 

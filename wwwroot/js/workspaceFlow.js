@@ -1112,6 +1112,7 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                             <button class="btn btn-sm btn-outline-secondary" id="wfDsBackBtn"><i class="bi bi-arrow-left me-1"></i>Back</button>
                             <span class="ms-2 fw-bold" id="wfDsSelectedType"></span>
                         </div>
+                        <div id="wfDsGatewayBanner" style="display:none"></div>
                         <div class="wf-setup-field">
                             <label>Datasource Name</label>
                             <input type="text" id="wfDsName" placeholder="e.g. Sales DB" />
@@ -1172,19 +1173,49 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
             this._wireDsSetup(wsData, agent);
         },
 
+        // Pulls the datasource-type catalog from the DB-backed registry
+        // (/api/datasources/type-schemas). Caches the result on `_dsTypeSchemas`
+        // so callers can look up `requiresGateway` / `gatewayHelp` / `icon`
+        // without re-fetching. Falls back to the legacy string[] endpoint when
+        // the schema endpoint is unavailable, and degrades to a plain text
+        // grid in either case so the wizard still renders.
         async _loadDsTypes() {
+            const grid = document.getElementById('wfDsTypeGrid');
+            const renderError = () => { if (grid) grid.innerHTML = '<div style="color:var(--cp-danger);font-size:0.8rem;">Failed to load types</div>'; };
             try {
-                const r = await fetch('/api/datasources/types');
-                const types = await r.json();
-                const grid = document.getElementById('wfDsTypeGrid');
+                const r = await fetch('/api/datasources/type-schemas');
+                let schemas = r.ok ? await r.json() : [];
+                if (!Array.isArray(schemas) || schemas.length === 0) {
+                    const r2 = await fetch('/api/datasources/types');
+                    const types = r2.ok ? await r2.json() : [];
+                    schemas = (types || []).map(t => ({ type: t, displayName: t, icon: null, requiresGateway: false, gatewayHelp: null }));
+                }
+                this._dsTypeSchemas = schemas;
                 if (!grid) return;
-                grid.innerHTML = types.map(t =>
-                    `<button class="wf-ds-type-btn" data-type="${t}">${t}</button>`
-                ).join('');
+                const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                grid.innerHTML = schemas.map(s => {
+                    const icon = s.icon ? `<i class="${esc(s.icon)} me-1"></i>` : '';
+                    const gw = s.requiresGateway ? '<span class="wf-ds-type-gw" title="Requires Gateway"><i class="bi bi-shield-lock"></i></span>' : '';
+                    return `<button class="wf-ds-type-btn" data-type="${esc(s.type)}">${icon}${esc(s.displayName || s.type)}${gw}</button>`;
+                }).join('');
             } catch {
-                const grid = document.getElementById('wfDsTypeGrid');
-                if (grid) grid.innerHTML = '<div style="color:var(--cp-danger);font-size:0.8rem;">Failed to load types</div>';
+                renderError();
             }
+        },
+
+        // Renders a small info banner inside the config form when the selected
+        // datasource type is flagged `requiresGateway` in the registry. Shared
+        // by both the workspace wizard and the standalone setup flow so the
+        // gateway-help text comes from one DB-driven source.
+        _renderDsGatewayBanner(typeString) {
+            const host = document.getElementById('wfDsGatewayBanner');
+            if (!host) return;
+            const schema = (this._dsTypeSchemas || []).find(s => (s.type || '').toLowerCase() === (typeString || '').toLowerCase());
+            if (!schema || !schema.requiresGateway) { host.innerHTML = ''; host.style.display = 'none'; return; }
+            const help = schema.gatewayHelp || 'This datasource requires the AIInsights Gateway to reach on-premises networks.';
+            const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            host.style.display = '';
+            host.innerHTML = `<div class="wf-setup-alert info" style="margin:8px 0;"><i class="bi bi-shield-lock me-1"></i><strong>Gateway required.</strong> ${esc(help)}</div>`;
         },
 
         _selectedDsType: '',
@@ -1210,6 +1241,7 @@ expression = &quot;DATEDIFF(minute, [IncidentDateTime], [CloseDateTime])&quot;">
                     if (window.WfDatasources) {
                         window.WfDatasources.toggleFields(document, this._selectedDsType);
                     }
+                    this._renderDsGatewayBanner(this._selectedDsType);
                 });
             }
             if (search) {

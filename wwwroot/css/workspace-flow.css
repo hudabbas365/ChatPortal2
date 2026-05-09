@@ -533,6 +533,19 @@
     color: var(--cp-primary);
     font-weight: 600;
 }
+/* Gateway badge: surfaces RequiresGateway flag from the DB-backed registry. */
+.wf-ds-type-btn .wf-ds-type-gw {
+    display: inline-block;
+    margin-left: 6px;
+    color: var(--cp-warning, #d97706);
+    font-size: 0.85em;
+}
+.wf-setup-alert.info {
+    display: block;
+    background: var(--cp-primary-light);
+    color: var(--cp-primary);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
 
 /* Fields preview (inline) */
 .wf-fields-preview {

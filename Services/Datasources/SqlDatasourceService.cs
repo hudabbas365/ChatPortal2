@@ -35,6 +35,29 @@ public class SqlDatasourceService : IDatasourceTypeService
 
     public IReadOnlyList<string> SupportedTypeStrings { get; } = new[] { "SQL Server" };
 
+    public IReadOnlyList<DatasourceParamDescriptor> Parameters { get; } = new[]
+    {
+        new DatasourceParamDescriptor(
+            Key: "connectionString",
+            Label: "Connection string",
+            Type: "multiline",
+            Placeholder: "Server=…;Database=…;User Id=…;Password=…;",
+            Required: true,
+            Help: "Paste the full ADO.NET connection string. Credentials are encrypted at rest."),
+        new DatasourceParamDescriptor(
+            Key: "dbUser",
+            Label: "Database user (optional)",
+            Type: "text",
+            Placeholder: "sa",
+            Required: false),
+        new DatasourceParamDescriptor(
+            Key: "dbPassword",
+            Label: "Database password (optional)",
+            Type: "password",
+            Required: false,
+            Help: "Only needed when not embedded in the connection string above."),
+    };
+
     public Task<(bool Ok, string? Error)> TestConnectionAsync(DatasourceConnectionInfo info) =>
         _queryService.TestConnectionAsync(
             info.Type ?? "SQL Server",

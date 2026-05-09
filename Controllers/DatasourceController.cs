@@ -134,7 +134,77 @@ public class DatasourceController : ControllerBase
     }
 
     [HttpGet("types")]
-    public IActionResult GetTypes() => Ok(_datasourceTypeNames);
+    public async Task<IActionResult> GetTypes([FromServices] IDatasourceTypeRegistry registry)
+    {
+        var names = await registry.GetTypeNamesAsync();
+        // Fall back to in-memory list when the DB registry is empty (e.g. a
+        // brand-new deployment whose first request races the seeder).
+        return Ok(names.Count > 0 ? names : (IReadOnlyList<string>)_datasourceTypeNames);
+    }
+
+    /// <summary>
+    /// Rich datasource type catalog including the connection-parameter schema
+    /// for each registered type. Drives the Add-Datasource modal in the
+    /// Transform Workbench AND the workspace wizard, both consuming this
+    /// single DB-backed source of truth (managed in the SuperAdmin app).
+    /// </summary>
+    [HttpGet("type-schemas")]
+    public async Task<IActionResult> GetTypeSchemas([FromServices] IDatasourceTypeRegistry registry)
+    {
+        var schemas = await registry.GetSchemasAsync();
+        var result = schemas.Select(s => new
+        {
+            type = s.Type,
+            displayName = s.DisplayName,
+            description = s.Description,
+            icon = s.Icon,
+            requiresGateway = s.RequiresGateway,
+            gatewayHelp = s.GatewayHelp,
+            sortOrder = s.SortOrder,
+            parameters = s.Parameters.Select(p => new
+            {
+                key = p.Key,
+                label = p.Label,
+                type = p.Type,
+                placeholder = p.Placeholder,
+                required = p.Required,
+                options = p.Options,
+                help = p.Help
+            }).ToList()
+        }).ToList();
+
+        // Fallback to the in-memory IDatasourceTypeService.Parameters when the
+        // DB hasn't been seeded yet (very first boot, or local dev without
+        // migrations applied) so the UI still works.
+        if (result.Count == 0)
+        {
+            var fallback = _datasourceServices
+                .SelectMany(s => s.SupportedTypeStrings.Select(t => new
+                {
+                    type = t,
+                    displayName = t,
+                    description = (string?)null,
+                    icon = (string?)null,
+                    requiresGateway = false,
+                    gatewayHelp = (string?)null,
+                    sortOrder = 0,
+                    parameters = s.Parameters.Select(p => new
+                    {
+                        key = p.Key,
+                        label = p.Label,
+                        type = p.Type,
+                        placeholder = p.Placeholder,
+                        required = p.Required,
+                        options = (IReadOnlyList<string>?)p.Options,
+                        help = p.Help
+                    }).ToList()
+                }))
+                .ToList();
+            return Ok(fallback);
+        }
+
+        return Ok(result);
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int organizationId)
