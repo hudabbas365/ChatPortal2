@@ -8,8 +8,10 @@ public class DocArticle
     public string Summary { get; set; } = "";
     public string Content { get; set; } = "";
     public string? Author { get; set; }
+    public string? FeaturedImagePath { get; set; }
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsPublished { get; set; } = true;
+    public List<DocumentImage> DocumentImages { get; set; } = new();
 }

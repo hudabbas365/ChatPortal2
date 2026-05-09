@@ -1,6 +1,7 @@
 using System.Text;
 using AIInsights.Data;
 using AIInsights.Models;
+using AIInsights.Services;
 using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -10,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using System.Security.Claims;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.FileProviders;
 
 // Set QuestPDF community license
 QuestPDF.Settings.License = LicenseType.Community;
@@ -116,8 +118,12 @@ builder.Services.AddScoped<AIInsights.SuperAdmin.Services.IUrgentNotificationEma
 builder.Services.AddHostedService<AIInsights.SuperAdmin.Services.NotificationDispatcher>();
 builder.Services.AddScoped<InvoicePdfService>();
 builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
+builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
+builder.Services.AddScoped<IFeatureAnnouncementEmailSender, SmtpFeatureAnnouncementEmailSender>();
+builder.Services.AddSingleton<ISeoKeywordSuggestionService, SeoKeywordSuggestionService>();
 builder.Services.AddHostedService<IntegrationHealthService>();
 builder.Services.AddHostedService<WeeklyDigestService>();
+builder.Services.AddHostedService<BlogAnnouncementEmailQueueService>();
 builder.Services.AddScoped<OrganizationRetentionService>();
 builder.Services.AddHostedService<OrganizationRetentionCleanupJob>();
 builder.Services.AddHttpClient();
@@ -194,6 +200,15 @@ else
 }
 
 app.UseStaticFiles();
+var sharedUploadsRoot = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "wwwroot"));
+if (Directory.Exists(sharedUploadsRoot))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(sharedUploadsRoot),
+        RequestPath = ""
+    });
+}
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

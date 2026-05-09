@@ -20,3 +20,5 @@ appsettings.Development.json
 appsettings.Production.json
 appsettings.*.json
 !appsettings.json
+!appsettings.Development.json
+!ChatPortal2.SuperAdmin/appsettings.Development.json

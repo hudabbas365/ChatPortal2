@@ -17,17 +17,23 @@ public class SuperAdminController : Controller
     private readonly CohereService _cohere;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OrganizationRetentionService _orgRetention;
+    private readonly IImageUploadService _imageUploadService;
+    private readonly ISeoKeywordSuggestionService _seoKeywordSuggestionService;
 
     public SuperAdminController(
         AppDbContext db,
         CohereService cohere,
         IServiceScopeFactory scopeFactory,
-        OrganizationRetentionService orgRetention)
+        OrganizationRetentionService orgRetention,
+        IImageUploadService imageUploadService,
+        ISeoKeywordSuggestionService seoKeywordSuggestionService)
     {
         _db = db;
         _cohere = cohere;
         _scopeFactory = scopeFactory;
         _orgRetention = orgRetention;
+        _imageUploadService = imageUploadService;
+        _seoKeywordSuggestionService = seoKeywordSuggestionService;
     }
 
     protected string? GetCurrentUserId() =>
@@ -723,7 +729,11 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> Docs()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var docs = await _db.DocArticles.OrderBy(d => d.SortOrder).ThenByDescending(d => d.CreatedAt).ToListAsync();
+        var docs = await _db.DocArticles
+            .Include(d => d.DocumentImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .OrderBy(d => d.SortOrder)
+            .ThenByDescending(d => d.CreatedAt)
+            .ToListAsync();
         return View("~/Views/Admin/Docs.cshtml", docs);
     }
 
@@ -752,9 +762,11 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             existing.Summary = dto.Summary;
             existing.Content = dto.Content;
             existing.Author = dto.Author;
+            existing.FeaturedImagePath = dto.FeaturedImagePath;
             existing.SortOrder = dto.SortOrder;
             existing.IsPublished = dto.IsPublished;
             existing.UpdatedAt = DateTime.UtcNow;
+            await SyncDocumentImagesAsync(existing, dto.GalleryImages ?? new List<string>());
             doc = existing;
         }
         else
@@ -766,12 +778,15 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 Summary = dto.Summary,
                 Content = dto.Content,
                 Author = dto.Author,
+                FeaturedImagePath = dto.FeaturedImagePath,
                 SortOrder = dto.SortOrder,
                 IsPublished = dto.IsPublished,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
             _db.DocArticles.Add(doc);
+            await _db.SaveChangesAsync();
+            await SyncDocumentImagesAsync(doc, dto.GalleryImages ?? new List<string>());
         }
 
         await _db.SaveChangesAsync();
@@ -804,6 +819,8 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         public string? Summary { get; set; }
         public string? Content { get; set; }
         public string? Author { get; set; }
+        public string? FeaturedImagePath { get; set; }
+        public List<string>? GalleryImages { get; set; }
         public int SortOrder { get; set; }
         public bool IsPublished { get; set; }
         // SEO overrides (optional — typically supplied by the AI SEO Assistant)
@@ -815,9 +832,14 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> DeleteDoc(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var doc = await _db.DocArticles.FindAsync(id);
+        var doc = await _db.DocArticles
+            .Include(d => d.DocumentImages)
+            .FirstOrDefaultAsync(d => d.Id == id);
         if (doc == null) return NotFound();
         var url = $"/docs/{doc.Slug}";
+        _imageUploadService.DeleteImage(doc.FeaturedImagePath);
+        foreach (var image in doc.DocumentImages)
+            _imageUploadService.DeleteImage(image.ImagePath);
         _db.DocArticles.Remove(doc);
         await _db.SaveChangesAsync();
         await RemoveSeoByUrlAsync(url);
@@ -829,7 +851,19 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> Blog()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var posts = await _db.BlogPosts.OrderByDescending(b => b.PublishedAt).ToListAsync();
+        ViewBag.SubscriptionPlans = await _db.SubscriptionPlans
+            .GroupBy(s => s.Plan)
+            .Select(g => new SubscriptionOptionDto { Id = g.Min(x => x.Id), Name = g.Key.ToString() })
+            .OrderBy(x => x.Name)
+            .ToListAsync();
+
+        var posts = await _db.BlogPosts
+            .Include(b => b.BlogImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .Include(b => b.BlogSubscriptions)
+                .ThenInclude(bs => bs.Subscription)
+            .Include(b => b.AnnouncementEmailLogs)
+            .OrderByDescending(b => b.PublishedAt)
+            .ToListAsync();
         return View("~/Views/Admin/Blog.cshtml", posts);
     }
 
@@ -850,7 +884,10 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         BlogPost post;
         if (dto.Id > 0)
         {
-            var existing = await _db.BlogPosts.FindAsync(dto.Id);
+            var existing = await _db.BlogPosts
+                .Include(b => b.BlogImages)
+                .Include(b => b.BlogSubscriptions)
+                .FirstOrDefaultAsync(b => b.Id == dto.Id);
             if (existing == null) return NotFound();
             oldUrl = $"/blog/{existing.Slug}";
             existing.Title = dto.Title;
@@ -858,10 +895,16 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             existing.Summary = dto.Summary;
             existing.Content = dto.Content;
             existing.Author = dto.Author;
-            existing.ImageUrl = dto.ImageUrl;
+            existing.FeaturedImagePath = dto.FeaturedImagePath;
+            existing.ImageUrl = dto.FeaturedImagePath ?? dto.ImageUrl;
+            existing.SeoKeywords = NormalizeKeywordCsv(dto.SeoKeywords);
+            existing.IsFeatureAnnouncement = dto.IsFeatureAnnouncement;
+            existing.EmailSubject = dto.EmailSubject;
             if (!existing.IsPublished && dto.IsPublished)
                 existing.PublishedAt = DateTime.UtcNow;
             existing.IsPublished = dto.IsPublished;
+            await SyncBlogImagesAsync(existing, dto.GalleryImages ?? new List<string>());
+            await SyncBlogSubscriptionsAsync(existing, dto.SelectedSubscriptionPlans ?? new List<string>());
             post = existing;
         }
         else
@@ -873,11 +916,18 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 Summary = dto.Summary,
                 Content = dto.Content,
                 Author = dto.Author,
-                ImageUrl = dto.ImageUrl,
+                FeaturedImagePath = dto.FeaturedImagePath,
+                ImageUrl = dto.FeaturedImagePath ?? dto.ImageUrl,
+                SeoKeywords = NormalizeKeywordCsv(dto.SeoKeywords),
+                IsFeatureAnnouncement = dto.IsFeatureAnnouncement,
+                EmailSubject = dto.EmailSubject,
                 IsPublished = dto.IsPublished,
                 PublishedAt = DateTime.UtcNow
             };
             _db.BlogPosts.Add(post);
+            await _db.SaveChangesAsync();
+            await SyncBlogImagesAsync(post, dto.GalleryImages ?? new List<string>());
+            await SyncBlogSubscriptionsAsync(post, dto.SelectedSubscriptionPlans ?? new List<string>());
         }
 
         await _db.SaveChangesAsync();
@@ -887,10 +937,10 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             : (post.Summary ?? post.Title);
         var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
             ? dto.MetaKeywords!.Trim()
-            : "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' ');
+            : (!string.IsNullOrWhiteSpace(post.SeoKeywords) ? post.SeoKeywords! : "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' '));
         var ogImage = !string.IsNullOrWhiteSpace(dto.OgImage)
             ? dto.OgImage!.Trim()
-            : (string.IsNullOrWhiteSpace(post.ImageUrl) ? null : post.ImageUrl);
+            : (string.IsNullOrWhiteSpace(post.FeaturedImagePath ?? post.ImageUrl) ? null : (post.FeaturedImagePath ?? post.ImageUrl));
 
         await UpsertSeoForContentAsync(
             newUrl: $"/blog/{post.Slug}",
@@ -902,7 +952,17 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
             changeFreq: "weekly",
             includeInSitemap: post.IsPublished,
             ogImage: ogImage);
-        return Ok(new { success = true });
+
+        var warning = "";
+        var keywordCount = SplitKeywords(post.SeoKeywords).Count;
+        if (keywordCount > 0 && keywordCount < 15)
+            warning = "Fewer than 15 keywords saved. Add more for better SEO.";
+
+        var queuedRecipients = 0;
+        if (dto.SendAnnouncementEmail && post.IsFeatureAnnouncement && post.IsPublished)
+            queuedRecipients = await QueueFeatureAnnouncementEmailAsync(post.Id, dto.SendToAllSubscribers);
+
+        return Ok(new { success = true, warning, queuedRecipients, keywordCount });
     }
 
     public class SaveBlogDto
@@ -914,6 +974,14 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         public string? Content { get; set; }
         public string? Author { get; set; }
         public string? ImageUrl { get; set; }
+        public string? FeaturedImagePath { get; set; }
+        public List<string>? GalleryImages { get; set; }
+        public string? SeoKeywords { get; set; }
+        public bool IsFeatureAnnouncement { get; set; }
+        public string? EmailSubject { get; set; }
+        public bool SendToAllSubscribers { get; set; }
+        public List<string>? SelectedSubscriptionPlans { get; set; }
+        public bool SendAnnouncementEmail { get; set; }
         public bool IsPublished { get; set; }
         // SEO overrides (optional — typically supplied by the AI SEO Assistant)
         public string? MetaDescription { get; set; }
@@ -925,13 +993,283 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> DeleteBlog(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var post = await _db.BlogPosts.FindAsync(id);
+        var post = await _db.BlogPosts
+            .Include(b => b.BlogImages)
+            .FirstOrDefaultAsync(b => b.Id == id);
         if (post == null) return NotFound();
         var url = $"/blog/{post.Slug}";
+        _imageUploadService.DeleteImage(post.FeaturedImagePath);
+        foreach (var image in post.BlogImages)
+            _imageUploadService.DeleteImage(image.ImagePath);
         _db.BlogPosts.Remove(post);
         await _db.SaveChangesAsync();
         await RemoveSeoByUrlAsync(url);
         return Ok(new { success = true });
+    }
+
+    [HttpPost("/api/superadmin/images/upload")]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<IActionResult> UploadImage([FromForm] IFormFile? file, [FromForm] string? type)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        if (file == null) return BadRequest(new { error = "Please select an image file to upload." });
+
+        var folder = (type ?? "").StartsWith("document", StringComparison.OrdinalIgnoreCase) ? "documents" : "blogs";
+        var result = await _imageUploadService.SaveImageAsync(file, folder);
+        if (!result.Success) return BadRequest(new { error = result.ErrorMessage });
+        return Ok(new { success = true, imagePath = result.ImagePath });
+    }
+
+    public class SuggestKeywordsRequest
+    {
+        public string? Title { get; set; }
+        public string? Content { get; set; }
+    }
+
+    [HttpPost("/api/superadmin/blog/suggest-keywords")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestBlogKeywords([FromBody] SuggestKeywordsRequest request)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var keywords = _seoKeywordSuggestionService.SuggestKeywords(request?.Title, request?.Content, 15);
+        return Ok(new { success = true, keywords });
+    }
+
+    public class AnnouncementPreviewRequest
+    {
+        public int BlogId { get; set; }
+        public bool SendToAllSubscribers { get; set; }
+        public List<string>? SelectedSubscriptionPlans { get; set; }
+    }
+
+    [HttpPost("/api/superadmin/blog/announcement/preview")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PreviewAnnouncementRecipients([FromBody] AnnouncementPreviewRequest request)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var query = request.BlogId > 0
+            ? GetAnnouncementRecipientsQuery(request.BlogId, request.SendToAllSubscribers)
+            : GetAnnouncementRecipientsForPlansQuery(request.SelectedSubscriptionPlans ?? new List<string>(), request.SendToAllSubscribers);
+
+        var count = await query
+            .Select(u => u.Email)
+            .Distinct()
+            .CountAsync();
+
+        return Ok(new { success = true, recipientCount = count });
+    }
+
+    [HttpPost("/api/superadmin/blog/{id}/announcement/resend-failed")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResendFailedAnnouncementEmails(int id)
+    {
+        if (!await IsSuperAdminAsync()) return StatusCode(403);
+        var blogExists = await _db.BlogPosts.AnyAsync(b => b.Id == id);
+        if (!blogExists) return NotFound();
+
+        var failedLogs = await _db.BlogAnnouncementEmailLogs
+            .Where(l => l.BlogId == id && l.Status == "Failed")
+            .ToListAsync();
+
+        foreach (var item in failedLogs)
+        {
+            item.Status = "Queued";
+            item.ErrorMessage = null;
+            item.SentAt = null;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, queued = failedLogs.Count });
+    }
+
+    private async Task SyncBlogImagesAsync(BlogPost post, List<string> galleryImages)
+    {
+        var cleaned = galleryImages
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var existing = await _db.BlogImages.Where(i => i.BlogId == post.Id).ToListAsync();
+        var remove = existing.Where(x => !cleaned.Contains(x.ImagePath, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var image in remove)
+        {
+            _imageUploadService.DeleteImage(image.ImagePath);
+            _db.BlogImages.Remove(image);
+        }
+
+        for (var index = 0; index < cleaned.Count; index++)
+        {
+            var path = cleaned[index];
+            var entity = existing.FirstOrDefault(i => string.Equals(i.ImagePath, path, StringComparison.OrdinalIgnoreCase));
+            if (entity == null)
+            {
+                _db.BlogImages.Add(new BlogImage
+                {
+                    BlogId = post.Id,
+                    ImagePath = path,
+                    SortOrder = index,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                entity.SortOrder = index;
+            }
+        }
+    }
+
+    private async Task SyncDocumentImagesAsync(DocArticle article, List<string> galleryImages)
+    {
+        var cleaned = galleryImages
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var existing = await _db.DocumentImages.Where(i => i.DocumentId == article.Id).ToListAsync();
+        var remove = existing.Where(x => !cleaned.Contains(x.ImagePath, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var image in remove)
+        {
+            _imageUploadService.DeleteImage(image.ImagePath);
+            _db.DocumentImages.Remove(image);
+        }
+
+        for (var index = 0; index < cleaned.Count; index++)
+        {
+            var path = cleaned[index];
+            var entity = existing.FirstOrDefault(i => string.Equals(i.ImagePath, path, StringComparison.OrdinalIgnoreCase));
+            if (entity == null)
+            {
+                _db.DocumentImages.Add(new DocumentImage
+                {
+                    DocumentId = article.Id,
+                    ImagePath = path,
+                    SortOrder = index,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                entity.SortOrder = index;
+            }
+        }
+    }
+
+    private async Task SyncBlogSubscriptionsAsync(BlogPost post, List<string> selectedPlans)
+    {
+        var normalizedPlans = selectedPlans
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var selectedSubscriptionIds = await _db.SubscriptionPlans
+            .Where(s => normalizedPlans.Contains(s.Plan.ToString()))
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        var existing = await _db.BlogSubscriptions.Where(x => x.BlogId == post.Id).ToListAsync();
+        _db.BlogSubscriptions.RemoveRange(existing.Where(e => !selectedSubscriptionIds.Contains(e.SubscriptionId)));
+
+        var existingIds = existing.Select(e => e.SubscriptionId).ToHashSet();
+        foreach (var subId in selectedSubscriptionIds)
+        {
+            if (existingIds.Contains(subId)) continue;
+            _db.BlogSubscriptions.Add(new BlogSubscription { BlogId = post.Id, SubscriptionId = subId });
+        }
+    }
+
+    private IQueryable<ApplicationUser> GetAnnouncementRecipientsQuery(int blogId, bool sendToAllSubscribers)
+    {
+        var eligibleUsers = _db.Users
+            .Cast<ApplicationUser>()
+            .Where(u => !string.IsNullOrWhiteSpace(u.Email) && u.IsSubscribedToAnnouncements);
+
+        if (sendToAllSubscribers)
+            return eligibleUsers;
+
+        var subscriptionIds = _db.BlogSubscriptions
+            .Where(bs => bs.BlogId == blogId)
+            .Select(bs => bs.SubscriptionId);
+
+        return eligibleUsers.Where(u => u.Subscription != null && subscriptionIds.Contains(u.Subscription.Id));
+    }
+
+    private IQueryable<ApplicationUser> GetAnnouncementRecipientsForPlansQuery(List<string> selectedPlans, bool sendToAllSubscribers)
+    {
+        var eligibleUsers = _db.Users
+            .Cast<ApplicationUser>()
+            .Where(u => !string.IsNullOrWhiteSpace(u.Email) && u.IsSubscribedToAnnouncements);
+
+        if (sendToAllSubscribers)
+            return eligibleUsers;
+
+        var normalizedPlans = selectedPlans
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return eligibleUsers.Where(u => u.Subscription != null && normalizedPlans.Contains(u.Subscription.Plan.ToString()));
+    }
+
+    private async Task<int> QueueFeatureAnnouncementEmailAsync(int blogId, bool sendToAllSubscribers)
+    {
+        var alreadyQueuedOrSent = await _db.BlogAnnouncementEmailLogs
+            .AnyAsync(l => l.BlogId == blogId && (l.Status == "Queued" || l.Status == "Sent"));
+        if (alreadyQueuedOrSent) return 0;
+
+        var recipientEmails = await GetAnnouncementRecipientsQuery(blogId, sendToAllSubscribers)
+            .Select(u => u.Email!)
+            .Distinct()
+            .ToListAsync();
+
+        var existingEmails = await _db.BlogAnnouncementEmailLogs
+            .Where(l => l.BlogId == blogId)
+            .Select(l => l.SubscriberEmail)
+            .ToListAsync();
+
+        var toQueue = recipientEmails
+            .Except(existingEmails, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var email in toQueue)
+        {
+            _db.BlogAnnouncementEmailLogs.Add(new BlogAnnouncementEmailLog
+            {
+                BlogId = blogId,
+                SubscriberEmail = email,
+                Status = "Queued",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        return toQueue.Count;
+    }
+
+    private static string? NormalizeKeywordCsv(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var unique = SplitKeywords(raw).Distinct(StringComparer.OrdinalIgnoreCase);
+        return string.Join(", ", unique);
+    }
+
+    private static List<string> SplitKeywords(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new List<string>();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public class SubscriptionOptionDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
     }
 
     // ──── AI content generation (Blog & Docs SEO assistant) ────

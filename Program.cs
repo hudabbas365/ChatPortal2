@@ -182,6 +182,7 @@ builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
 builder.Services.AddScoped<ITokenBudgetService, TokenBudgetService>();
 builder.Services.AddScoped<IContentSeeder, ContentSeeder>();
+builder.Services.AddSingleton<ISeoKeywordSuggestionService, SeoKeywordSuggestionService>();
 builder.Services.AddScoped<ITrialEnforcementService, TrialEnforcementService>();
 builder.Services.AddHostedService<NotificationSeedingService>();
 builder.Services.AddHttpClient("PayPal");

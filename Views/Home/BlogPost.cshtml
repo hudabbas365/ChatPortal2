@@ -4,12 +4,21 @@
     ViewData["OgType"] = "article";
     var seoEntry = ViewBag.SeoEntry as AIInsights.Models.SeoEntry;
     var hasStructured = !string.IsNullOrEmpty(seoEntry?.StructuredData);
+    var featuredImage = !string.IsNullOrWhiteSpace(Model.FeaturedImagePath) ? Model.FeaturedImagePath : Model.ImageUrl;
+    var keywordContent = string.IsNullOrWhiteSpace(Model.SeoKeywords) ? (ViewBag.BlogSeoKeywords as string) : Model.SeoKeywords;
     var canonical = !string.IsNullOrEmpty(seoEntry?.CanonicalUrl)
         ? seoEntry.CanonicalUrl
         : $"{Context.Request.Scheme}://{Context.Request.Host}/blog/{Model.Slug}";
 }
 
 @section Head {
+    @if (!string.IsNullOrWhiteSpace(keywordContent))
+    {
+        <meta name="keywords" content="@keywordContent" />
+        <meta property="og:keywords" content="@keywordContent" />
+        <meta name="twitter:label1" content="Keywords" />
+        <meta name="twitter:data1" content="@keywordContent" />
+    }
     @if (!hasStructured)
     {
         <script type="application/ld+json">
@@ -21,8 +30,8 @@
             "dateModified": "@Model.PublishedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")",
             "author": { "@@type": "Person", "name": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Author ?? "AI Insights 365")) },
             "publisher": { "@@type": "Organization", "name": "AI Insights 365" },
-            "mainEntityOfPage": { "@@type": "WebPage", "@@id": "@canonical" }@if (!string.IsNullOrWhiteSpace(Model.ImageUrl)) {<text>,
-            "image": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ImageUrl))</text>}
+            "mainEntityOfPage": { "@@type": "WebPage", "@@id": "@canonical" }@if (!string.IsNullOrWhiteSpace(featuredImage)) {<text>,
+            "image": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(featuredImage))</text>}
         }
         </script>
     }
@@ -46,9 +55,20 @@
 <section class="cp-section">
     <div class="container">
         <div class="glass-card p-4 p-md-5">
-            @if (!string.IsNullOrWhiteSpace(Model.ImageUrl))
+            @if (!string.IsNullOrWhiteSpace(featuredImage))
             {
-                <img src="@Model.ImageUrl" alt="@Model.Title" class="img-fluid rounded mb-4" itemprop="image" />
+                <img src="@featuredImage" alt="@Model.Title" class="img-fluid rounded mb-4" itemprop="image" />
+            }
+            @if (Model.BlogImages != null && Model.BlogImages.Count > 0)
+            {
+                <div class="row g-3 mb-4">
+                    @foreach (var image in Model.BlogImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+                    {
+                        <div class="col-6 col-md-4">
+                            <img src="@image.ImagePath" alt="@(string.IsNullOrWhiteSpace(image.AltText) ? Model.Title : image.AltText)" class="img-fluid rounded" />
+                        </div>
+                    }
+                </div>
             }
             <div itemprop="articleBody">
                 @Html.Raw(Model.Content)
