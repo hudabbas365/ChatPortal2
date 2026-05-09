@@ -34,7 +34,7 @@ public class SmtpFeatureAnnouncementEmailSender : IFeatureAnnouncementEmailSende
             EnableSsl = enableSsl
         };
 
-        if (!string.IsNullOrWhiteSpace(userName))
+        if (!string.IsNullOrWhiteSpace(userName) && !string.IsNullOrWhiteSpace(password))
             smtp.Credentials = new NetworkCredential(userName, password);
 
         using var message = new MailMessage

@@ -7,6 +7,7 @@ namespace AIInsights.SuperAdmin.Services;
 public class BlogAnnouncementEmailQueueService : BackgroundService
 {
     private const int BatchSize = 50;
+    private const int ErrorMessageMaxLength = 500;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<BlogAnnouncementEmailQueueService> _logger;
     private readonly TimeSpan _interval = TimeSpan.FromSeconds(20);
@@ -94,7 +95,7 @@ public class BlogAnnouncementEmailQueueService : BackgroundService
             if (lastError != null)
             {
                 log.Status = "Failed";
-                log.ErrorMessage = lastError.Message.Length > 500 ? lastError.Message[..500] : lastError.Message;
+                log.ErrorMessage = lastError.Message.Length > ErrorMessageMaxLength ? lastError.Message[..ErrorMessageMaxLength] : lastError.Message;
                 _logger.LogWarning(lastError, "Feature announcement send failed for BlogId={BlogId}, recipient masked.", log.BlogId);
             }
         }

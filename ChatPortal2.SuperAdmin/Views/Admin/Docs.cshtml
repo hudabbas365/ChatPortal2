@@ -130,6 +130,11 @@
     var featuredImagePath = '';
     var galleryImages = [];
 
+    function getCsrfToken() {
+        var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
     function openForm() {
         editingDocId = 0;
         document.getElementById('docId').value = '0';
@@ -205,7 +210,11 @@
             var fd = new FormData();
             fd.append('file', file);
             fd.append('type', type);
-            var resp = await fetch('/api/superadmin/images/upload', { method: 'POST', body: fd });
+            var resp = await fetch('/api/superadmin/images/upload', {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': getCsrfToken() },
+                body: fd
+            });
             var data = await resp.json();
             if (!resp.ok || !data.success) { alert(data.error || 'Upload failed'); continue; }
             if (type === 'document-featured') {

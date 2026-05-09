@@ -188,6 +188,11 @@
     var galleryImages = [];
     var keywords = [];
 
+    function getCsrfToken() {
+        var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
     function openForm() {
         editingPostId = 0;
         document.getElementById('postId').value = '0';
@@ -313,7 +318,7 @@
         try {
             var resp = await fetch('/api/superadmin/blog/suggest-keywords', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getCsrfToken() },
                 body: JSON.stringify({ title: document.getElementById('postTitle').value, content: document.getElementById('postContent').value })
             });
             var data = await resp.json();
@@ -337,7 +342,11 @@
             var fd = new FormData();
             fd.append('file', file);
             fd.append('type', type);
-            var resp = await fetch('/api/superadmin/images/upload', { method: 'POST', body: fd });
+            var resp = await fetch('/api/superadmin/images/upload', {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': getCsrfToken() },
+                body: fd
+            });
             var data = await resp.json();
             if (!resp.ok || !data.success) { alert(data.error || 'Upload failed'); continue; }
             if (type === 'blog-featured') {
@@ -385,7 +394,7 @@
 
         if (sendEmail && payload.isFeatureAnnouncement && payload.isPublished) {
             var previewResp = await fetch('/api/superadmin/blog/announcement/preview', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getCsrfToken() },
                 body: JSON.stringify({ blogId: editingPostId || 0, sendToAllSubscribers: payload.sendToAllSubscribers, selectedSubscriptionPlans: selectedPlans })
             });
             if (previewResp.ok) {
@@ -408,7 +417,10 @@
     }
 
     function resendFailed(id) {
-        fetch('/api/superadmin/blog/' + id + '/announcement/resend-failed', { method: 'POST' })
+        fetch('/api/superadmin/blog/' + id + '/announcement/resend-failed', {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': getCsrfToken() }
+        })
             .then(r => r.json())
             .then(d => {
                 if (d.success) {

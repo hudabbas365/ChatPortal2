@@ -1008,6 +1008,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/images/upload")]
+    [ValidateAntiForgeryToken]
     [RequestSizeLimit(6 * 1024 * 1024)]
     public async Task<IActionResult> UploadImage([FromForm] IFormFile? file, [FromForm] string? type)
     {
@@ -1027,6 +1028,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/blog/suggest-keywords")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> SuggestBlogKeywords([FromBody] SuggestKeywordsRequest request)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -1042,6 +1044,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/blog/announcement/preview")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewAnnouncementRecipients([FromBody] AnnouncementPreviewRequest request)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
@@ -1058,6 +1061,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     }
 
     [HttpPost("/api/superadmin/blog/{id}/announcement/resend-failed")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ResendFailedAnnouncementEmails(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
