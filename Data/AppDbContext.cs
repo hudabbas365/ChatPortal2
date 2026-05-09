@@ -24,6 +24,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
+    public DbSet<BlogImage> BlogImages => Set<BlogImage>();
+    public DbSet<DocumentImage> DocumentImages => Set<DocumentImage>();
+    public DbSet<BlogSubscription> BlogSubscriptions => Set<BlogSubscription>();
+    public DbSet<BlogAnnouncementEmailLog> BlogAnnouncementEmailLogs => Set<BlogAnnouncementEmailLog>();
     public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
     public DbSet<SharedReport> SharedReports => Set<SharedReport>();
     public DbSet<ReportRevision> ReportRevisions => Set<ReportRevision>();
@@ -54,6 +58,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithOne(s => s.User)
             .HasForeignKey<SubscriptionPlan>(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.IsSubscribedToAnnouncements)
+            .HasDefaultValue(true);
 
         builder.Entity<Workspace>()
             .HasOne(w => w.Organization)
@@ -247,6 +255,57 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(p => p.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogImage>()
+            .HasOne(i => i.Blog)
+            .WithMany(b => b.BlogImages)
+            .HasForeignKey(i => i.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogImage>()
+            .HasIndex(i => new { i.BlogId, i.SortOrder });
+
+        builder.Entity<DocumentImage>()
+            .HasOne(i => i.Document)
+            .WithMany(d => d.DocumentImages)
+            .HasForeignKey(i => i.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<DocumentImage>()
+            .HasIndex(i => new { i.DocumentId, i.SortOrder });
+
+        builder.Entity<BlogSubscription>()
+            .HasKey(bs => new { bs.BlogId, bs.SubscriptionId });
+
+        builder.Entity<BlogSubscription>()
+            .HasOne(bs => bs.Blog)
+            .WithMany(b => b.BlogSubscriptions)
+            .HasForeignKey(bs => bs.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogSubscription>()
+            .HasOne(bs => bs.Subscription)
+            .WithMany()
+            .HasForeignKey(bs => bs.SubscriptionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasOne(l => l.Blog)
+            .WithMany(b => b.AnnouncementEmailLogs)
+            .HasForeignKey(l => l.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasIndex(l => new { l.BlogId, l.SubscriberEmail })
+            .IsUnique();
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .Property(l => l.SubscriberEmail)
+            .HasMaxLength(320);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .Property(l => l.Status)
+            .HasMaxLength(20);
 
         builder.Entity<TransformDraft>()
             .HasIndex(d => d.Guid)

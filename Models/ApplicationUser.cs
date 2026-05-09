@@ -24,4 +24,5 @@ public class ApplicationUser : IdentityUser
 
     // Force-password-reset flag (D22)
     public bool MustChangePassword { get; set; } = false;
+    public bool IsSubscribedToAnnouncements { get; set; } = true;
 }

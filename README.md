@@ -9,6 +9,9 @@ AI-Powered Data Conversations Portal
 - Iframe embeddable chat widget
 - Soft blue modern design theme
 - Multi-tenant organization support
+- Super Admin Blog/Docs image management (featured image + gallery uploads with validation)
+- Blog SEO keyword suggestions (15+ content-based candidates) and keyword meta rendering
+- Super Admin feature-announcement blog emails via SMTP background queue (auditable queued/sent/failed statuses)
 
 ## Tech Stack
 - ASP.NET Core 8 MVC + Web API
@@ -112,3 +115,15 @@ The SuperAdmin project requires its own JWT key:
 cd ChatPortal2.SuperAdmin
 dotnet user-secrets set "Jwt:Key" "your-superadmin-jwt-secret-key-here"
 ```
+
+SMTP settings for feature announcements are read from:
+
+- `Email:Smtp:Host`
+- `Email:Smtp:Port`
+- `Email:Smtp:EnableSsl`
+- `Email:Smtp:UserName`
+- `Email:Smtp:Password`
+- `Email:Smtp:FromAddress`
+- `Email:Smtp:FromName`
+
+Development placeholders are included in `appsettings.Development.json`.
