@@ -85,6 +85,7 @@ public class HomeController : Controller
         await SetSeoAsync("/blog");
         var posts = await _db.BlogPosts
             .Where(p => p.IsPublished)
+            .Include(p => p.BlogImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
             .OrderByDescending(p => p.PublishedAt)
             .ToListAsync();
         return View(posts);
@@ -94,9 +95,11 @@ public class HomeController : Controller
     public async Task<IActionResult> BlogPost(string slug)
     {
         var post = await _db.BlogPosts
+            .Include(p => p.BlogImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
             .FirstOrDefaultAsync(p => p.Slug == slug && p.IsPublished);
         if (post == null) return NotFound();
         await SetSeoAsync($"/blog/{slug}");
+        ViewBag.BlogSeoKeywords = post.SeoKeywords;
         return View(post);
     }
 
@@ -104,6 +107,7 @@ public class HomeController : Controller
     public async Task<IActionResult> DocArticle(string slug)
     {
         var article = await _db.DocArticles
+            .Include(d => d.DocumentImages.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
             .FirstOrDefaultAsync(d => d.Slug == slug && d.IsPublished);
         if (article == null) return NotFound();
         await SetSeoAsync($"/docs/{slug}");
