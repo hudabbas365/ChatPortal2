@@ -60,6 +60,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey<SubscriptionPlan>(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.IsSubscribedToAnnouncements)
+            .HasDefaultValue(true);
+
         builder.Entity<Workspace>()
             .HasOne(w => w.Organization)
             .WithMany(o => o.Workspaces)

@@ -1,19 +1,50 @@
+@using AIInsights.Models
 @model List<AIInsights.Models.BlogPost>
 @{
     ViewData["Title"] = "Blog";
     ViewData["ActivePage"] = "blog";
     var jsonOpts = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+    var postsJson = Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Select(post => new
+    {
+        post.Id,
+        post.Title,
+        post.Slug,
+        post.Summary,
+        post.Content,
+        post.Author,
+        post.ImageUrl,
+        post.FeaturedImagePath,
+        post.SeoKeywords,
+        post.IsFeatureAnnouncement,
+        post.EmailSubject,
+        post.SendToAllSubscribers,
+        post.IsPublished,
+        post.PublishedAt,
+        GalleryImages = post.BlogImages.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath, i.SortOrder, i.AltText }),
+        SubscriptionIds = post.BlogSubscriptions.Select(i => i.SubscriptionId),
+        AnnouncementStats = new
+        {
+            Queued = post.AnnouncementEmailLogs.Count(l => l.Status == "Queued"),
+            Sent = post.AnnouncementEmailLogs.Count(l => l.Status == "Sent"),
+            Failed = post.AnnouncementEmailLogs.Count(l => l.Status == "Failed")
+        }
+    }), jsonOpts));
+    var plansJson = Html.Raw(System.Text.Json.JsonSerializer.Serialize(new[]
+    {
+        new { Id = (int)PlanType.FreeTrial, Name = "Free Trial" },
+        new { Id = (int)PlanType.Professional, Name = "Professional" },
+        new { Id = (int)PlanType.Enterprise, Name = "Enterprise" }
+    }, jsonOpts));
 }
 
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h1 class="page-title">Blog Posts</h1>
-        <p class="page-desc">Manage news, updates, and articles for the public blog.</p>
+        <p class="page-desc">Manage blog posts, SEO keywords, galleries, and feature-announcement emails.</p>
     </div>
     <button class="btn-primary-sm" onclick="openForm()"><i class="bi bi-plus-lg"></i>New Post</button>
 </div>
 
-<!-- posts list -->
 <div class="card-panel">
     <div class="card-panel-title">All Posts</div>
     @if (Model.Count == 0)
@@ -26,52 +57,75 @@
             <thead>
                 <tr>
                     <th>Title</th>
-                    <th>Slug</th>
-                    <th>Author</th>
                     <th>Status</th>
-                    <th>Published</th>
+                    <th>Images</th>
+                    <th>SEO</th>
+                    <th>Announcement</th>
                     <th></th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var post in Model)
-                {
-                    <tr>
-                        <td style="font-weight:600;color:#1e3a5f;">@post.Title</td>
-                        <td><code style="color:#4a8ec9;">@post.Slug</code></td>
-                        <td>@(post.Author ?? "—")</td>
-                        <td>
-                            @if (post.IsPublished)
-                            {
-                                <span class="badge-sm badge-emerald"><i class="bi bi-check-circle-fill"></i>Published</span>
-                            }
-                            else
-                            {
-                                <span class="badge-sm badge-amber"><i class="bi bi-pencil-fill"></i>Draft</span>
-                            }
-                        </td>
-                        <td>@post.PublishedAt.ToString("MMM dd, yyyy")</td>
-                        <td>
-                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;" onclick='editPost(@System.Text.Json.JsonSerializer.Serialize(post, jsonOpts))'><i class="bi bi-pencil"></i></button>
-                            <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;border-color:#ef4444;color:#ef4444;" onclick="deletePost(@post.Id)"><i class="bi bi-trash"></i></button>
-                        </td>
-                    </tr>
-                }
+            @foreach (var post in Model)
+            {
+                var queued = post.AnnouncementEmailLogs.Count(l => l.Status == "Queued");
+                var sent = post.AnnouncementEmailLogs.Count(l => l.Status == "Sent");
+                var failed = post.AnnouncementEmailLogs.Count(l => l.Status == "Failed");
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#1e3a5f;">@post.Title</div>
+                        <div style="font-size:.73rem;color:var(--text-muted);"><code>@post.Slug</code></div>
+                    </td>
+                    <td>
+                        @if (post.IsPublished)
+                        {
+                            <span class="badge-sm badge-emerald"><i class="bi bi-check-circle-fill"></i>Published</span>
+                        }
+                        else
+                        {
+                            <span class="badge-sm badge-amber"><i class="bi bi-pencil-fill"></i>Draft</span>
+                        }
+                    </td>
+                    <td>
+                        <div style="font-size:.78rem;color:var(--text-dim);">Featured: @(string.IsNullOrWhiteSpace(post.FeaturedImagePath) ? "No" : "Yes")</div>
+                        <div style="font-size:.78rem;color:var(--text-muted);">Gallery: @post.BlogImages.Count</div>
+                    </td>
+                    <td>
+                        <div style="font-size:.78rem;color:var(--text-dim);">@((post.SeoKeywords ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).Count()) keywords</div>
+                    </td>
+                    <td>
+                        @if (post.IsFeatureAnnouncement)
+                        {
+                            <div style="display:flex;flex-wrap:wrap;gap:.35rem;">
+                                <span class="badge-sm badge-indigo">Queued: @queued</span>
+                                <span class="badge-sm badge-emerald">Sent: @sent</span>
+                                <span class="badge-sm badge-rose">Failed: @failed</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <span style="font-size:.78rem;color:var(--text-muted);">—</span>
+                        }
+                    </td>
+                    <td>
+                        <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;" onclick="editPost(@post.Id)"><i class="bi bi-pencil"></i></button>
+                        <button class="btn-ghost-sm" style="padding:.3rem .6rem;font-size:.78rem;border-color:#ef4444;color:#ef4444;" onclick="deletePost(@post.Id)"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+            }
             </tbody>
         </table>
     }
 </div>
 
-<!-- modal overlay -->
-<div id="blogModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center;">
-    <div style="background:#fff;border:1px solid var(--border);border-radius:14px;width:680px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:1.75rem;">
+<div id="blogModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:1rem;">
+    <div style="background:#fff;border:1px solid var(--border);border-radius:14px;width:980px;max-width:96vw;max-height:92vh;overflow-y:auto;padding:1.75rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
             <h3 id="formTitle" style="font-size:1.05rem;font-weight:700;color:#1e3a5f;">New Post</h3>
             <button onclick="closeForm()" style="background:none;border:none;font-size:1.2rem;color:var(--text-muted);cursor:pointer;"><i class="bi bi-x-lg"></i></button>
         </div>
+        <div id="blogFormAlert" style="display:none;margin-bottom:1rem;padding:.7rem .85rem;border-radius:10px;font-size:.82rem;"></div>
         <input type="hidden" id="postId" value="0" />
 
-        <!-- AI SEO Assistant -->
         <div style="background:linear-gradient(135deg,#eef4ff 0%,#f4ecff 100%);border:1px solid #d6def0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem;">
                 <div style="font-size:.82rem;font-weight:700;color:#3b3380;display:flex;align-items:center;gap:.4rem;">
@@ -80,185 +134,499 @@
                 <span id="aiStatus" style="font-size:.72rem;color:var(--text-muted);"></span>
             </div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem;">
-                <input id="aiTopic" type="text" placeholder="Topic / angle (optional, e.g. 'Power BI vs SQL for retail dashboards')"
-                       style="flex:1;min-width:220px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
-                <input id="aiKeywords" type="text" placeholder="Seed keywords (comma-separated)"
-                       style="flex:1;min-width:200px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
+                <input id="aiTopic" type="text" placeholder="Topic / angle (optional)" style="flex:1;min-width:220px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
+                <input id="aiKeywords" type="text" placeholder="Seed keywords (comma-separated)" style="flex:1;min-width:200px;padding:.45rem .65rem;border:1px solid #c8d1e8;border-radius:7px;font-size:.8rem;background:#fff;" />
             </div>
             <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
-                <button type="button" class="btn-primary-sm" style="background:#5b3df0;border-color:#5b3df0;" onclick="aiGenerate('all')"><i class="bi bi-magic"></i>Generate Everything (~2000 words)</button>
-                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('slug')"><i class="bi bi-stars"></i>Slug</button>
-                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('summary')"><i class="bi bi-stars"></i>Summary / Meta</button>
-                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('content')"><i class="bi bi-stars"></i>Content</button>
+                <button type="button" class="btn-primary-sm" style="background:#5b3df0;border-color:#5b3df0;" onclick="aiGenerate('all')"><i class="bi bi-magic"></i>Generate Everything</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('slug')">Slug</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('summary')">Summary</button>
+                <button type="button" class="btn-ghost-sm" onclick="aiGenerate('content')">Content</button>
             </div>
             <div id="aiPreview" style="display:none;margin-top:.6rem;padding:.55rem .7rem;background:#fff;border:1px dashed #c8d1e8;border-radius:7px;font-size:.74rem;color:#3b3380;line-height:1.5;"></div>
         </div>
 
-        <div style="margin-bottom:.85rem;">
-            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Title</label>
-            <input id="postTitle" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="My Awesome Post" />
-        </div>
-        <div style="margin-bottom:.85rem;">
-            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Slug</label>
-            <input id="postSlug" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="my-awesome-post" />
-        </div>
-        <div style="display:flex;gap:.75rem;margin-bottom:.85rem;">
-            <div style="flex:1;">
-                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Author</label>
-                <input id="postAuthor" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="Admin" />
+        <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:1rem;align-items:start;">
+            <div>
+                <div style="margin-bottom:.85rem;">
+                    <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Title</label>
+                    <input id="postTitle" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;" placeholder="My Awesome Post" />
+                </div>
+                <div style="display:flex;gap:.75rem;margin-bottom:.85rem;">
+                    <div style="flex:1;">
+                        <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Slug</label>
+                        <input id="postSlug" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;" placeholder="my-awesome-post" />
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Author</label>
+                        <input id="postAuthor" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;" placeholder="Admin" />
+                    </div>
+                </div>
+                <div style="margin-bottom:.85rem;">
+                    <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Summary</label>
+                    <textarea id="postSummary" rows="2" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;resize:vertical;" placeholder="Brief summary for listing pages..."></textarea>
+                </div>
+                <div style="margin-bottom:.85rem;">
+                    <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Content (HTML or Markdown)</label>
+                    <textarea id="postContent" rows="12" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;resize:vertical;" placeholder="Full post content..."></textarea>
+                </div>
+                <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;">
+                    <input id="postPublished" type="checkbox" checked />
+                    <label for="postPublished" style="font-size:.85rem;font-weight:500;color:var(--text-dim);">Published</label>
+                </div>
             </div>
-            <div style="flex:1;">
-                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Image URL (optional)</label>
-                <input id="postImage" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);" placeholder="https://..." />
+            <div>
+                <div class="card-panel" style="padding:1rem;margin-bottom:1rem;">
+                    <div class="card-panel-title" style="margin-bottom:.7rem;">Featured Image</div>
+                    <input id="postFeaturedImageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/*" style="display:block;margin-bottom:.6rem;font-size:.8rem;" />
+                    <div id="postFeaturedPreview"></div>
+                    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.45rem;">JPG, JPEG, PNG, WEBP, GIF up to 5 MB.</div>
+                </div>
+
+                <div class="card-panel" style="padding:1rem;margin-bottom:1rem;">
+                    <div class="card-panel-title" style="margin-bottom:.7rem;">Gallery / Content Images</div>
+                    <input id="postGalleryInput" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.gif,image/*" style="display:block;margin-bottom:.6rem;font-size:.8rem;" />
+                    <div id="postGalleryList" style="display:flex;flex-direction:column;gap:.75rem;"></div>
+                </div>
+
+                <div class="card-panel" style="padding:1rem;margin-bottom:1rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.6rem;">
+                        <div class="card-panel-title" style="margin-bottom:0;">SEO Keywords</div>
+                        <button type="button" class="btn-ghost-sm" style="padding:.35rem .7rem;" onclick="suggestKeywords()"><i class="bi bi-lightbulb"></i>Suggest keywords from content</button>
+                    </div>
+                    <div style="display:flex;gap:.5rem;margin-bottom:.55rem;">
+                        <input id="keywordInput" type="text" style="flex:1;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.84rem;" placeholder="Add a keyword and press Enter" />
+                        <button type="button" class="btn-primary-sm" style="padding:.45rem .8rem;" onclick="addKeywordFromInput()">Add</button>
+                    </div>
+                    <div id="keywordChips" style="display:flex;gap:.4rem;flex-wrap:wrap;"></div>
+                    <div id="keywordWarning" style="margin-top:.55rem;font-size:.76rem;color:#b45309;"></div>
+                    <div id="keywordSuggestions" style="margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem;"></div>
+                </div>
+
+                <div class="card-panel" style="padding:1rem;">
+                    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;">
+                        <input id="isFeatureAnnouncement" type="checkbox" />
+                        <label for="isFeatureAnnouncement" style="font-size:.85rem;font-weight:600;color:var(--text-dim);">Feature announcement blog</label>
+                    </div>
+                    <div id="announcementSection" style="display:none;">
+                        <div style="margin-bottom:.75rem;">
+                            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Email subject (optional)</label>
+                            <input id="emailSubject" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.84rem;" placeholder="New feature: ..." />
+                        </div>
+                        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;">
+                            <input id="sendToAllSubscribers" type="checkbox" checked />
+                            <label for="sendToAllSubscribers" style="font-size:.82rem;color:var(--text-dim);">Send to all subscribers</label>
+                        </div>
+                        <div id="planSelector" style="display:flex;flex-direction:column;gap:.35rem;margin-bottom:.75rem;"></div>
+                        <div id="announcementStats" style="display:none;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;margin-bottom:.75rem;font-size:.8rem;"></div>
+                        <button type="button" id="resendFailedBtn" class="btn-ghost-sm" style="display:none;" onclick="resendFailed()"><i class="bi bi-arrow-repeat"></i>Resend failed</button>
+                    </div>
+                </div>
             </div>
         </div>
-        <div style="margin-bottom:.85rem;">
-            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Summary</label>
-            <textarea id="postSummary" rows="2" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);resize:vertical;" placeholder="Brief summary for listing pages..."></textarea>
-        </div>
-        <div style="margin-bottom:.85rem;">
-            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.3rem;">Content (HTML or Markdown)</label>
-            <textarea id="postContent" rows="10" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem;font-family:inherit;color:var(--text);resize:vertical;" placeholder="Full post content..."></textarea>
-        </div>
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem;">
-            <input id="postPublished" type="checkbox" checked />
-            <label for="postPublished" style="font-size:.85rem;font-weight:500;color:var(--text-dim);">Published</label>
-        </div>
-        <div style="display:flex;gap:.5rem;justify-content:flex-end;">
+
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;">
             <button class="btn-ghost-sm" onclick="closeForm()">Cancel</button>
-            <button class="btn-primary-sm" onclick="savePost()"><i class="bi bi-check-lg"></i>Save Post</button>
+            <button class="btn-ghost-sm" onclick="savePost(false)"><i class="bi bi-check-lg"></i>Save without sending</button>
+            <button class="btn-primary-sm" onclick="savePost(true)"><i class="bi bi-send"></i>Save &amp; send announcement</button>
         </div>
     </div>
 </div>
 
 @section Scripts {
 <script>
-    var editingPostId = 0;
-    // SEO values captured from the AI assistant — sent to /api/superadmin/blog/save
-    // so the SeoEntry row gets meaningful keywords/description instead of generic fallbacks.
-    var aiSeo = { metaDescription: '', metaKeywords: '' };
+const posts = @postsJson;
+const planOptions = @plansJson;
+let editingPost = null;
+let galleryImages = [];
+let featuredImageState = null;
+let keywordList = [];
+let aiSeo = { metaDescription: '', metaKeywords: '' };
 
-    function openForm() {
-        editingPostId = 0;
-        document.getElementById('postId').value = '0';
-        document.getElementById('postTitle').value = '';
-        document.getElementById('postSlug').value = '';
-        document.getElementById('postAuthor').value = '';
-        document.getElementById('postImage').value = '';
-        document.getElementById('postSummary').value = '';
-        document.getElementById('postContent').value = '';
-        document.getElementById('postPublished').checked = true;
-        document.getElementById('formTitle').textContent = 'New Post';
-        aiSeo = { metaDescription: '', metaKeywords: '' };
-        resetAiPanel();
-        document.getElementById('blogModal').style.display = 'flex';
+function openForm() {
+    editingPost = null;
+    document.getElementById('postId').value = '0';
+    document.getElementById('postTitle').value = '';
+    document.getElementById('postSlug').value = '';
+    document.getElementById('postAuthor').value = '';
+    document.getElementById('postSummary').value = '';
+    document.getElementById('postContent').value = '';
+    document.getElementById('postPublished').checked = true;
+    document.getElementById('isFeatureAnnouncement').checked = false;
+    document.getElementById('sendToAllSubscribers').checked = true;
+    document.getElementById('emailSubject').value = '';
+    document.getElementById('formTitle').textContent = 'New Post';
+    galleryImages = [];
+    featuredImageState = null;
+    keywordList = [];
+    aiSeo = { metaDescription: '', metaKeywords: '' };
+    renderFeaturedImage();
+    renderGalleryImages();
+    renderKeywords();
+    renderPlanSelector([]);
+    renderAnnouncementState();
+    setAlert();
+    resetAiPanel();
+    document.getElementById('blogModal').style.display = 'flex';
+}
+
+function editPost(id) {
+    const post = posts.find(item => item.id === id);
+    if (!post) return;
+    editingPost = post;
+    document.getElementById('postId').value = String(post.id);
+    document.getElementById('postTitle').value = post.title || '';
+    document.getElementById('postSlug').value = post.slug || '';
+    document.getElementById('postAuthor').value = post.author || '';
+    document.getElementById('postSummary').value = post.summary || '';
+    document.getElementById('postContent').value = post.content || '';
+    document.getElementById('postPublished').checked = !!post.isPublished;
+    document.getElementById('isFeatureAnnouncement').checked = !!post.isFeatureAnnouncement;
+    document.getElementById('sendToAllSubscribers').checked = !!post.sendToAllSubscribers;
+    document.getElementById('emailSubject').value = post.emailSubject || '';
+    document.getElementById('formTitle').textContent = 'Edit Post';
+    featuredImageState = post.featuredImagePath ? { imagePath: post.featuredImagePath, existing: true } : null;
+    galleryImages = (post.galleryImages || []).map(item => ({ id: item.id, imagePath: item.imagePath, sortOrder: item.sortOrder, altText: item.altText || '', existing: true }));
+    keywordList = splitKeywords(post.seoKeywords || '');
+    aiSeo = { metaDescription: '', metaKeywords: post.seoKeywords || '' };
+    renderFeaturedImage();
+    renderGalleryImages();
+    renderKeywords();
+    renderPlanSelector(post.subscriptionIds || []);
+    renderAnnouncementState(post.announcementStats || { queued: 0, sent: 0, failed: 0 });
+    setAlert();
+    resetAiPanel();
+    document.getElementById('blogModal').style.display = 'flex';
+}
+
+function closeForm() {
+    document.getElementById('blogModal').style.display = 'none';
+}
+
+function setAlert(message, type) {
+    const alert = document.getElementById('blogFormAlert');
+    if (!message) {
+        alert.style.display = 'none';
+        alert.textContent = '';
+        return;
     }
+    alert.style.display = 'block';
+    alert.textContent = message;
+    alert.style.background = type === 'error' ? '#fef2f2' : '#eff6ff';
+    alert.style.color = type === 'error' ? '#b91c1c' : '#1d4ed8';
+    alert.style.border = `1px solid ${type === 'error' ? '#fecaca' : '#bfdbfe'}`;
+}
 
-    function editPost(post) {
-        editingPostId = Number(post && post.id) || 0;
-        document.getElementById('postId').value = String(editingPostId);
-        document.getElementById('postTitle').value = post.title || '';
-        document.getElementById('postSlug').value = post.slug || '';
-        document.getElementById('postAuthor').value = post.author || '';
-        document.getElementById('postImage').value = post.imageUrl || '';
-        document.getElementById('postSummary').value = post.summary || '';
-        document.getElementById('postContent').value = post.content || '';
-        document.getElementById('postPublished').checked = !!post.isPublished;
-        document.getElementById('formTitle').textContent = 'Edit Post';
-        aiSeo = { metaDescription: '', metaKeywords: '' };
-        resetAiPanel();
-        document.getElementById('blogModal').style.display = 'flex';
+function renderFeaturedImage() {
+    const target = document.getElementById('postFeaturedPreview');
+    if (!featuredImageState || !featuredImageState.imagePath) {
+        target.innerHTML = '<div style="font-size:.78rem;color:var(--text-muted);">No featured image selected.</div>';
+        return;
     }
+    target.innerHTML = `
+        <div style="position:relative;border:1px solid var(--border);border-radius:10px;padding:.6rem;">
+            <img src="${escapeHtml(featuredImageState.imagePath)}" alt="Featured image preview" style="display:block;width:100%;max-height:200px;object-fit:cover;border-radius:8px;" />
+            <div style="margin-top:.45rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;">
+                <code style="font-size:.7rem;color:#4a8ec9;overflow-wrap:anywhere;">${escapeHtml(featuredImageState.imagePath)}</code>
+                <button type="button" class="btn-ghost-sm" style="padding:.3rem .55rem;" onclick="removeFeaturedImage()"><i class="bi bi-trash"></i></button>
+            </div>
+        </div>`;
+}
 
-    function closeForm() { document.getElementById('blogModal').style.display = 'none'; }
+function removeFeaturedImage() {
+    featuredImageState = { fileName: '', base64Data: '' };
+    renderFeaturedImage();
+}
 
-    function resetAiPanel() {
-        document.getElementById('aiTopic').value = '';
-        document.getElementById('aiKeywords').value = '';
-        document.getElementById('aiStatus').textContent = '';
-        var p = document.getElementById('aiPreview'); p.style.display = 'none'; p.innerHTML = '';
+function renderGalleryImages() {
+    const target = document.getElementById('postGalleryList');
+    if (!galleryImages.length) {
+        target.innerHTML = '<div style="font-size:.78rem;color:var(--text-muted);">No gallery images yet.</div>';
+        return;
     }
+    target.innerHTML = galleryImages.map((image, index) => `
+        <div style="border:1px solid var(--border);border-radius:10px;padding:.65rem;display:grid;grid-template-columns:88px 1fr auto;gap:.75rem;align-items:start;">
+            <img src="${escapeHtml(image.imagePath || '')}" alt="Gallery preview" style="width:88px;height:88px;object-fit:cover;border-radius:8px;" />
+            <div>
+                <input type="text" value="${escapeHtml(image.altText || '')}" placeholder="Alt text" onchange="updateGalleryAlt(${index}, this.value)" style="width:100%;padding:.45rem .6rem;border:1px solid var(--border);border-radius:8px;font-size:.8rem;margin-bottom:.45rem;" />
+                <code style="font-size:.68rem;color:#4a8ec9;display:block;overflow-wrap:anywhere;margin-bottom:.45rem;">${escapeHtml(image.imagePath || '')}</code>
+                <div style="display:flex;gap:.35rem;flex-wrap:wrap;">
+                    <button type="button" class="btn-ghost-sm" style="padding:.25rem .55rem;" onclick="copyGalleryUrl('${escapeJs(image.imagePath || '')}')"><i class="bi bi-clipboard"></i>Copy URL</button>
+                    <button type="button" class="btn-ghost-sm" style="padding:.25rem .55rem;" onclick="moveGalleryImage(${index}, -1)"><i class="bi bi-arrow-up"></i></button>
+                    <button type="button" class="btn-ghost-sm" style="padding:.25rem .55rem;" onclick="moveGalleryImage(${index}, 1)"><i class="bi bi-arrow-down"></i></button>
+                </div>
+            </div>
+            <button type="button" class="btn-ghost-sm" style="padding:.3rem .55rem;border-color:#ef4444;color:#ef4444;" onclick="removeGalleryImage(${index})"><i class="bi bi-trash"></i></button>
+        </div>`).join('');
+}
 
-    async function aiGenerate(mode) {
-        var title = document.getElementById('postTitle').value.trim();
-        var topic = document.getElementById('aiTopic').value.trim();
-        var keywords = document.getElementById('aiKeywords').value.trim();
-        if (!title && !topic) { alert('Enter a Title or a Topic for the AI to work with.'); return; }
+function moveGalleryImage(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= galleryImages.length) return;
+    const [item] = galleryImages.splice(index, 1);
+    galleryImages.splice(newIndex, 0, item);
+    galleryImages = galleryImages.map((image, idx) => ({ ...image, sortOrder: idx }));
+    renderGalleryImages();
+}
 
-        var status = document.getElementById('aiStatus');
-        status.textContent = 'Generating with AI… this can take 20–40s for full articles.';
-        var buttons = document.querySelectorAll('#blogModal .btn-primary-sm, #blogModal .btn-ghost-sm');
-        buttons.forEach(b => b.disabled = true);
+function updateGalleryAlt(index, value) {
+    galleryImages[index].altText = value;
+}
 
-        try {
-            var resp = await fetch('/api/superadmin/ai/generate-content', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kind: 'blog', title: title, topic: topic, keywords: keywords, mode: mode })
-            });
-            var data = await resp.json();
-            if (!resp.ok || !data.success) { alert(data.error || 'AI generation failed.'); return; }
+function removeGalleryImage(index) {
+    galleryImages.splice(index, 1);
+    galleryImages = galleryImages.map((image, idx) => ({ ...image, sortOrder: idx }));
+    renderGalleryImages();
+}
 
-            if (mode === 'all') {
-                if (!title && data.title) document.getElementById('postTitle').value = data.title;
-                if (data.slug) document.getElementById('postSlug').value = data.slug;
-                if (data.summary) document.getElementById('postSummary').value = data.summary;
-                if (data.content) document.getElementById('postContent').value = data.content;
-            } else if (mode === 'slug' && data.slug) {
-                document.getElementById('postSlug').value = data.slug;
-            } else if (mode === 'summary' && data.summary) {
-                document.getElementById('postSummary').value = data.summary;
-            } else if (mode === 'content' && data.content) {
-                document.getElementById('postContent').value = data.content;
-            }
+function renderPlanSelector(selectedIds) {
+    const target = document.getElementById('planSelector');
+    target.innerHTML = planOptions.map(plan => `
+        <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--text-dim);">
+            <input type="checkbox" value="${plan.id}" ${selectedIds.includes(plan.id) ? 'checked' : ''} /> ${plan.name}
+        </label>`).join('');
+}
 
-            var preview = document.getElementById('aiPreview');
-            preview.style.display = 'block';
-            preview.innerHTML =
-                '<div><strong>Word count:</strong> ' + (data.wordCount || 0) +
-                (data.meetsLengthTarget ? ' ✅ meets 2000-word target' : ' ⚠ below 2000-word target — regenerate or expand') + '</div>' +
-                '<div style="margin-top:.25rem;"><strong>Meta description:</strong> ' + escapeHtml(data.metaDescription || '') + '</div>' +
-                '<div style="margin-top:.25rem;"><strong>Meta keywords:</strong> ' + escapeHtml(data.metaKeywords || '') + '</div>';
-            status.textContent = 'Done.';
-        } catch (e) {
-            alert('AI request failed: ' + e);
-        } finally {
-            buttons.forEach(b => b.disabled = false);
-        }
+function renderAnnouncementState(stats) {
+    const enabled = document.getElementById('isFeatureAnnouncement').checked;
+    document.getElementById('announcementSection').style.display = enabled ? 'block' : 'none';
+    document.getElementById('planSelector').style.opacity = document.getElementById('sendToAllSubscribers').checked ? '.5' : '1';
+    const statsBox = document.getElementById('announcementStats');
+    const resendBtn = document.getElementById('resendFailedBtn');
+    if (!enabled || !stats || editingPost == null) {
+        statsBox.style.display = 'none';
+        resendBtn.style.display = 'none';
+        return;
     }
+    statsBox.style.display = 'block';
+    statsBox.innerHTML = `Queued: <strong>${stats.queued || 0}</strong> · Sent: <strong>${stats.sent || 0}</strong> · Failed: <strong>${stats.failed || 0}</strong>`;
+    resendBtn.style.display = (stats.failed || 0) > 0 ? 'inline-flex' : 'none';
+}
 
-    function escapeHtml(s) {
-        return (s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+function splitKeywords(csv) {
+    return (csv || '').split(',').map(value => value.trim()).filter(Boolean)
+        .filter((value, index, arr) => arr.findIndex(existing => existing.toLowerCase() === value.toLowerCase()) === index);
+}
+
+function renderKeywords() {
+    const target = document.getElementById('keywordChips');
+    const warning = document.getElementById('keywordWarning');
+    if (!keywordList.length) {
+        target.innerHTML = '<span style="font-size:.78rem;color:var(--text-muted);">No keywords yet.</span>';
+    } else {
+        target.innerHTML = keywordList.map(keyword => `
+            <span style="display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .55rem;background:#eef4ff;color:#345f8a;border-radius:999px;font-size:.76rem;">
+                ${escapeHtml(keyword)}
+                <button type="button" style="background:none;border:none;color:#345f8a;cursor:pointer;" onclick="removeKeyword('${escapeJs(keyword)}')"><i class="bi bi-x-lg"></i></button>
+            </span>`).join('');
     }
+    warning.textContent = keywordList.length < 15 ? 'SEO recommendation: add at least 15 keywords.' : '';
+}
 
-    function savePost() {
-        var idFromField = parseInt(document.getElementById('postId').value, 10);
-        if (isNaN(idFromField)) idFromField = 0;
-        var payload = {
-            id: editingPostId > 0 ? editingPostId : idFromField,
-            title: document.getElementById('postTitle').value,
-            slug: document.getElementById('postSlug').value,
-            summary: document.getElementById('postSummary').value,
-            content: document.getElementById('postContent').value,
-            author: document.getElementById('postAuthor').value,
-            imageUrl: document.getElementById('postImage').value || null,
-            isPublished: document.getElementById('postPublished').checked
-        };
-        fetch('/api/superadmin/blog/save', {
+function addKeyword(keyword) {
+    const normalized = (keyword || '').trim();
+    if (!normalized) return;
+    if (keywordList.some(item => item.toLowerCase() === normalized.toLowerCase())) return;
+    keywordList.push(normalized);
+    renderKeywords();
+}
+
+function addKeywordFromInput() {
+    const input = document.getElementById('keywordInput');
+    addKeyword(input.value);
+    input.value = '';
+}
+
+function removeKeyword(keyword) {
+    keywordList = keywordList.filter(item => item.toLowerCase() !== keyword.toLowerCase());
+    renderKeywords();
+}
+
+async function suggestKeywords() {
+    const response = await fetch('/api/superadmin/blog/suggest-keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: document.getElementById('postTitle').value, content: document.getElementById('postContent').value })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+        setAlert(payload.error || 'Keyword suggestion failed.', 'error');
+        return;
+    }
+    const target = document.getElementById('keywordSuggestions');
+    target.innerHTML = payload.keywords.map(keyword => `<button type="button" class="btn-ghost-sm" style="padding:.28rem .55rem;font-size:.74rem;" onclick="addKeyword('${escapeJs(keyword)}')">${escapeHtml(keyword)}</button>`).join('');
+}
+
+async function aiGenerate(mode) {
+    const title = document.getElementById('postTitle').value.trim();
+    const topic = document.getElementById('aiTopic').value.trim();
+    const keywords = document.getElementById('aiKeywords').value.trim();
+    if (!title && !topic) { alert('Enter a Title or a Topic for the AI to work with.'); return; }
+
+    const status = document.getElementById('aiStatus');
+    status.textContent = 'Generating with AI…';
+    try {
+        const resp = await fetch('/api/superadmin/ai/generate-content', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        }).then(r => r.json()).then(d => {
-            if (d.success) location.reload();
-            else alert(d.error || 'Save failed');
-        }).catch(() => alert('Save failed'));
+            body: JSON.stringify({ kind: 'blog', title: title, topic: topic, keywords: keywords, mode: mode })
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) { setAlert(data.error || 'AI generation failed.', 'error'); return; }
+        if (data.metaDescription) aiSeo.metaDescription = data.metaDescription;
+        if (data.metaKeywords) aiSeo.metaKeywords = data.metaKeywords;
+        if (mode === 'all') {
+            if (!title && data.title) document.getElementById('postTitle').value = data.title;
+            if (data.slug) document.getElementById('postSlug').value = data.slug;
+            if (data.summary) document.getElementById('postSummary').value = data.summary;
+            if (data.content) document.getElementById('postContent').value = data.content;
+        } else if (mode === 'slug' && data.slug) {
+            document.getElementById('postSlug').value = data.slug;
+        } else if (mode === 'summary' && data.summary) {
+            document.getElementById('postSummary').value = data.summary;
+        } else if (mode === 'content' && data.content) {
+            document.getElementById('postContent').value = data.content;
+        }
+        document.getElementById('aiPreview').style.display = 'block';
+        document.getElementById('aiPreview').innerHTML = `<div><strong>Word count:</strong> ${data.wordCount || 0}</div><div style="margin-top:.25rem;"><strong>Meta description:</strong> ${escapeHtml(data.metaDescription || '')}</div><div style="margin-top:.25rem;"><strong>Meta keywords:</strong> ${escapeHtml(data.metaKeywords || '')}</div>`;
+        status.textContent = 'Done.';
+    } catch (error) {
+        setAlert('AI request failed.', 'error');
+    }
+}
+
+function resetAiPanel() {
+    document.getElementById('aiTopic').value = '';
+    document.getElementById('aiKeywords').value = '';
+    document.getElementById('aiStatus').textContent = '';
+    const preview = document.getElementById('aiPreview');
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+}
+
+async function savePost(queueAnnouncementEmail) {
+    const isFeatureAnnouncement = document.getElementById('isFeatureAnnouncement').checked;
+    const sendToAllSubscribers = document.getElementById('sendToAllSubscribers').checked;
+    const subscriptionIds = Array.from(document.querySelectorAll('#planSelector input[type="checkbox"]:checked')).map(input => Number(input.value));
+
+    if (queueAnnouncementEmail && isFeatureAnnouncement) {
+        const previewResponse = await fetch('/api/superadmin/blog/preview-announcement', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sendToAllSubscribers, subscriptionIds })
+        });
+        const preview = await previewResponse.json();
+        if (!previewResponse.ok || !preview.success) {
+            setAlert(preview.error || 'Could not calculate recipient count.', 'error');
+            return;
+        }
+        const confirmed = confirm(`Send this feature announcement to ${preview.recipientCount} recipient(s)?`);
+        if (!confirmed) return;
     }
 
-    function deletePost(id) {
-        if (!confirm('Delete this blog post?')) return;
-        fetch('/api/superadmin/blog/' + id, { method: 'DELETE' })
-            .then(r => r.json()).then(d => { if (d.success) location.reload(); })
-            .catch(() => alert('Delete failed'));
+    const payload = {
+        id: Number(document.getElementById('postId').value || '0'),
+        title: document.getElementById('postTitle').value,
+        slug: document.getElementById('postSlug').value,
+        summary: document.getElementById('postSummary').value,
+        content: document.getElementById('postContent').value,
+        author: document.getElementById('postAuthor').value,
+        imageUrl: null,
+        featuredImage: featuredImageState && featuredImageState.existing ? null : featuredImageState,
+        galleryImages: galleryImages.map((image, index) => ({ id: image.id || null, imagePath: image.imagePath || null, altText: image.altText || '', sortOrder: index, upload: image.existing ? null : image.upload })),
+        seoKeywordsCsv: keywordList.join(', '),
+        isFeatureAnnouncement,
+        emailSubject: document.getElementById('emailSubject').value,
+        sendToAllSubscribers,
+        subscriptionIds,
+        queueAnnouncementEmail: queueAnnouncementEmail && isFeatureAnnouncement,
+        isPublished: document.getElementById('postPublished').checked,
+        metaDescription: aiSeo.metaDescription || null,
+        metaKeywords: aiSeo.metaKeywords || null,
+        ogImage: featuredImageState && featuredImageState.imagePath ? featuredImageState.imagePath : null
+    };
+
+    const response = await fetch('/api/superadmin/blog/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        setAlert(result.error || 'Save failed.', 'error');
+        return;
     }
+    if (result.warning) {
+        alert(result.warning);
+    }
+    location.reload();
+}
+
+async function resendFailed() {
+    if (!editingPost) return;
+    const response = await fetch(`/api/superadmin/blog/${editingPost.id}/announcement/resend-failed`, { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        setAlert(result.error || 'Resend failed.', 'error');
+        return;
+    }
+    location.reload();
+}
+
+function deletePost(id) {
+    if (!confirm('Delete this blog post?')) return;
+    fetch('/api/superadmin/blog/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(d => { if (d.success) location.reload(); else setAlert(d.error || 'Delete failed.', 'error'); });
+}
+
+function escapeHtml(value) {
+    return (value || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function escapeJs(value) {
+    return (value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function readFileAsDataUrl(file) {
+    return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = event => resolve(event.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function copyGalleryUrl(url) {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+}
+
+document.getElementById('keywordInput').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addKeywordFromInput();
+    }
+});
+
+document.getElementById('postFeaturedImageInput').addEventListener('change', async event => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    featuredImageState = { fileName: file.name, contentType: file.type, base64Data: await readFileAsDataUrl(file), imagePath: await readFileAsDataUrl(file) };
+    renderFeaturedImage();
+});
+
+document.getElementById('postGalleryInput').addEventListener('change', async event => {
+    const files = Array.from(event.target.files || []);
+    for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        galleryImages.push({ imagePath: dataUrl, sortOrder: galleryImages.length, altText: '', upload: { fileName: file.name, contentType: file.type, base64Data: dataUrl } });
+    }
+    renderGalleryImages();
+    event.target.value = '';
+});
+
+document.getElementById('isFeatureAnnouncement').addEventListener('change', () => renderAnnouncementState(editingPost ? editingPost.announcementStats : null));
+document.getElementById('sendToAllSubscribers').addEventListener('change', () => renderAnnouncementState(editingPost ? editingPost.announcementStats : null));
 </script>
 }

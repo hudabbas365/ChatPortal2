@@ -194,7 +194,7 @@ public class OrganizationBackupService : IOrganizationBackupService
                 await transaction.RollbackAsync(cancellationToken);
             }
             _logger.LogError(ex, "Organization restore failed for organization {OrganizationId}.", organizationId);
-            return new OrganizationRestoreResult { ErrorMessage = "The backup could not be restored. No changes were applied." };
+            return new OrganizationRestoreResult { ErrorMessage = $"The backup could not be restored. No changes were applied. {ex.Message}" };
         }
         finally
         {
@@ -349,7 +349,7 @@ public class OrganizationBackupService : IOrganizationBackupService
                 continue;
             }
 
-            result[$"uploads/{relative["uploads/".Length..]}"] = File.ReadAllBytes(absolute);
+            result[$"uploads/{relative.Substring("uploads/".Length)}"] = File.ReadAllBytes(absolute);
         }
 
         return result;
@@ -362,10 +362,10 @@ public class OrganizationBackupService : IOrganizationBackupService
         {
             using var ms = new MemoryStream();
             await input.CopyToAsync(ms, cancellationToken);
-            var package = JsonSerializer.Deserialize<OrganizationBackupPackage>(ms.ToArray(), JsonOptions)
+            var jsonPackage = JsonSerializer.Deserialize<OrganizationBackupPackage>(ms.ToArray(), JsonOptions)
                 ?? throw new InvalidDataException("The backup file is empty or invalid.");
-            ValidatePackage(package);
-            return (package, new Dictionary<string, byte[]>());
+            ValidatePackage(jsonPackage);
+            return (jsonPackage, new Dictionary<string, byte[]>());
         }
 
         using var zip = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: false);
@@ -486,7 +486,10 @@ public class OrganizationBackupService : IOrganizationBackupService
 
         foreach (var subscriptionDto in package.Subscriptions)
         {
-            var user = await _db.Users.FirstAsync(u => u.Id == subscriptionDto.UserId || u.Email == package.Users.First(p => p.Id == subscriptionDto.UserId).Email, cancellationToken);
+            var backupUser = package.Users.FirstOrDefault(p => p.Id == subscriptionDto.UserId);
+            var user = await _db.Users.FirstAsync(
+                u => u.Id == subscriptionDto.UserId || (backupUser != null && u.Email == backupUser.Email),
+                cancellationToken);
             var subscription = await _db.SubscriptionPlans.FirstOrDefaultAsync(s => s.UserId == user.Id, cancellationToken);
             if (subscription == null)
             {
@@ -618,7 +621,7 @@ public class OrganizationBackupService : IOrganizationBackupService
 
     internal class OrganizationBackupPackage
     {
-        public string SchemaVersion { get; set; } = SchemaVersion;
+        public string SchemaVersion { get; set; } = OrganizationBackupService.SchemaVersion;
         public BackupOrganizationDto Organization { get; set; } = new();
         public List<BackupUserDto> Users { get; set; } = new();
         public List<BackupSubscriptionDto> Subscriptions { get; set; } = new();
@@ -704,7 +707,7 @@ public class OrganizationBackupService : IOrganizationBackupService
 
     internal class BackupManifest
     {
-        public string SchemaVersion { get; set; } = SchemaVersion;
+        public string SchemaVersion { get; set; } = OrganizationBackupService.SchemaVersion;
         public string AppVersion { get; set; } = "unknown";
         public DateTime GeneratedAtUtc { get; set; }
         public string? ExportingAdminId { get; set; }

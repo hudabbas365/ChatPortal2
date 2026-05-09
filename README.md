@@ -22,6 +22,13 @@ dotnet restore
 dotnet run
 ```
 
+## Super Admin: Backups, Announcements, SEO, Images
+
+- **Blog / Documentation images**: Super Admin Blog and Documentation pages now support a featured image plus gallery/content images with server-side validation and public rendering on detail pages.
+- **SEO keywords**: Super Admin Blog includes a keyword chip editor and a **Suggest keywords from content** action that generates 15+ content-based keyword candidates and updates public blog metadata.
+- **Feature announcements**: Blog posts can be marked as feature announcements, targeted to subscription tiers or all subscribers, and queued for background email delivery with resend-failed support.
+- **Organization backup & restore**: Visit **Super Admin → Backup & Restore** (`/superadmin/organizations/backup-restore`) to export ZIP/JSON backups, review backup history, and restore in Merge or Replace mode.
+
 ## AI Insight ETL Transform Layer (TOML)
 
 AI Insights now supports a datasource-bound **Transform** step in the flow:

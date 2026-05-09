@@ -14,6 +14,10 @@
     <Content Remove="GatewayApp/**" />
     <EmbeddedResource Remove="GatewayApp/**" />
     <None Remove="GatewayApp/**" />
+    <Compile Remove="ChatPortal2.Tests/**" />
+    <Content Remove="ChatPortal2.Tests/**" />
+    <EmbeddedResource Remove="ChatPortal2.Tests/**" />
+    <None Remove="ChatPortal2.Tests/**" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />
@@ -31,7 +35,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.0" />
     <PackageReference Include="Npgsql" Version="8.0.6" />
     <PackageReference Include="SendGrid" Version="9.29.3" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.0.3" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
     <PackageReference Include="Tomlyn" Version="0.17.0" />
   </ItemGroup>
 </Project>

@@ -85,6 +85,7 @@ public class HomeController : Controller
         await SetSeoAsync("/blog");
         var posts = await _db.BlogPosts
             .Where(p => p.IsPublished)
+            .Include(p => p.BlogImages)
             .OrderByDescending(p => p.PublishedAt)
             .ToListAsync();
         return View(posts);
@@ -94,6 +95,7 @@ public class HomeController : Controller
     public async Task<IActionResult> BlogPost(string slug)
     {
         var post = await _db.BlogPosts
+            .Include(p => p.BlogImages)
             .FirstOrDefaultAsync(p => p.Slug == slug && p.IsPublished);
         if (post == null) return NotFound();
         await SetSeoAsync($"/blog/{slug}");
@@ -104,10 +106,22 @@ public class HomeController : Controller
     public async Task<IActionResult> DocArticle(string slug)
     {
         var article = await _db.DocArticles
+            .Include(d => d.DocumentImages)
             .FirstOrDefaultAsync(d => d.Slug == slug && d.IsPublished);
         if (article == null) return NotFound();
         await SetSeoAsync($"/docs/{slug}");
         return View(article);
+    }
+
+    [Route("/blog/announcements/unsubscribe")]
+    public async Task<IActionResult> UnsubscribeAnnouncements([FromQuery] string userId, [FromQuery] int blogId)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return NotFound();
+        user.IsSubscribedToAnnouncements = false;
+        await _db.SaveChangesAsync();
+        TempData["AnnouncementUnsubscribeMessage"] = "You have been unsubscribed from feature announcement emails.";
+        return Redirect($"/blog");
     }
 
     [Route("/sitemap.xml")]

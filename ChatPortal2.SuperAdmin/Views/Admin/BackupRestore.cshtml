@@ -1,0 +1,188 @@
+@using AIInsights.Models
+@using AIInsights.Services
+@{
+    ViewData["Title"] = "Organization Backup & Restore";
+    ViewData["ActivePage"] = "org-backups";
+    var organizations = ViewBag.Organizations as List<Organization> ?? new List<Organization>();
+    var selectedOrganizationId = ViewBag.SelectedOrganizationId as int? ?? organizations.FirstOrDefault()?.Id ?? 0;
+    var history = ViewBag.History as IReadOnlyList<OrganizationBackupHistoryItem> ?? Array.Empty<OrganizationBackupHistoryItem>();
+}
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1 class="page-title">Organization Backup &amp; Restore</h1>
+        <p class="page-desc">Create downloadable organization backups, review backup history, and restore ZIP or JSON snapshots.</p>
+    </div>
+</div>
+
+<div id="backupAlert" style="display:none;margin-bottom:1rem;padding:.75rem .9rem;border-radius:10px;font-size:.82rem;"></div>
+
+<div class="card-panel">
+    <div class="card-panel-title">Create Backup</div>
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:.75rem;align-items:end;">
+        <div>
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.35rem;">Organization</label>
+            <select id="backupOrgId" style="width:100%;padding:.55rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.84rem;">
+                @foreach (var org in organizations)
+                {
+                    <option value="@org.Id" selected="@(org.Id == selectedOrganizationId)">@org.Name</option>
+                }
+            </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--text-dim);margin-bottom:.4rem;">
+            <input id="includeAttachments" type="checkbox" checked /> Include uploads
+        </label>
+        <div style="display:flex;gap:.5rem;">
+            <button class="btn-ghost-sm" onclick="exportBackup(true)"><i class="bi bi-filetype-json"></i>JSON only</button>
+            <button class="btn-primary-sm" onclick="exportBackup(false)"><i class="bi bi-file-earmark-zip"></i>Create Backup</button>
+        </div>
+    </div>
+</div>
+
+<div class="card-panel">
+    <div class="card-panel-title">Restore Backup</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start;">
+        <div>
+            <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.35rem;">Backup file</label>
+            <input id="restoreFile" type="file" accept=".zip,.json" style="display:block;width:100%;font-size:.84rem;" />
+            <div style="margin-top:.75rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+                <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;color:var(--text-dim);">
+                    <input type="radio" name="restoreMode" value="Merge" checked /> Merge
+                </label>
+                <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;color:var(--text-dim);">
+                    <input type="radio" name="restoreMode" value="Replace" /> Replace
+                </label>
+            </div>
+            <div id="replaceConfirmBox" style="display:none;margin-top:.85rem;">
+                <div style="font-size:.78rem;color:#b45309;margin-bottom:.45rem;">Replace mode wipes current organization content before restore.</div>
+                <input id="replaceWord" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.84rem;margin-bottom:.5rem;" placeholder="Type REPLACE" />
+                <input id="replaceOrgName" type="text" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:8px;font-size:.84rem;" placeholder="Type the organization name" />
+            </div>
+        </div>
+        <div>
+            <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem;">Restore notes</div>
+            <ul style="padding-left:1rem;color:var(--text-dim);font-size:.82rem;line-height:1.7;">
+                <li>ZIP restores validate <code>manifest.json</code>, checksums, schema version, and attachment paths.</li>
+                <li>Merge upserts by stable keys like slug or email.</li>
+                <li>Replace requires extra confirmation and runs as one transaction when the database provider supports it.</li>
+            </ul>
+            <button class="btn-primary-sm" style="margin-top:.85rem;" onclick="importBackup()"><i class="bi bi-upload"></i>Restore Backup</button>
+        </div>
+    </div>
+</div>
+
+<div class="card-panel">
+    <div class="card-panel-title">Backup History</div>
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Mode</th>
+                <th>Created</th>
+                <th>Size</th>
+                <th>Notes</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="backupHistoryBody">
+            @if (history.Count == 0)
+            {
+                <tr><td colspan="6" style="color:var(--text-muted);">No backups found for this organization yet.</td></tr>
+            }
+            else
+            {
+                foreach (var item in history)
+                {
+                    <tr>
+                        <td>@item.FileName</td>
+                        <td>@item.Mode</td>
+                        <td>@item.PerformedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@string.Format("{0:N0} KB", Math.Max(1, item.FileSizeBytes / 1024))</td>
+                        <td>@item.Notes</td>
+                        <td>
+                            <a class="btn-ghost-sm" style="padding:.35rem .55rem;" href="/api/superadmin/backups/download?organizationId=@selectedOrganizationId&fileName=@Uri.EscapeDataString(item.FileName)"><i class="bi bi-download"></i></a>
+                            <button class="btn-ghost-sm" style="padding:.35rem .55rem;border-color:#ef4444;color:#ef4444;" onclick="deleteBackup('@item.FileName')"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+<script>
+function setBackupAlert(message, type) {
+    const alert = document.getElementById('backupAlert');
+    if (!message) { alert.style.display = 'none'; alert.textContent = ''; return; }
+    alert.style.display = 'block';
+    alert.textContent = message;
+    alert.style.background = type === 'error' ? '#fef2f2' : '#eff6ff';
+    alert.style.color = type === 'error' ? '#b91c1c' : '#1d4ed8';
+    alert.style.border = `1px solid ${type === 'error' ? '#fecaca' : '#bfdbfe'}`;
+}
+
+async function exportBackup(jsonOnly) {
+    setBackupAlert('Creating backup…', 'info');
+    const orgId = Number(document.getElementById('backupOrgId').value);
+    const response = await fetch('/api/superadmin/backups/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: orgId, includeAttachments: document.getElementById('includeAttachments').checked, jsonOnly })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        setBackupAlert(result.error || 'Backup failed.', 'error');
+        return;
+    }
+    setBackupAlert('Backup created successfully. Download should start shortly.', 'info');
+    window.location.href = result.downloadUrl;
+}
+
+async function importBackup() {
+    const fileInput = document.getElementById('restoreFile');
+    if (!fileInput.files || !fileInput.files[0]) {
+        setBackupAlert('Select a backup file first.', 'error');
+        return;
+    }
+    const mode = document.querySelector('input[name="restoreMode"]:checked').value;
+    const formData = new FormData();
+    formData.append('organizationId', document.getElementById('backupOrgId').value);
+    formData.append('mode', mode);
+    formData.append('confirmationText', document.getElementById('replaceWord').value);
+    formData.append('confirmationOrganizationName', document.getElementById('replaceOrgName').value);
+    formData.append('file', fileInput.files[0]);
+    setBackupAlert('Restoring backup… this may take a moment.', 'info');
+    const response = await fetch('/api/superadmin/backups/import', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        setBackupAlert(result.error || 'Restore failed.', 'error');
+        return;
+    }
+    setBackupAlert(result.notes || 'Restore completed successfully.', 'info');
+    location.reload();
+}
+
+async function deleteBackup(fileName) {
+    if (!confirm('Delete this backup file from the server?')) return;
+    const orgId = Number(document.getElementById('backupOrgId').value);
+    const response = await fetch(`/api/superadmin/backups?organizationId=${orgId}&fileName=${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        setBackupAlert(result.error || 'Delete failed.', 'error');
+        return;
+    }
+    location.reload();
+}
+
+Array.from(document.querySelectorAll('input[name="restoreMode"]')).forEach(input => {
+    input.addEventListener('change', () => {
+        document.getElementById('replaceConfirmBox').style.display = input.value === 'Replace' && input.checked ? 'block' : 'none';
+    });
+});
+
+document.getElementById('backupOrgId').addEventListener('change', event => {
+    window.location.href = `/superadmin/organizations/backup-restore?organizationId=${event.target.value}`;
+});
+</script>
+}

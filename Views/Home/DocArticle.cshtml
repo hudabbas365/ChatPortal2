@@ -7,6 +7,7 @@
     var canonical = !string.IsNullOrEmpty(seoEntry?.CanonicalUrl)
         ? seoEntry.CanonicalUrl
         : $"{Context.Request.Scheme}://{Context.Request.Host}/docs/{Model.Slug}";
+    var featuredImage = Model.FeaturedImagePath;
 }
 
 @section Head {
@@ -20,7 +21,8 @@
             "dateModified": "@Model.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")",
             "author": { "@@type": "Person", "name": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Author ?? "AI Insights 365")) },
             "publisher": { "@@type": "Organization", "name": "AI Insights 365" },
-            "mainEntityOfPage": { "@@type": "WebPage", "@@id": "@canonical" }
+            "mainEntityOfPage": { "@@type": "WebPage", "@@id": "@canonical" }@if (!string.IsNullOrWhiteSpace(featuredImage)) {<text>,
+            "image": @Html.Raw(System.Text.Json.JsonSerializer.Serialize(featuredImage))</text>}
         }
         </script>
     }
@@ -43,8 +45,23 @@
 </section>
 
 <section class="cp-section">
-    <div class="container">
+        <div class="container">
         <div class="docs-content glass-card p-4 p-md-5">
+            @if (!string.IsNullOrWhiteSpace(featuredImage))
+            {
+                <img src="@featuredImage" alt="@Model.Title" class="img-fluid rounded mb-4" />
+            }
+            @if (Model.DocumentImages.Count > 0)
+            {
+                <div class="row g-3 mb-4">
+                    @foreach (var image in Model.DocumentImages.OrderBy(i => i.SortOrder))
+                    {
+                        <div class="col-md-4">
+                            <img src="@image.ImagePath" alt="@(string.IsNullOrWhiteSpace(image.AltText) ? Model.Title : image.AltText)" class="img-fluid rounded shadow-sm" />
+                        </div>
+                    }
+                </div>
+            }
             <div itemprop="articleBody">
                 @Html.Raw(Model.Content)
             </div>

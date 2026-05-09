@@ -102,7 +102,7 @@ public class ImageUploadService : IImageUploadService
         }
 
         var trimmed = normalized.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var absolutePath = Path.GetFullPath(Path.Combine(webRoot, trimmed.Replace("uploads" + Path.DirectorySeparatorChar, string.Empty)));
+        var absolutePath = Path.GetFullPath(Path.Combine(webRoot, trimmed));
         var uploadsRoot = Path.GetFullPath(Path.Combine(webRoot, "uploads"));
         if (!absolutePath.StartsWith(uploadsRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(absolutePath))
         {
