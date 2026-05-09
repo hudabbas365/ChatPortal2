@@ -1,6 +1,7 @@
 using System.Text;
 using AIInsights.Data;
 using AIInsights.Models;
+using AIInsights.Services;
 using AIInsights.SuperAdmin.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -110,6 +111,11 @@ builder.Services.AddDataProtection()
     .SetApplicationName("ChatPortal2.SuperAdmin");
 builder.Services.AddHttpClient("cohere");
 builder.Services.AddScoped<AIInsights.Services.CohereService>();
+builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
+builder.Services.AddSingleton<IBlogKeywordSuggestionService, BlogKeywordSuggestionService>();
+builder.Services.AddScoped<IAnnouncementEmailSender, AnnouncementEmailSender>();
+builder.Services.AddScoped<IBlogAnnouncementService, BlogAnnouncementService>();
+builder.Services.AddScoped<IOrganizationBackupService, OrganizationBackupService>();
 builder.Services.AddScoped<SuperAdminJwtService>();
 builder.Services.AddScoped<AIInsights.SuperAdmin.Services.IUrgentNotificationEmailer,
     AIInsights.SuperAdmin.Services.SmtpUrgentNotificationEmailer>();
@@ -118,8 +124,10 @@ builder.Services.AddScoped<InvoicePdfService>();
 builder.Services.AddScoped<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddHostedService<IntegrationHealthService>();
 builder.Services.AddHostedService<WeeklyDigestService>();
+builder.Services.AddHostedService<BlogAnnouncementQueueWorker>();
 builder.Services.AddScoped<OrganizationRetentionService>();
 builder.Services.AddHostedService<OrganizationRetentionCleanupJob>();
+builder.Services.AddHostedService<OrganizationBackupScheduler>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DigestSenderService>();

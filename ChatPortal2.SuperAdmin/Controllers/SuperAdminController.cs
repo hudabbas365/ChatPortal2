@@ -11,23 +11,35 @@ using System.Text;
 namespace AIInsights.SuperAdmin.Controllers;
 
 [Authorize]
-public class SuperAdminController : Controller
+public partial class SuperAdminController : Controller
 {
     private readonly AppDbContext _db;
     private readonly CohereService _cohere;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OrganizationRetentionService _orgRetention;
+    private readonly IImageUploadService _imageUploadService;
+    private readonly IBlogKeywordSuggestionService _keywordSuggestionService;
+    private readonly IBlogAnnouncementService _blogAnnouncementService;
+    private readonly IOrganizationBackupService _organizationBackupService;
 
     public SuperAdminController(
         AppDbContext db,
         CohereService cohere,
         IServiceScopeFactory scopeFactory,
-        OrganizationRetentionService orgRetention)
+        OrganizationRetentionService orgRetention,
+        IImageUploadService imageUploadService,
+        IBlogKeywordSuggestionService keywordSuggestionService,
+        IBlogAnnouncementService blogAnnouncementService,
+        IOrganizationBackupService organizationBackupService)
     {
         _db = db;
         _cohere = cohere;
         _scopeFactory = scopeFactory;
         _orgRetention = orgRetention;
+        _imageUploadService = imageUploadService;
+        _keywordSuggestionService = keywordSuggestionService;
+        _blogAnnouncementService = blogAnnouncementService;
+        _organizationBackupService = organizationBackupService;
     }
 
     protected string? GetCurrentUserId() =>
@@ -723,7 +735,12 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> Docs()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var docs = await _db.DocArticles.OrderBy(d => d.SortOrder).ThenByDescending(d => d.CreatedAt).ToListAsync();
+        ViewData["ActivePage"] = "docs";
+        var docs = await _db.DocArticles
+            .Include(d => d.DocumentImages)
+            .OrderBy(d => d.SortOrder)
+            .ThenByDescending(d => d.CreatedAt)
+            .ToListAsync();
         return View("~/Views/Admin/Docs.cshtml", docs);
     }
 
@@ -736,64 +753,73 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (string.IsNullOrWhiteSpace(dto.Title))
             return BadRequest(new { error = "Title is required." });
 
-        var slug = string.IsNullOrWhiteSpace(dto.Slug)
-            ? dto.Title.ToLower().Replace(" ", "-").Replace("--", "-")
-            : dto.Slug;
+        try
+        {
+            var slug = Slugify(dto.Slug, dto.Title);
 
-        string? oldUrl = null;
-        DocArticle doc;
-        if (dto.Id > 0)
-        {
-            var existing = await _db.DocArticles.FindAsync(dto.Id);
-            if (existing == null) return NotFound();
-            oldUrl = $"/docs/{existing.Slug}";
-            existing.Title = dto.Title;
-            existing.Slug = slug;
-            existing.Summary = dto.Summary;
-            existing.Content = dto.Content;
-            existing.Author = dto.Author;
-            existing.SortOrder = dto.SortOrder;
-            existing.IsPublished = dto.IsPublished;
-            existing.UpdatedAt = DateTime.UtcNow;
-            doc = existing;
-        }
-        else
-        {
-            doc = new DocArticle
+            string? oldUrl = null;
+            DocArticle doc;
+            if (dto.Id > 0)
             {
-                Title = dto.Title,
-                Slug = slug,
-                Summary = dto.Summary,
-                Content = dto.Content,
-                Author = dto.Author,
-                SortOrder = dto.SortOrder,
-                IsPublished = dto.IsPublished,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            _db.DocArticles.Add(doc);
+                var existing = await _db.DocArticles.Include(d => d.DocumentImages).FirstOrDefaultAsync(d => d.Id == dto.Id);
+                if (existing == null) return NotFound();
+                oldUrl = $"/docs/{existing.Slug}";
+                existing.Title = dto.Title;
+                existing.Slug = slug;
+                existing.Summary = dto.Summary ?? "";
+                existing.Content = dto.Content ?? "";
+                existing.Author = dto.Author;
+                existing.SortOrder = dto.SortOrder;
+                existing.IsPublished = dto.IsPublished;
+                existing.FeaturedImagePath = await SaveFeaturedImageAsync(dto.FeaturedImage, "documents", existing.FeaturedImagePath);
+                existing.UpdatedAt = DateTime.UtcNow;
+                doc = existing;
+            }
+            else
+            {
+                doc = new DocArticle
+                {
+                    Title = dto.Title,
+                    Slug = slug,
+                    Summary = dto.Summary ?? "",
+                    Content = dto.Content ?? "",
+                    Author = dto.Author,
+                    SortOrder = dto.SortOrder,
+                    IsPublished = dto.IsPublished,
+                    FeaturedImagePath = await SaveFeaturedImageAsync(dto.FeaturedImage, "documents"),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _db.DocArticles.Add(doc);
+            }
+
+            await SyncDocumentImagesAsync(doc, dto.GalleryImages);
+
+            await _db.SaveChangesAsync();
+
+            var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
+                ? dto.MetaDescription!.Trim()
+                : (doc.Summary ?? doc.Title);
+            var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
+                ? dto.MetaKeywords!.Trim()
+                : "AIInsights365, AI analytics, documentation, " + doc.Slug.Replace('-', ' ');
+
+            await UpsertSeoForContentAsync(
+                newUrl: $"/docs/{doc.Slug}",
+                oldUrl: oldUrl,
+                title: $"{doc.Title} — AIInsights365.net",
+                description: description,
+                keywords: keywords,
+                priority: 0.7m,
+                changeFreq: "monthly",
+                includeInSitemap: doc.IsPublished,
+                ogImage: doc.FeaturedImagePath);
+            return Ok(new { success = true, warning = (string?)null });
         }
-
-        await _db.SaveChangesAsync();
-
-        var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
-            ? dto.MetaDescription!.Trim()
-            : (doc.Summary ?? doc.Title);
-        var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
-            ? dto.MetaKeywords!.Trim()
-            : "AIInsights365, AI analytics, documentation, " + doc.Slug.Replace('-', ' ');
-
-        await UpsertSeoForContentAsync(
-            newUrl: $"/docs/{doc.Slug}",
-            oldUrl: oldUrl,
-            title: $"{doc.Title} — AIInsights365.net",
-            description: description,
-            keywords: keywords,
-            priority: 0.7m,
-            changeFreq: "monthly",
-            includeInSitemap: doc.IsPublished,
-            ogImage: null);
-        return Ok(new { success = true });
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     public class SaveDocDto
@@ -806,6 +832,8 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         public string? Author { get; set; }
         public int SortOrder { get; set; }
         public bool IsPublished { get; set; }
+        public ImageUploadDto? FeaturedImage { get; set; }
+        public List<ContentImageDto> GalleryImages { get; set; } = new();
         // SEO overrides (optional — typically supplied by the AI SEO Assistant)
         public string? MetaDescription { get; set; }
         public string? MetaKeywords { get; set; }
@@ -815,9 +843,13 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> DeleteDoc(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var doc = await _db.DocArticles.FindAsync(id);
+        var doc = await _db.DocArticles.Include(d => d.DocumentImages).FirstOrDefaultAsync(d => d.Id == id);
         if (doc == null) return NotFound();
         var url = $"/docs/{doc.Slug}";
+        if (!string.IsNullOrWhiteSpace(doc.FeaturedImagePath))
+            _imageUploadService.DeleteImage(doc.FeaturedImagePath);
+        foreach (var image in doc.DocumentImages)
+            _imageUploadService.DeleteImage(image.ImagePath);
         _db.DocArticles.Remove(doc);
         await _db.SaveChangesAsync();
         await RemoveSeoByUrlAsync(url);
@@ -829,7 +861,13 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> Blog()
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var posts = await _db.BlogPosts.OrderByDescending(b => b.PublishedAt).ToListAsync();
+        ViewData["ActivePage"] = "blog";
+        var posts = await _db.BlogPosts
+            .Include(b => b.BlogImages)
+            .Include(b => b.BlogSubscriptions)
+            .Include(b => b.AnnouncementEmailLogs)
+            .OrderByDescending(b => b.PublishedAt)
+            .ToListAsync();
         return View("~/Views/Admin/Blog.cshtml", posts);
     }
 
@@ -842,67 +880,109 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         if (string.IsNullOrWhiteSpace(dto.Title))
             return BadRequest(new { error = "Title is required." });
 
-        var slug = string.IsNullOrWhiteSpace(dto.Slug)
-            ? dto.Title.ToLower().Replace(" ", "-").Replace("--", "-")
-            : dto.Slug;
+        try
+        {
+            var slug = Slugify(dto.Slug, dto.Title);
 
-        string? oldUrl = null;
-        BlogPost post;
-        if (dto.Id > 0)
-        {
-            var existing = await _db.BlogPosts.FindAsync(dto.Id);
-            if (existing == null) return NotFound();
-            oldUrl = $"/blog/{existing.Slug}";
-            existing.Title = dto.Title;
-            existing.Slug = slug;
-            existing.Summary = dto.Summary;
-            existing.Content = dto.Content;
-            existing.Author = dto.Author;
-            existing.ImageUrl = dto.ImageUrl;
-            if (!existing.IsPublished && dto.IsPublished)
-                existing.PublishedAt = DateTime.UtcNow;
-            existing.IsPublished = dto.IsPublished;
-            post = existing;
-        }
-        else
-        {
-            post = new BlogPost
+            string? oldUrl = null;
+            BlogPost post;
+            if (dto.Id > 0)
             {
-                Title = dto.Title,
-                Slug = slug,
-                Summary = dto.Summary,
-                Content = dto.Content,
-                Author = dto.Author,
-                ImageUrl = dto.ImageUrl,
-                IsPublished = dto.IsPublished,
-                PublishedAt = DateTime.UtcNow
-            };
-            _db.BlogPosts.Add(post);
+                var existing = await _db.BlogPosts
+                    .Include(b => b.BlogImages)
+                    .Include(b => b.BlogSubscriptions)
+                    .FirstOrDefaultAsync(b => b.Id == dto.Id);
+                if (existing == null) return NotFound();
+                oldUrl = $"/blog/{existing.Slug}";
+                existing.Title = dto.Title;
+                existing.Slug = slug;
+                existing.Summary = dto.Summary ?? "";
+                existing.Content = dto.Content ?? "";
+                existing.Author = dto.Author;
+                existing.ImageUrl = dto.ImageUrl;
+                existing.FeaturedImagePath = await SaveFeaturedImageAsync(dto.FeaturedImage, "blogs", existing.FeaturedImagePath);
+                existing.SeoKeywords = NormalizeKeywords(dto.SeoKeywordsCsv);
+                existing.IsFeatureAnnouncement = dto.IsFeatureAnnouncement;
+                existing.EmailSubject = dto.EmailSubject;
+                existing.SendToAllSubscribers = dto.SendToAllSubscribers;
+                if (!existing.IsPublished && dto.IsPublished)
+                    existing.PublishedAt = DateTime.UtcNow;
+                existing.IsPublished = dto.IsPublished;
+                post = existing;
+            }
+            else
+            {
+                post = new BlogPost
+                {
+                    Title = dto.Title,
+                    Slug = slug,
+                    Summary = dto.Summary ?? "",
+                    Content = dto.Content ?? "",
+                    Author = dto.Author,
+                    ImageUrl = dto.ImageUrl,
+                    FeaturedImagePath = await SaveFeaturedImageAsync(dto.FeaturedImage, "blogs"),
+                    SeoKeywords = NormalizeKeywords(dto.SeoKeywordsCsv),
+                    IsFeatureAnnouncement = dto.IsFeatureAnnouncement,
+                    EmailSubject = dto.EmailSubject,
+                    SendToAllSubscribers = dto.SendToAllSubscribers,
+                    IsPublished = dto.IsPublished,
+                    PublishedAt = DateTime.UtcNow
+                };
+                _db.BlogPosts.Add(post);
+            }
+
+            await SyncBlogImagesAsync(post, dto.GalleryImages);
+            SyncBlogSubscriptions(post, dto.SubscriptionIds);
+
+            await _db.SaveChangesAsync();
+
+            var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
+                ? dto.MetaDescription!.Trim()
+                : (post.Summary ?? post.Title);
+            var keywords = !string.IsNullOrWhiteSpace(post.SeoKeywords)
+                ? post.SeoKeywords!.Trim()
+                : (!string.IsNullOrWhiteSpace(dto.MetaKeywords)
+                    ? dto.MetaKeywords!.Trim()
+                    : string.Join(", ", _keywordSuggestionService.SuggestKeywords(post.Title, post.Content)));
+            var ogImage = !string.IsNullOrWhiteSpace(dto.OgImage)
+                ? dto.OgImage!.Trim()
+                : (post.FeaturedImagePath ?? post.ImageUrl);
+
+            await UpsertSeoForContentAsync(
+                newUrl: $"/blog/{post.Slug}",
+                oldUrl: oldUrl,
+                title: $"{post.Title} — AIInsights365.net",
+                description: description,
+                keywords: keywords,
+                priority: 0.8m,
+                changeFreq: "weekly",
+                includeInSitemap: post.IsPublished,
+                ogImage: ogImage);
+
+            AnnouncementQueueResult? queueResult = null;
+            if (dto.QueueAnnouncementEmail && post.IsFeatureAnnouncement)
+            {
+                queueResult = await _blogAnnouncementService.QueueAnnouncementAsync(post.Id);
+                if (!queueResult.Success)
+                {
+                    return BadRequest(new { error = queueResult.ErrorMessage });
+                }
+            }
+
+            var keywordCount = SplitKeywords(post.SeoKeywords).Count;
+            var warning = keywordCount < 15 ? "SEO recommendation: add at least 15 keywords." : null;
+
+            return Ok(new
+            {
+                success = true,
+                warning,
+                queuedRecipients = queueResult?.RecipientCount ?? 0
+            });
         }
-
-        await _db.SaveChangesAsync();
-
-        var description = !string.IsNullOrWhiteSpace(dto.MetaDescription)
-            ? dto.MetaDescription!.Trim()
-            : (post.Summary ?? post.Title);
-        var keywords = !string.IsNullOrWhiteSpace(dto.MetaKeywords)
-            ? dto.MetaKeywords!.Trim()
-            : "AIInsights365, blog, AI analytics, " + post.Slug.Replace('-', ' ');
-        var ogImage = !string.IsNullOrWhiteSpace(dto.OgImage)
-            ? dto.OgImage!.Trim()
-            : (string.IsNullOrWhiteSpace(post.ImageUrl) ? null : post.ImageUrl);
-
-        await UpsertSeoForContentAsync(
-            newUrl: $"/blog/{post.Slug}",
-            oldUrl: oldUrl,
-            title: $"{post.Title} — AIInsights365.net",
-            description: description,
-            keywords: keywords,
-            priority: 0.8m,
-            changeFreq: "weekly",
-            includeInSitemap: post.IsPublished,
-            ogImage: ogImage);
-        return Ok(new { success = true });
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     public class SaveBlogDto
@@ -914,6 +994,14 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
         public string? Content { get; set; }
         public string? Author { get; set; }
         public string? ImageUrl { get; set; }
+        public ImageUploadDto? FeaturedImage { get; set; }
+        public List<ContentImageDto> GalleryImages { get; set; } = new();
+        public string? SeoKeywordsCsv { get; set; }
+        public bool IsFeatureAnnouncement { get; set; }
+        public string? EmailSubject { get; set; }
+        public bool SendToAllSubscribers { get; set; }
+        public List<int> SubscriptionIds { get; set; } = new();
+        public bool QueueAnnouncementEmail { get; set; }
         public bool IsPublished { get; set; }
         // SEO overrides (optional — typically supplied by the AI SEO Assistant)
         public string? MetaDescription { get; set; }
@@ -925,9 +1013,17 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
     public async Task<IActionResult> DeleteBlog(int id)
     {
         if (!await IsSuperAdminAsync()) return StatusCode(403);
-        var post = await _db.BlogPosts.FindAsync(id);
+        var post = await _db.BlogPosts
+            .Include(b => b.BlogImages)
+            .Include(b => b.AnnouncementEmailLogs)
+            .Include(b => b.BlogSubscriptions)
+            .FirstOrDefaultAsync(b => b.Id == id);
         if (post == null) return NotFound();
         var url = $"/blog/{post.Slug}";
+        if (!string.IsNullOrWhiteSpace(post.FeaturedImagePath))
+            _imageUploadService.DeleteImage(post.FeaturedImagePath);
+        foreach (var image in post.BlogImages)
+            _imageUploadService.DeleteImage(image.ImagePath);
         _db.BlogPosts.Remove(post);
         await _db.SaveChangesAsync();
         await RemoveSeoByUrlAsync(url);
@@ -1072,7 +1168,7 @@ Respond ONLY with valid JSON (no markdown, no code fences) in this exact format:
                 MetaKeywords = keywords,
                 OgTitle = title,
                 OgDescription = description,
-                OgImage = ogImage,
+                OgImage = ogImage ?? "",
                 SitemapPriority = priority,
                 SitemapChangeFreq = changeFreq,
                 IncludeInSitemap = includeInSitemap,

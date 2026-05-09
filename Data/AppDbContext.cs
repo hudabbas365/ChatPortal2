@@ -23,7 +23,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TokenUsage> TokenUsages => Set<TokenUsage>();
     public DbSet<WorkspaceMemory> WorkspaceMemories => Set<WorkspaceMemory>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
+    public DbSet<BlogImage> BlogImages => Set<BlogImage>();
+    public DbSet<BlogSubscription> BlogSubscriptions => Set<BlogSubscription>();
+    public DbSet<BlogAnnouncementEmailLog> BlogAnnouncementEmailLogs => Set<BlogAnnouncementEmailLog>();
     public DbSet<DocArticle> DocArticles => Set<DocArticle>();
+    public DbSet<DocumentImage> DocumentImages => Set<DocumentImage>();
+    public DbSet<OrganizationBackupAudit> OrganizationBackupAudits => Set<OrganizationBackupAudit>();
     public DbSet<PaymentRecord> PaymentRecords => Set<PaymentRecord>();
     public DbSet<SharedReport> SharedReports => Set<SharedReport>();
     public DbSet<ReportRevision> ReportRevisions => Set<ReportRevision>();
@@ -54,6 +59,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithOne(s => s.User)
             .HasForeignKey<SubscriptionPlan>(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.IsSubscribedToAnnouncements)
+            .HasDefaultValue(true);
 
         builder.Entity<Workspace>()
             .HasOne(w => w.Organization)
@@ -216,6 +225,48 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(m => m.WorkspaceId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogImage>()
+            .HasOne(i => i.Blog)
+            .WithMany(b => b.BlogImages)
+            .HasForeignKey(i => i.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogImage>()
+            .Property(i => i.CreatedAt)
+            .HasDefaultValueSql("GETUTCDATE()");
+
+        builder.Entity<DocumentImage>()
+            .HasOne(i => i.Document)
+            .WithMany(d => d.DocumentImages)
+            .HasForeignKey(i => i.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<DocumentImage>()
+            .Property(i => i.CreatedAt)
+            .HasDefaultValueSql("GETUTCDATE()");
+
+        builder.Entity<BlogSubscription>()
+            .HasKey(x => new { x.BlogId, x.SubscriptionId });
+
+        builder.Entity<BlogSubscription>()
+            .HasOne(x => x.Blog)
+            .WithMany(b => b.BlogSubscriptions)
+            .HasForeignKey(x => x.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasOne(x => x.Blog)
+            .WithMany(b => b.AnnouncementEmailLogs)
+            .HasForeignKey(x => x.BlogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BlogAnnouncementEmailLog>()
+            .HasIndex(x => new { x.BlogId, x.SubscriberEmail })
+            .IsUnique();
+
+        builder.Entity<OrganizationBackupAudit>()
+            .HasIndex(x => new { x.OrganizationId, x.PerformedAt });
 
         builder.Entity<SharedReport>()
             .HasOne(sr => sr.Report)
